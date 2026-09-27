@@ -16,10 +16,10 @@ import MVT from 'ol/format/MVT';
 import TileLayer from 'ol/layer/Tile';
 import VectorTileLayer from 'ol/layer/VectorTile';
 import TileState from 'ol/TileState';
+import Attribution from 'ol/control/Attribution';
+import XYZ from 'ol/source/XYZ';
 import VectorTile from 'ol/VectorTile';
 import VectorTileSource from 'ol/source/VectorTile';
-import WMTS from 'ol/source/WMTS';
-import WMTSTileGrid from 'ol/tilegrid/WMTS';
 import { Auth } from '../auth/auth';
 import { RUNTIME_CONFIG } from '../config';
 import { PanelStack } from '../shell/panels';
@@ -34,6 +34,7 @@ import {
   SWEREF,
   tileUrl,
 } from './map-grid';
+import { createBasemap, esriTileUrl, parseBasemap } from './map-basemap';
 import { createStyler, Palette, readPalette } from './map-style';
 import { MapView } from './map-view';
 
@@ -46,7 +47,8 @@ interface Hover {
 
 /**
  * The map lens. OpenLayers is kept inside this component so the engine can be swapped (ADR-0004).
- * Tiles come from the API with the user's token; nothing is fetched from foreign map services.
+ * Network tiles come from the API with the user's token. The background is Esri's keyless basemap
+ * (ADR-0010), which only ever sees the map extent, never network data; `basemap: none` turns it off.
  */
 @Component({
   selector: 'cmdb-map',
@@ -70,6 +72,7 @@ export class MapComponent {
 
   private map?: OlMap;
   private network?: VectorTileLayer;
+  private basemap?: TileLayer<XYZ>;
   private palette?: Palette;
 
   constructor() {
@@ -78,9 +81,10 @@ export class MapComponent {
 
     // Re-read the palette when the theme changes, and redraw the selection when the panel stack changes.
     effect(() => {
-      this.theme.theme();
+      const theme = this.theme.theme();
       this.palette = undefined;
       this.restyle();
+      this.basemap?.getSource()?.setUrl(esriTileUrl(theme));
     });
     effect(() => {
       this.panels.top();
@@ -126,14 +130,15 @@ export class MapComponent {
     });
 
     const layers: (TileLayer | VectorTileLayer)[] = [this.network];
-    if (this.config.lantmaterietKey) {
-      layers.unshift(this.background(this.config.lantmaterietKey));
+    if (parseBasemap(this.config.basemap) === 'esri') {
+      this.basemap = createBasemap(this.theme.theme());
+      layers.unshift(this.basemap);
     }
 
     this.map = new OlMap({
       target: this.target().nativeElement,
       layers,
-      controls: [],
+      controls: this.basemap ? [new Attribution({ collapsible: false })] : [],
       view: new View({
         projection: SWEREF,
         resolutions,
@@ -210,28 +215,6 @@ export class MapComponent {
           tile.setState(TileState.ERROR);
         }
       })();
-    });
-  }
-
-  /** Lantmäteriet's toned-down topographic web map (CC BY), in SWEREF 99 TM. Needs an API key. */
-  private background(key: string): TileLayer {
-    const lmResolutions = Array.from({ length: 16 }, (_, z) => 4096 / 2 ** z);
-    return new TileLayer({
-      opacity: 0.55,
-      source: new WMTS({
-        url: `https://api.lantmateriet.se/open/topowebb-ccby/v1/wmts/token/${key}/`,
-        layer: 'topowebb_nedtonad',
-        matrixSet: '3006',
-        format: 'image/png',
-        style: 'default',
-        projection: SWEREF,
-        attributions: '© Lantmäteriet (CC BY 4.0)',
-        tileGrid: new WMTSTileGrid({
-          origin: [-1_200_000, 8_500_000],
-          resolutions: lmResolutions,
-          matrixIds: lmResolutions.map((_, z) => String(z)),
-        }),
-      }),
     });
   }
 }

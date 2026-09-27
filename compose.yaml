@@ -43,6 +43,8 @@ services:
     environment:
       OIDC_AUTHORITY: ${OIDC_AUTHORITY:-https://authentik.rosenvall.se/application/o/cmdb/}
       OIDC_CLIENT_ID: cmdb-web
+      # esri (default) or none. None makes no requests to external map services (ADR-0010).
+      MAP_BASEMAP: ${MAP_BASEMAP:-esri}
     ports:
       - "${CMDB_WEB_PORT:-8480}:8080"
     depends_on:
