@@ -10,6 +10,7 @@ public sealed class ReadinessEndpoint(NpgsqlDataSource db) : EndpointWithoutRequ
     {
         Get("/health/ready");
         AllowAnonymous();
+        RoutePrefixOverride(string.Empty); // Probes stay outside /api.
     }
 
     public override async Task HandleAsync(CancellationToken ct)

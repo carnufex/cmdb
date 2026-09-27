@@ -20,13 +20,28 @@ Krav: Docker med Compose v2.
 
 ```bash
 cp .env.example .env        # fyll i hemligheter enligt kommentarerna
-docker compose up -d        # PostGIS + Authentik (api/web läggs till i backloggen)
+docker compose up -d --build
 ```
 
 | Tjänst | Adress |
 |---|---|
+| Webb | http://localhost:8480 |
+| API | http://localhost:8481 (`/health`, `/health/ready`, allt annat under `/api`) |
 | Authentik | http://localhost:9000 |
-| PostGIS | localhost:5432 |
+| PostGIS | localhost:15432 |
+
+Portarna styrs av `CMDB_*_PORT` och `AUTHENTIK_PORT` i `.env`. API:t kör migreringarna vid start i compose (`Database__MigrateOnStartup`). I drift körs de som ett separat steg: `dotnet Cmdb.Api.dll --migrate`.
+
+### Utveckling med hot reload
+
+Kör databasen och Authentik i Docker och apparna lokalt:
+
+```bash
+docker compose up -d db authentik-server authentik-worker
+export PGPASSWORD=<CMDB_DB_PASSWORD från .env>
+dotnet watch --project src/api          # http://localhost:5080, migrerar vid start
+cd src/web && npx ng serve              # http://localhost:4200, proxar /api till 5080
+```
 
 ## Bygga och testa
 

@@ -9,6 +9,7 @@ public sealed class LivenessEndpoint : EndpointWithoutRequest<HealthResponse>
     {
         Get("/health");
         AllowAnonymous();
+        RoutePrefixOverride(string.Empty); // Probes stay outside /api.
     }
 
     public override Task HandleAsync(CancellationToken ct) =>
