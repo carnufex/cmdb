@@ -1,0 +1,91 @@
+<header class="head">
+  <h2>Prestanda</h2>
+  <button type="button" class="close" aria-label="Stäng prestandapanelen" (click)="close()">
+    ×
+  </button>
+</header>
+
+<div class="body">
+  <p class="intro">
+    Kör budgetens interaktioner mot nätet som är laddat, med stickprov ur det, och visar
+    svarstiderna. Status bedöms på serverns p95 mot budgeten i planen.
+  </p>
+
+  <div class="actions">
+    @if (progress(); as p) {
+      <button type="button" class="secondary" (click)="cancel()">Avbryt</button>
+      <span class="progress" aria-live="polite">
+        {{ p.label }}
+        @if (p.total > 1) {
+          · {{ p.done }}/{{ p.total }}
+        }
+      </span>
+    } @else {
+      <button type="button" class="primary" (click)="run()">
+        {{ results().length ? 'Kör igen' : 'Kör mätning' }}
+      </button>
+      @if (finishedAt(); as t) {
+        <span class="muted">Klar {{ t.toLocaleTimeString('sv-SE') }}</span>
+      }
+    }
+  </div>
+
+  @if (error(); as e) {
+    <p class="error" role="alert">{{ e }}</p>
+  }
+
+  @if (results().length) {
+    <table>
+      <thead>
+        <tr>
+          <th scope="col">Mätning</th>
+          <th scope="col" class="num">Server<br /><span>p50 / p95</span></th>
+          <th scope="col" class="num">Webbläsare<br /><span>p50 / p95</span></th>
+          <th scope="col" class="num">Budget</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (m of results(); track m.key) {
+          <tr>
+            <th scope="row">
+              {{ m.label }}
+              <span class="status" [attr.data-status]="m.status">
+                <span class="dot" aria-hidden="true"></span>{{ statusLabels[m.status] }}
+              </span>
+              <span class="n">n = {{ m.n }}</span>
+            </th>
+            <td class="num">
+              @if (m.server; as s) {
+                {{ s.p50 | number: '1.0-1' }} / <strong>{{ s.p95 | number: '1.0-1' }}</strong>
+              } @else {
+                <span class="muted">–</span>
+              }
+            </td>
+            <td class="num">
+              {{ m.browser.p50 | number: '1.0-1' }} /
+              @if (m.server) {
+                {{ m.browser.p95 | number: '1.0-1' }}
+              } @else {
+                <strong>{{ m.browser.p95 | number: '1.0-1' }}</strong>
+              }
+            </td>
+            <td class="num">
+              @if (m.budget !== null) {
+                &lt; {{ m.budget }}
+                @if (m.budgetNote) {
+                  <span class="note">{{ m.budgetNote }}</span>
+                }
+              } @else {
+                <span class="muted">–</span>
+              }
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+    <p class="muted foot">
+      Alla tider i millisekunder. Webbläsarens tid inkluderar nätverket, i demon via Cloudflare.
+      Spårning och växling till planvy läggs till när de finns (#9, #24).
+    </p>
+  }
+</div>

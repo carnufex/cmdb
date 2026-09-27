@@ -83,7 +83,10 @@ export class MapComponent {
 
   constructor() {
     afterNextRender(() => this.create());
-    inject(DestroyRef).onDestroy(() => this.map?.setTarget(undefined));
+    inject(DestroyRef).onDestroy(() => {
+      this.map?.setTarget(undefined);
+      this.mapView.renderBenchmark = null;
+    });
 
     // Re-read the palette when the theme changes, and redraw the selection when the panel stack changes.
     effect(() => {
@@ -167,6 +170,7 @@ export class MapComponent {
       }),
     });
     this.map.getView().fit(HOME_EXTENT, { padding: [24, 24, 24, 24] });
+    this.mapView.renderBenchmark = (signal) => this.benchmarkRendering(signal);
     const pending = this.mapView.highlight();
     if (pending) {
       this.showMarks(pending.points, pending.extent);
@@ -211,6 +215,50 @@ export class MapComponent {
   }
 
   private restyle: () => void = () => undefined;
+
+  /**
+   * Flies over the country through several zoom levels, loading and drawing tiles as a user would, and
+   * records the time between animation frames. Returns to the starting view.
+   */
+  private async benchmarkRendering(signal: AbortSignal): Promise<number[]> {
+    const view = this.map!.getView();
+    const home = { center: view.getCenter()!, zoom: view.getZoom()! };
+    const [minX, minY, maxX, maxY] = HOME_EXTENT;
+    const stops: [number, number, number][] = [
+      [0.5, 0.25, 6],
+      [0.45, 0.55, 8],
+      [0.6, 0.7, 10],
+      [0.35, 0.85, 9],
+      [0.55, 0.4, 7],
+      [0.5, 0.5, 4],
+    ];
+    const frames: number[] = [];
+    let last = performance.now();
+    let running = true;
+    const tick = (t: number) => {
+      frames.push(t - last);
+      last = t;
+      if (running) {
+        requestAnimationFrame(tick);
+      }
+    };
+    requestAnimationFrame(tick);
+    const fly = (center: number[], zoom: number) =>
+      new Promise<void>((resolve) =>
+        view.animate({ center, zoom, duration: 900 }, () => resolve()),
+      );
+    try {
+      for (const [fx, fy, zoom] of stops) {
+        signal.throwIfAborted();
+        await fly([minX + fx * (maxX - minX), minY + fy * (maxY - minY)], zoom);
+      }
+    } finally {
+      running = false;
+      await fly(home.center, home.zoom);
+    }
+    // The first delta spans the time before the benchmark started.
+    return frames.slice(1);
+  }
 
   private markStyleCache?: { key: string; style: Style };
 
