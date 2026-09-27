@@ -20,10 +20,14 @@ internal static class Loader
     private static readonly string[] IdentityTables =
         ["site", "location", "equipment", "terminal", "cable", "conductor", "connection", "channel", "service", "circuit"];
 
-    public static async Task LoadAsync(NpgsqlDataSource db, Network net, bool reset, TextWriter log, CancellationToken ct = default)
+    public static async Task LoadAsync(NpgsqlDataSource db, Network net, bool reset, TextWriter log, bool fast = true, CancellationToken ct = default)
     {
-        await Migrator.MigrateAsync(db, ct);
-        await CatalogSync.SyncAsync(db, TypeCatalog.Embedded, ct);
+        // The schema is owned by the EF model (ADR-0009); the loader only migrates and then bulk-writes rows.
+        await CmdbDatabase.MigrateAsync(db, ct);
+        await using (var context = CmdbDatabase.CreateContext(db))
+        {
+            await CatalogSync.SyncAsync(context, TypeCatalog.Embedded, ct);
+        }
 
         await using var conn = await db.OpenConnectionAsync(ct);
         if (reset)
@@ -40,8 +44,11 @@ internal static class Loader
         var checks = "on";
         try
         {
-            await Exec(conn, "SET session_replication_role = replica", ct);
-            checks = "off (session_replication_role = replica)";
+            if (fast)
+            {
+                await Exec(conn, "SET session_replication_role = replica", ct);
+                checks = "off (session_replication_role = replica)";
+            }
         }
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.InsufficientPrivilege)
         {

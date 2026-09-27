@@ -1,6 +1,10 @@
 using System.Text.Json;
-using Npgsql;
-using NpgsqlTypes;
+using System.Text.Json.Nodes;
+using Cmdb.Database;
+using Microsoft.EntityFrameworkCore;
+using DbCableMedium = Cmdb.Database.Model.CableMedium;
+using DbCableType = Cmdb.Database.Model.CableType;
+using DbEquipmentType = Cmdb.Database.Model.EquipmentType;
 
 namespace Cmdb.Catalog;
 
@@ -12,64 +16,44 @@ public static class CatalogSync
     /// Types missing from the catalog are left in place since equipment may reference them. Changing a port
     /// template does not regenerate ports on existing equipment; that is a data migration of its own.
     /// </remarks>
-    public static async Task<int> SyncAsync(NpgsqlDataSource db, TypeCatalog catalog, CancellationToken ct = default)
+    public static async Task<int> SyncAsync(CmdbDbContext db, TypeCatalog catalog, CancellationToken ct = default)
     {
-        await using var conn = await db.OpenConnectionAsync(ct);
-        await using var tx = await conn.BeginTransactionAsync(ct);
-        var written = 0;
+        var equipmentTypes = await db.EquipmentTypes.ToDictionaryAsync(t => t.Key, StringComparer.Ordinal, ct);
         foreach (var type in catalog.Types.OrderBy(t => t.Key, StringComparer.Ordinal))
         {
-            await using var cmd = new NpgsqlCommand("""
-                INSERT INTO equipment_type (key, manufacturer, model, category, rack_units, panel, port_template, slot_template, attribute_schema)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                ON CONFLICT (key) DO UPDATE SET
-                    manufacturer = EXCLUDED.manufacturer,
-                    model = EXCLUDED.model,
-                    category = EXCLUDED.category,
-                    rack_units = EXCLUDED.rack_units,
-                    panel = EXCLUDED.panel,
-                    port_template = EXCLUDED.port_template,
-                    slot_template = EXCLUDED.slot_template,
-                    attribute_schema = EXCLUDED.attribute_schema
-                WHERE (equipment_type.manufacturer, equipment_type.model, equipment_type.category, equipment_type.rack_units,
-                       equipment_type.panel, equipment_type.port_template, equipment_type.slot_template, equipment_type.attribute_schema)
-                      IS DISTINCT FROM
-                      (EXCLUDED.manufacturer, EXCLUDED.model, EXCLUDED.category, EXCLUDED.rack_units,
-                       EXCLUDED.panel, EXCLUDED.port_template, EXCLUDED.slot_template, EXCLUDED.attribute_schema)
-                """, conn, tx);
-            cmd.Parameters.Add(new() { Value = type.Key });
-            cmd.Parameters.Add(new() { Value = type.Manufacturer });
-            cmd.Parameters.Add(new() { Value = type.Model });
-            cmd.Parameters.Add(new() { Value = type.Category });
-            cmd.Parameters.Add(new() { Value = type.RackUnits.HasValue ? (short)type.RackUnits.Value : DBNull.Value, NpgsqlDbType = NpgsqlDbType.Smallint });
-            cmd.Parameters.Add(Jsonb(type.Panel));
-            cmd.Parameters.Add(Jsonb(type.Ports));
-            cmd.Parameters.Add(Jsonb(type.SlotList));
-            cmd.Parameters.Add(new() { Value = type.Attributes.GetRawText(), NpgsqlDbType = NpgsqlDbType.Jsonb });
-            written += await cmd.ExecuteNonQueryAsync(ct);
+            if (!equipmentTypes.TryGetValue(type.Key, out var row))
+            {
+                row = new DbEquipmentType { Key = type.Key, Manufacturer = type.Manufacturer, Model = type.Model, Category = type.Category };
+                db.EquipmentTypes.Add(row);
+            }
+            row.Manufacturer = type.Manufacturer;
+            row.Model = type.Model;
+            row.Category = type.Category;
+            row.RackUnits = (short?)type.RackUnits;
+            row.Panel = Json(row.Panel, JsonSerializer.Serialize(type.Panel, TypeCatalog.Json));
+            row.PortTemplate = Json(row.PortTemplate, JsonSerializer.Serialize(type.Ports, TypeCatalog.Json));
+            row.SlotTemplate = Json(row.SlotTemplate, JsonSerializer.Serialize(type.SlotList, TypeCatalog.Json));
+            row.AttributeSchema = Json(row.AttributeSchema, type.Attributes.GetRawText());
         }
+
+        var cableTypes = await db.CableTypes.ToDictionaryAsync(t => t.Key, StringComparer.Ordinal, ct);
         foreach (var type in catalog.CableTypes.OrderBy(t => t.Key, StringComparer.Ordinal))
         {
-            await using var cmd = new NpgsqlCommand("""
-                INSERT INTO cable_type (key, name, medium, conductor_count, color_code)
-                VALUES ($1, $2, $3::cable_medium, $4, $5)
-                ON CONFLICT (key) DO UPDATE SET
-                    name = EXCLUDED.name, medium = EXCLUDED.medium,
-                    conductor_count = EXCLUDED.conductor_count, color_code = EXCLUDED.color_code
-                WHERE (cable_type.name, cable_type.medium, cable_type.conductor_count, cable_type.color_code)
-                      IS DISTINCT FROM (EXCLUDED.name, EXCLUDED.medium, EXCLUDED.conductor_count, EXCLUDED.color_code)
-                """, conn, tx);
-            cmd.Parameters.Add(new() { Value = type.Key });
-            cmd.Parameters.Add(new() { Value = type.Name });
-            cmd.Parameters.Add(new() { Value = type.Medium });
-            cmd.Parameters.Add(new() { Value = type.ConductorCount });
-            cmd.Parameters.Add(new() { Value = (object?)type.ColorCode ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
-            written += await cmd.ExecuteNonQueryAsync(ct);
+            if (!cableTypes.TryGetValue(type.Key, out var row))
+            {
+                row = new DbCableType { Key = type.Key, Name = type.Name };
+                db.CableTypes.Add(row);
+            }
+            row.Name = type.Name;
+            row.Medium = Enum.Parse<DbCableMedium>(type.Medium, ignoreCase: true);
+            row.ConductorCount = type.ConductorCount;
+            row.ColorCode = type.ColorCode;
         }
-        await tx.CommitAsync(ct);
-        return written;
+
+        return await db.SaveChangesAsync(ct);
     }
 
-    private static NpgsqlParameter Jsonb<T>(T value) =>
-        new() { Value = JsonSerializer.Serialize(value, TypeCatalog.Json), NpgsqlDbType = NpgsqlDbType.Jsonb };
+    // jsonb normalises spacing and key order, so compare meaning and keep the stored text when nothing changed.
+    private static string Json(string current, string wanted) =>
+        JsonNode.DeepEquals(JsonNode.Parse(current), JsonNode.Parse(wanted)) ? current : wanted;
 }

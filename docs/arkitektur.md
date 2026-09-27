@@ -52,11 +52,12 @@ Grundregeln är att allt är nekat tills något uttryckligen beviljas. Omfång b
 
 ## Databas
 
-- Schemat är rena SQL-migreringar i `src/database/Migrations/NNNN_namn.sql` (ADR-0009). En applicerad fil ändras aldrig. Ändringar blir en ny migrering.
-- Migratorn kör under ett advisory lock, en transaktion per fil, och sparar kontrollsummor i `schema_migrations`.
+- **EF Core code-first (ADR-0009).** `CmdbDbContext` i `src/database` är den enda källan till schemat. Ändringar görs i modellen och blir en genererad migrering i `src/database/Migrations`, som granskas i PR. Ett test failar om modellen ändrats utan migrering.
+- Postgres-specifika delar uttrycks i modellen: PostGIS (NetTopologySuite), enums med naturlig ordning, check constraints, partiella index, `NULLS NOT DISTINCT` och genererade kolumner. SQL som EF inte kan uttrycka (till exempel RLS) läggs i en migrering med `migrationBuilder.Sql(...)`.
 - `terminal` är supertyp för `port` och `conductor_end`. Subtyperna refererar `(id, kind)`, så en terminal kan bara vara en sak.
 - `connection` lagras en gång per par med `a_terminal_id < b_terminal_id`.
 - Alla objekt har livscykel, giltighetstid (`valid_from`/`valid_to`) och provenance (`source_system`, `external_id`, `last_confirmed_at`).
+- Bulkvägar (datageneratorns `COPY`, grafmotorns laddning) använder Npgsql direkt mot tabellerna som EF äger, men ändrar aldrig schemat.
 
 ## Geografi
 
