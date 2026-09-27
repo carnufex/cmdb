@@ -10,6 +10,13 @@ server {
     proxy_set_header X-Forwarded-Proto $scheme;
   }
 
+  # Runtime settings for the SPA; overrides public/config.json (which is for ng serve).
+  location = /config.json {
+    default_type application/json;
+    add_header Cache-Control "no-store";
+    return 200 '{"oidcAuthority":"${OIDC_AUTHORITY}","oidcClientId":"${OIDC_CLIENT_ID}"}';
+  }
+
   location / {
     try_files $uri $uri/ /index.html;
   }

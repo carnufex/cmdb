@@ -37,6 +37,6 @@ Slash-kommandon: `/work-issue <nr>` och `/new-issue <beskrivning>` (se `.claude/
 ## Lokal miljö
 
 ```bash
-cp .env.example .env
+scripts/init-env.sh
 docker compose up -d
 ```

@@ -17,7 +17,18 @@
   font-weight: 600;
 }
 
-.synthetic {
+.synthetic,
+.groups {
   font-size: 0.75rem;
   opacity: 0.7;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.user {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
 }
