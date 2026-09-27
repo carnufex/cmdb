@@ -4,7 +4,7 @@ using NpgsqlTypes;
 
 namespace Cmdb.Catalog;
 
-/// <summary>Writes the catalog into <c>equipment_type</c>. Runs in the same step as the migrations.</summary>
+/// <summary>Writes the catalog into <c>equipment_type</c> and <c>cable_type</c>. Runs in the same step as the migrations.</summary>
 public static class CatalogSync
 {
     /// <summary>Inserts new types and updates changed ones. Returns the number of rows written.</summary>
@@ -46,6 +46,24 @@ public static class CatalogSync
             cmd.Parameters.Add(Jsonb(type.Ports));
             cmd.Parameters.Add(Jsonb(type.SlotList));
             cmd.Parameters.Add(new() { Value = type.Attributes.GetRawText(), NpgsqlDbType = NpgsqlDbType.Jsonb });
+            written += await cmd.ExecuteNonQueryAsync(ct);
+        }
+        foreach (var type in catalog.CableTypes.OrderBy(t => t.Key, StringComparer.Ordinal))
+        {
+            await using var cmd = new NpgsqlCommand("""
+                INSERT INTO cable_type (key, name, medium, conductor_count, color_code)
+                VALUES ($1, $2, $3::cable_medium, $4, $5)
+                ON CONFLICT (key) DO UPDATE SET
+                    name = EXCLUDED.name, medium = EXCLUDED.medium,
+                    conductor_count = EXCLUDED.conductor_count, color_code = EXCLUDED.color_code
+                WHERE (cable_type.name, cable_type.medium, cable_type.conductor_count, cable_type.color_code)
+                      IS DISTINCT FROM (EXCLUDED.name, EXCLUDED.medium, EXCLUDED.conductor_count, EXCLUDED.color_code)
+                """, conn, tx);
+            cmd.Parameters.Add(new() { Value = type.Key });
+            cmd.Parameters.Add(new() { Value = type.Name });
+            cmd.Parameters.Add(new() { Value = type.Medium });
+            cmd.Parameters.Add(new() { Value = type.ConductorCount });
+            cmd.Parameters.Add(new() { Value = (object?)type.ColorCode ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
             written += await cmd.ExecuteNonQueryAsync(ct);
         }
         await tx.CommitAsync(ct);

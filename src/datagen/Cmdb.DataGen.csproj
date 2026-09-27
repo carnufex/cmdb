@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Cmdb.DataGen</RootNamespace>
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\catalog\Cmdb.Catalog.csproj" />
+    <ProjectReference Include="..\database\Cmdb.Database.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Cmdb.Api.Tests" />
+    <InternalsVisibleTo Include="Cmdb.Api.IntegrationTests" />
+  </ItemGroup>
+</Project>
