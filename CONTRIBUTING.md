@@ -13,6 +13,10 @@ Samma flöde gäller för människor och agenter. Se [CLAUDE.md](CLAUDE.md) för
 | `status:in-progress` / `status:blocked` | Pågår / blockerat |
 | `needs-human` | Kräver mänskligt beslut eller granskning |
 
+## Verifiering
+
+GitHub Actions används inte just nu. `scripts/verify.sh` är CI: kör det innan PR och redovisa resultatet i PR-beskrivningen.
+
 ## Definition of done
 
 - Acceptanskriterierna i issuet är uppfyllda.
