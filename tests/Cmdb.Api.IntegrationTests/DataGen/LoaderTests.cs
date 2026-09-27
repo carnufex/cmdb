@@ -1,0 +1,71 @@
+using Cmdb.Catalog;
+using Cmdb.DataGen;
+using Cmdb.DataGen.Geo;
+using Npgsql;
+
+namespace Cmdb.Api.IntegrationTests.DataGen;
+
+public sealed class LoaderTests(ApiFactory factory)
+{
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
+    [Fact]
+    public async Task Loads_the_small_network_with_foreign_key_checks_on()
+    {
+        await using var db = await factory.NewDatabaseAsync();
+        var network = NetworkBuilder.Build(1, Scale.Small, TypeCatalog.Embedded);
+
+        // fast: false keeps every foreign key checked per row, which proves the generator's references.
+        await Loader.LoadAsync(db, network, reset: false, TextWriter.Null, fast: false, ct: Ct);
+
+        (await Count(db, "site")).ShouldBe(network.Sites.Count);
+        (await Count(db, "equipment")).ShouldBe(network.Equipment.Count);
+        (await Count(db, "port")).ShouldBe(network.Ports);
+        (await Count(db, "terminal")).ShouldBe(network.Terminals);
+        (await Count(db, "connection")).ShouldBe(network.Connections.Count);
+        (await Count(db, "circuit_hop")).ShouldBe(network.Hops.Count);
+        (await Count(db, "service")).ShouldBe(network.Services.Count);
+        await using var conn = await db.OpenConnectionAsync(Ct);
+        (await IntegrityCheck.RunAsync(conn, TextWriter.Null, Ct)).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Refuses_to_load_over_an_existing_network_unless_reset()
+    {
+        await using var db = await factory.NewDatabaseAsync();
+        var network = NetworkBuilder.Build(3, Scale.Small, TypeCatalog.Embedded);
+        await Loader.LoadAsync(db, network, reset: false, TextWriter.Null, ct: Ct);
+
+        await Should.ThrowAsync<InvalidOperationException>(() => Loader.LoadAsync(db, network, reset: false, TextWriter.Null, ct: Ct));
+        await Loader.LoadAsync(db, network, reset: true, TextWriter.Null, ct: Ct);
+
+        (await Count(db, "site")).ShouldBe(network.Sites.Count);
+        await using var cmd = db.CreateCommand("SELECT nextval(pg_get_serial_sequence('terminal', 'id'))");
+        ((long)(await cmd.ExecuteScalarAsync(Ct))!).ShouldBe(network.Terminals + 1);
+    }
+
+    [Theory]
+    [InlineData(55.40, 13.35)]
+    [InlineData(59.33, 18.07)]
+    [InlineData(63.80, 20.40)]
+    [InlineData(68.90, 20.60)]
+    public async Task Projection_matches_PostGIS(double latitude, double longitude)
+    {
+        var (x, y) = SwerefTm.FromLatLon(latitude, longitude);
+
+        await using var cmd = factory.Db.CreateCommand("SELECT ST_X(p), ST_Y(p) FROM (SELECT ST_Transform(ST_SetSRID(ST_MakePoint($1, $2), 4326), 3006) p) t");
+        cmd.Parameters.Add(new NpgsqlParameter { Value = longitude });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = latitude });
+        await using var reader = await cmd.ExecuteReaderAsync(Ct);
+        await reader.ReadAsync(Ct);
+
+        x.ShouldBe(reader.GetDouble(0), tolerance: 0.001);
+        y.ShouldBe(reader.GetDouble(1), tolerance: 0.001);
+    }
+
+    private static async Task<long> Count(NpgsqlDataSource db, string table)
+    {
+        await using var cmd = db.CreateCommand($"SELECT count(*) FROM {table}");
+        return (long)(await cmd.ExecuteScalarAsync(Ct))!;
+    }
+}

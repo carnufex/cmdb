@@ -2,11 +2,13 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Cmdb.Database;
 using Microsoft.EntityFrameworkCore;
+using DbCableMedium = Cmdb.Database.Model.CableMedium;
+using DbCableType = Cmdb.Database.Model.CableType;
 using DbEquipmentType = Cmdb.Database.Model.EquipmentType;
 
 namespace Cmdb.Catalog;
 
-/// <summary>Writes the catalog into <c>equipment_type</c>. Runs in the same step as the migrations.</summary>
+/// <summary>Writes the catalog into <c>equipment_type</c> and <c>cable_type</c>. Runs in the same step as the migrations.</summary>
 public static class CatalogSync
 {
     /// <summary>Inserts new types and updates changed ones. Returns the number of rows written.</summary>
@@ -16,10 +18,10 @@ public static class CatalogSync
     /// </remarks>
     public static async Task<int> SyncAsync(CmdbDbContext db, TypeCatalog catalog, CancellationToken ct = default)
     {
-        var existing = await db.EquipmentTypes.ToDictionaryAsync(t => t.Key, StringComparer.Ordinal, ct);
+        var equipmentTypes = await db.EquipmentTypes.ToDictionaryAsync(t => t.Key, StringComparer.Ordinal, ct);
         foreach (var type in catalog.Types.OrderBy(t => t.Key, StringComparer.Ordinal))
         {
-            if (!existing.TryGetValue(type.Key, out var row))
+            if (!equipmentTypes.TryGetValue(type.Key, out var row))
             {
                 row = new DbEquipmentType { Key = type.Key, Manufacturer = type.Manufacturer, Model = type.Model, Category = type.Category };
                 db.EquipmentTypes.Add(row);
@@ -33,6 +35,21 @@ public static class CatalogSync
             row.SlotTemplate = Json(row.SlotTemplate, JsonSerializer.Serialize(type.SlotList, TypeCatalog.Json));
             row.AttributeSchema = Json(row.AttributeSchema, type.Attributes.GetRawText());
         }
+
+        var cableTypes = await db.CableTypes.ToDictionaryAsync(t => t.Key, StringComparer.Ordinal, ct);
+        foreach (var type in catalog.CableTypes.OrderBy(t => t.Key, StringComparer.Ordinal))
+        {
+            if (!cableTypes.TryGetValue(type.Key, out var row))
+            {
+                row = new DbCableType { Key = type.Key, Name = type.Name };
+                db.CableTypes.Add(row);
+            }
+            row.Name = type.Name;
+            row.Medium = Enum.Parse<DbCableMedium>(type.Medium, ignoreCase: true);
+            row.ConductorCount = type.ConductorCount;
+            row.ColorCode = type.ColorCode;
+        }
+
         return await db.SaveChangesAsync(ct);
     }
 

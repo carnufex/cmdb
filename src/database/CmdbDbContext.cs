@@ -22,6 +22,12 @@ public sealed class CmdbDbContext(DbContextOptions<CmdbDbContext> options) : DbC
     public DbSet<Conductor> Conductors => Set<Conductor>();
     public DbSet<ConductorEnd> ConductorEnds => Set<ConductorEnd>();
     public DbSet<Connection> Connections => Set<Connection>();
+    public DbSet<Channel> Channels => Set<Channel>();
+    public DbSet<Service> Services => Set<Service>();
+    public DbSet<Circuit> Circuits => Set<Circuit>();
+    public DbSet<CircuitHop> CircuitHops => Set<CircuitHop>();
+    public DbSet<CircuitDependency> CircuitDependencies => Set<CircuitDependency>();
+    public DbSet<ServiceCircuit> ServiceCircuits => Set<ServiceCircuit>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -32,6 +38,8 @@ public sealed class CmdbDbContext(DbContextOptions<CmdbDbContext> options) : DbC
         modelBuilder.HasPostgresEnum("terminal_kind", ["port", "conductor_end"]);
         modelBuilder.HasPostgresEnum("connection_kind", ["patch", "splice", "termination", "internal"]);
         modelBuilder.HasPostgresEnum("cable_medium", ["fiber", "copper", "coax", "power"]);
+        modelBuilder.HasPostgresEnum("circuit_layer", ["physical", "transmission", "logical"]);
+        modelBuilder.HasPostgresEnum("channel_kind", ["wavelength", "timeslot", "vlan"]);
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(CmdbDbContext).Assembly);
     }
 }
@@ -51,6 +59,8 @@ public static class CmdbDatabase
         builder.MapEnum<TerminalKind>("terminal_kind");
         builder.MapEnum<ConnectionKind>("connection_kind");
         builder.MapEnum<CableMedium>("cable_medium");
+        builder.MapEnum<CircuitLayer>("circuit_layer");
+        builder.MapEnum<ChannelKind>("channel_kind");
         return builder.Build();
     }
 
@@ -61,7 +71,9 @@ public static class CmdbDatabase
                 .MapEnum<LifecycleState>("lifecycle_state")
                 .MapEnum<TerminalKind>("terminal_kind")
                 .MapEnum<ConnectionKind>("connection_kind")
-                .MapEnum<CableMedium>("cable_medium"))
+                .MapEnum<CableMedium>("cable_medium")
+                .MapEnum<CircuitLayer>("circuit_layer")
+                .MapEnum<ChannelKind>("channel_kind"))
             .UseSnakeCaseNamingConvention();
 
     public static CmdbDbContext CreateContext(NpgsqlDataSource dataSource)
@@ -71,16 +83,34 @@ public static class CmdbDatabase
         return new CmdbDbContext(options.Options);
     }
 
-    /// <summary>Applies pending migrations. EF Core locks the history table, so concurrent pods are safe.</summary>
+    // Arbitrary but fixed key for pg_advisory_lock.
+    private const long MigrationLockKey = 0x434D_4442_4D49_4752;
+
+    /// <summary>
+    /// Applies pending migrations. A session advisory lock serialises concurrent runs (several pods, a job and
+    /// the data generator); EF Core does not prevent two processes from applying the same migration.
+    /// </summary>
     public static async Task<IReadOnlyList<string>> MigrateAsync(NpgsqlDataSource dataSource, CancellationToken ct = default)
     {
-        await using var db = CreateContext(dataSource);
-        var pending = (await db.Database.GetPendingMigrationsAsync(ct)).ToList();
-        await db.Database.MigrateAsync(ct);
-        // Enums and PostGIS types created by a migration must be visible to already open connections.
-        await using var conn = await dataSource.OpenConnectionAsync(ct);
-        await conn.ReloadTypesAsync(ct);
-        return pending;
+        await using var lockConnection = await dataSource.OpenConnectionAsync(ct);
+        await using (var acquire = new NpgsqlCommand($"SELECT pg_advisory_lock({MigrationLockKey})", lockConnection))
+        {
+            await acquire.ExecuteNonQueryAsync(ct);
+        }
+        try
+        {
+            await using var db = CreateContext(dataSource);
+            var pending = (await db.Database.GetPendingMigrationsAsync(ct)).ToList();
+            await db.Database.MigrateAsync(ct);
+            // Enums and PostGIS types created by a migration must be visible to already open connections.
+            await lockConnection.ReloadTypesAsync(ct);
+            return pending;
+        }
+        finally
+        {
+            await using var release = new NpgsqlCommand($"SELECT pg_advisory_unlock({MigrationLockKey})", lockConnection);
+            await release.ExecuteNonQueryAsync(CancellationToken.None);
+        }
     }
 }
 

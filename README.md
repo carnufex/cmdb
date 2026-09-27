@@ -53,6 +53,31 @@ dotnet watch --project src/api          # http://localhost:5080, migrerar vid st
 cd src/web && npx ng serve              # http://localhost:4200, proxar /api till 5080
 ```
 
+## Syntetisk data
+
+`src/datagen` genererar ett deterministiskt, påhittat nät (samma seed ger alltid samma nät) och laddar det med binär `COPY`:
+
+```bash
+export PGPASSWORD=<CMDB_DB_PASSWORD från .env>
+dotnet run --project src/datagen -c Release -- --scale full --seed 1 --reset   # small | medium | full
+dotnet run --project src/datagen -c Release -- --scale full --dry-run          # bara räkna och visa fingeravtryck
+```
+
+Topologin är ett maskat stamnät mellan nav, aggregeringsringar och accessgrenar inom en grov kontur av Sverige. Den följer inga verkliga nät och alla namn är koder. Full skala (seed 1) ger:
+
+| Objekt | Antal |
+|---|---|
+| Siter | 40 000 |
+| Utrustningar | 224 707 |
+| Portar | 5 011 935 |
+| Kablar | 42 771 |
+| Ledare | 1 300 364 |
+| Kopplingar | 3 010 766 |
+| Kretsar (fysiska, transmission, logiska) | 117 025 |
+| Tjänster | 65 681 |
+
+Genereringen tar ungefär en sekund och laddningen under två minuter på en utvecklingsmaskin, inklusive kontroll av alla främmande nycklar.
+
 ## Bygga och testa
 
 Krav: .NET SDK 10, Node 24.15+ och Docker (för integrationstester och containrar).

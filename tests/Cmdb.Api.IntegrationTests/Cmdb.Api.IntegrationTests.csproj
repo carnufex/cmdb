@@ -11,6 +11,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\api\Cmdb.Api.csproj" />
+    <ProjectReference Include="..\..\src\datagen\Cmdb.DataGen.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />

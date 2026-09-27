@@ -101,4 +101,28 @@ internal static class CatalogRules
             errors.Add($"{duplicate.Key.Manufacturer} {duplicate.Key.Model} is defined more than once");
         }
     }
+
+    public static void CheckCableTypes(List<CableType> cableTypes, List<string> errors)
+    {
+        foreach (var type in cableTypes)
+        {
+            if (type.Key is null || type.Name is null || type.Medium is null)
+            {
+                errors.Add("cable-types.json: key, name and medium are required");
+                continue;
+            }
+            if (!TypeCatalog.CableMedia.Contains(type.Medium))
+            {
+                errors.Add($"cable-types.json: '{type.Key}' has unknown medium '{type.Medium}'");
+            }
+            if (type.ConductorCount < 1)
+            {
+                errors.Add($"cable-types.json: '{type.Key}' must have at least one conductor");
+            }
+        }
+        foreach (var duplicate in cableTypes.GroupBy(t => t.Key).Where(g => g.Count() > 1))
+        {
+            errors.Add($"cable-types.json: key '{duplicate.Key}' is used more than once");
+        }
+    }
 }

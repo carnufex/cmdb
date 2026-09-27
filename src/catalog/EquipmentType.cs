@@ -52,3 +52,6 @@ public sealed record SlotTemplate(string Name, IReadOnlyList<string> Accepts);
 
 /// <summary>A concrete port generated from a template.</summary>
 public sealed record Port(string Name, string Type, string? Group, int Position, int Row, int Column);
+
+/// <summary>A cable model from <c>catalog/cable-types.json</c>. Medium is fiber, copper, coax or power.</summary>
+public sealed record CableType(string Key, string Name, string Medium, int ConductorCount, string? ColorCode = null);

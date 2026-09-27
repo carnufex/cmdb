@@ -9,6 +9,9 @@
   <Folder Name="/src/database/">
     <Project Path="src/database/Cmdb.Database.csproj" />
   </Folder>
+  <Folder Name="/src/datagen/">
+    <Project Path="src/datagen/Cmdb.DataGen.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Cmdb.Api.IntegrationTests/Cmdb.Api.IntegrationTests.csproj" />
     <Project Path="tests/Cmdb.Api.Tests/Cmdb.Api.Tests.csproj" />
