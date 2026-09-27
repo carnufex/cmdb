@@ -28,6 +28,7 @@ public sealed class CmdbDbContext(DbContextOptions<CmdbDbContext> options) : DbC
     public DbSet<CircuitHop> CircuitHops => Set<CircuitHop>();
     public DbSet<CircuitDependency> CircuitDependencies => Set<CircuitDependency>();
     public DbSet<ServiceCircuit> ServiceCircuits => Set<ServiceCircuit>();
+    public DbSet<UserPreference> UserPreferences => Set<UserPreference>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
