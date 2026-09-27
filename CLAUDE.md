@@ -30,7 +30,7 @@ Slash-kommandon: `/work-issue <nr>` och `/new-issue <beskrivning>` (se `.claude/
 - **Språk:** kod, identifierare och commit-meddelanden på engelska. Dokumentation, issues och PR-beskrivningar på svenska.
 - **Backend:** .NET 10, FastEndpoints, vertical slices (en mapp per feature med endpoint, request/response, validering, handler och test). Inga generiska "services"-lager.
 - **Frontend:** Angular med standalone-komponenter och signals. All styling via design-tokens. Status visas med prick och text.
-- **Databas:** migreringar versionerade i repot. Geometri i EPSG:3006.
+- **Databas:** EF Core code-first (ADR-0009). Schemat ändras bara via modellen och `dotnet ef migrations add`, aldrig direkt i databasen. Bulkvägar får använda Npgsql/`COPY` mot EF-schemat. Geometri i EPSG:3006.
 - **Tester:** enhetstester för domänlogik, integrationstester mot riktig Postgres (Testcontainers), benchmarks för grafmotorn.
 - **Containrar:** OpenShift-kompatibla (icke-root, godtyckligt UID).
 

@@ -28,7 +28,8 @@ var builder = WebApplication.CreateBuilder(args);
 
 var connectionString = builder.Configuration.GetConnectionString("Cmdb")
     ?? throw new InvalidOperationException("ConnectionStrings:Cmdb is not configured.");
-builder.Services.AddSingleton(_ => NpgsqlDataSource.Create(connectionString));
+builder.Services.AddSingleton(_ => CmdbDatabase.CreateDataSource(connectionString));
+builder.Services.AddDbContext<CmdbDbContext>((sp, o) => o.UseCmdb(sp.GetRequiredService<NpgsqlDataSource>()));
 builder.Services.AddSingleton(TypeCatalog.Embedded);
 builder.Services.AddCmdbAuthentication(builder.Configuration);
 builder.Services.AddFastEndpoints();
@@ -39,11 +40,11 @@ var app = builder.Build();
 var migrateOnly = args.Contains("--migrate");
 if (migrateOnly || app.Configuration.GetValue<bool>("Database:MigrateOnStartup"))
 {
-    var db = app.Services.GetRequiredService<NpgsqlDataSource>();
-    var applied = await Migrator.MigrateAsync(db);
+    var applied = await CmdbDatabase.MigrateAsync(app.Services.GetRequiredService<NpgsqlDataSource>());
     StartupLog.MigrationsApplied(app.Logger, applied.Count, applied);
     // The type catalog is versioned data and ships with the schema.
-    var synced = await CatalogSync.SyncAsync(db, TypeCatalog.Embedded);
+    await using var scope = app.Services.CreateAsyncScope();
+    var synced = await CatalogSync.SyncAsync(scope.ServiceProvider.GetRequiredService<CmdbDbContext>(), TypeCatalog.Embedded);
     StartupLog.CatalogSynced(app.Logger, synced);
     if (migrateOnly)
     {
@@ -62,7 +63,7 @@ public partial class Program;
 internal static partial class StartupLog
 {
     [LoggerMessage(Level = LogLevel.Information, Message = "Applied {Count} migration(s): {Versions}")]
-    public static partial void MigrationsApplied(ILogger logger, int count, IReadOnlyList<int> versions);
+    public static partial void MigrationsApplied(ILogger logger, int count, IReadOnlyList<string> versions);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Equipment type catalog synced, {Count} type(s) written")]
     public static partial void CatalogSynced(ILogger logger, int count);
