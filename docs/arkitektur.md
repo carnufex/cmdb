@@ -50,6 +50,14 @@ Grundregeln är att allt är nekat tills något uttryckligen beviljas. Omfång b
 4. Postgres Row Level Security som sista spärr.
 5. Objekt som korsar en polygongräns: modellen stöder både hel visning och klippning (konfigurerbart).
 
+## Databas
+
+- Schemat är rena SQL-migreringar i `src/database/Migrations/NNNN_namn.sql` (ADR-0009). En applicerad fil ändras aldrig. Ändringar blir en ny migrering.
+- Migratorn kör under ett advisory lock, en transaktion per fil, och sparar kontrollsummor i `schema_migrations`.
+- `terminal` är supertyp för `port` och `conductor_end`. Subtyperna refererar `(id, kind)`, så en terminal kan bara vara en sak.
+- `connection` lagras en gång per par med `a_terminal_id < b_terminal_id`.
+- Alla objekt har livscykel, giltighetstid (`valid_from`/`valid_to`) och provenance (`source_system`, `external_id`, `last_confirmed_at`).
+
 ## Geografi
 
 - Lagring i SWEREF 99 TM (EPSG:3006), så att längder och avstånd blir korrekta.

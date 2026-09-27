@@ -3,7 +3,9 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 COPY global.json Directory.Build.props Directory.Packages.props .editorconfig ./
 COPY src/api/Cmdb.Api.csproj src/api/
+COPY src/database/Cmdb.Database.csproj src/database/
 RUN dotnet restore src/api/Cmdb.Api.csproj
+COPY src/database/ src/database/
 COPY src/api/ src/api/
 RUN dotnet publish src/api/Cmdb.Api.csproj -c Release -o /app --no-restore
 
