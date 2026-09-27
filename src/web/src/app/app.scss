@@ -1,0 +1,23 @@
+:host {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  min-height: 100dvh;
+}
+
+// Placeholder shell. Design tokens and themes arrive with the app shell issue.
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+}
+
+.product {
+  font-weight: 600;
+}
+
+.synthetic {
+  font-size: 0.75rem;
+  opacity: 0.7;
+}

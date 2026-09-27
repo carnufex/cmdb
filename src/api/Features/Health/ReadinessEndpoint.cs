@@ -1,0 +1,28 @@
+using FastEndpoints;
+using Npgsql;
+
+namespace Cmdb.Api.Features.Health;
+
+/// <summary>Ready to serve traffic: the database answers.</summary>
+public sealed class ReadinessEndpoint(NpgsqlDataSource db) : EndpointWithoutRequest<HealthResponse>
+{
+    public override void Configure()
+    {
+        Get("/health/ready");
+        AllowAnonymous();
+    }
+
+    public override async Task HandleAsync(CancellationToken ct)
+    {
+        try
+        {
+            await using var cmd = db.CreateCommand("SELECT 1");
+            await cmd.ExecuteScalarAsync(ct);
+            await Send.OkAsync(new HealthResponse("ok"), ct);
+        }
+        catch (NpgsqlException)
+        {
+            await Send.ResponseAsync(new HealthResponse("database unavailable"), StatusCodes.Status503ServiceUnavailable, ct);
+        }
+    }
+}
