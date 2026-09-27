@@ -1,0 +1,49 @@
+{
+  "key": "acme-rr-4",
+  "manufacturer": "Acme Radio",
+  "model": "RR-4",
+  "category": "radio",
+  "panel": { "rows": 1, "columns": 7 },
+  "ports": [
+    {
+      "name": "ant{n}",
+      "range": [1, 4],
+      "type": "N",
+      "group": "antenna",
+      "at": [0, 0],
+      "layout": "row"
+    },
+    {
+      "name": "cpri{n}",
+      "range": [1, 2],
+      "type": "LC",
+      "group": "fronthaul",
+      "at": [0, 4],
+      "layout": "row"
+    },
+    {
+      "name": "dc",
+      "type": "DC",
+      "group": "power",
+      "at": [0, 6]
+    }
+  ],
+  "attributes": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "serialNumber": {
+        "type": "string"
+      },
+      "bandMHz": {
+        "enum": [700, 800, 900, 1800, 2100, 2600, 3500]
+      },
+      "transmitPowerW": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 200
+      }
+    },
+    "additionalProperties": false
+  }
+}

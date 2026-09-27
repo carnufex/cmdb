@@ -1,0 +1,41 @@
+{
+  "key": "acme-pdu-12",
+  "manufacturer": "Acme Power",
+  "model": "PDU-12",
+  "category": "power",
+  "rackUnits": 1,
+  "panel": { "rows": 1, "columns": 13 },
+  "ports": [
+    {
+      "name": "in",
+      "type": "DC",
+      "group": "input",
+      "at": [0, 0]
+    },
+    {
+      "name": "out{n}",
+      "range": [1, 12],
+      "type": "DC",
+      "group": "output",
+      "at": [0, 1],
+      "layout": "row"
+    }
+  ],
+  "attributes": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "serialNumber": {
+        "type": "string"
+      },
+      "nominalVoltage": {
+        "enum": [-48, 24, 230]
+      },
+      "capacityAh": {
+        "type": "number",
+        "minimum": 0
+      }
+    },
+    "additionalProperties": false
+  }
+}

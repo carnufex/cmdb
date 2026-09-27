@@ -1,0 +1,40 @@
+{
+  "key": "acme-ant-4p",
+  "manufacturer": "Acme Radio",
+  "model": "ANT-4P",
+  "category": "antenna",
+  "panel": { "rows": 1, "columns": 4 },
+  "ports": [
+    {
+      "name": "port{n}",
+      "range": [1, 4],
+      "type": "N",
+      "group": "antenna",
+      "at": [0, 0],
+      "layout": "row"
+    }
+  ],
+  "attributes": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "azimuthDeg": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 359
+      },
+      "tiltDeg": {
+        "type": "number",
+        "minimum": -15,
+        "maximum": 15
+      },
+      "heightM": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 300
+      }
+    },
+    "required": ["azimuthDeg"],
+    "additionalProperties": false
+  }
+}

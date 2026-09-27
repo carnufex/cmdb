@@ -1,0 +1,50 @@
+{
+  "key": "acme-bb-6",
+  "manufacturer": "Acme Radio",
+  "model": "BB-6",
+  "category": "radio",
+  "rackUnits": 1,
+  "panel": { "rows": 1, "columns": 9 },
+  "ports": [
+    {
+      "name": "cpri{n}",
+      "range": [1, 6],
+      "type": "LC",
+      "group": "fronthaul",
+      "at": [0, 0],
+      "layout": "row"
+    },
+    {
+      "name": "bh{n}",
+      "range": [1, 2],
+      "type": "SFP+",
+      "group": "backhaul",
+      "at": [0, 6],
+      "layout": "row"
+    },
+    {
+      "name": "mgmt",
+      "type": "RJ45",
+      "group": "management",
+      "at": [0, 8]
+    }
+  ],
+  "attributes": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "serialNumber": {
+        "type": "string"
+      },
+      "bandMHz": {
+        "enum": [700, 800, 900, 1800, 2100, 2600, 3500]
+      },
+      "transmitPowerW": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 200
+      }
+    },
+    "additionalProperties": false
+  }
+}

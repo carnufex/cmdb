@@ -1,0 +1,42 @@
+{
+  "key": "acme-ix-8",
+  "manufacturer": "Acme Networks",
+  "model": "IX-8",
+  "category": "switch",
+  "panel": { "rows": 1, "columns": 10 },
+  "ports": [
+    {
+      "name": "ge-0/0/{n}",
+      "range": [1, 8],
+      "type": "RJ45",
+      "group": "access",
+      "at": [0, 0],
+      "layout": "row"
+    },
+    {
+      "name": "xe-0/1/{n}",
+      "range": [1, 2],
+      "type": "SFP",
+      "group": "uplink",
+      "at": [0, 8],
+      "layout": "row"
+    }
+  ],
+  "attributes": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "serialNumber": {
+        "type": "string"
+      },
+      "firmware": {
+        "type": "string"
+      },
+      "managementIp": {
+        "type": "string",
+        "format": "ipv4"
+      }
+    },
+    "additionalProperties": false
+  }
+}

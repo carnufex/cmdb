@@ -1,0 +1,47 @@
+{
+  "key": "acme-rect-48",
+  "manufacturer": "Acme Power",
+  "model": "RECT-48",
+  "category": "power",
+  "rackUnits": 2,
+  "panel": { "rows": 1, "columns": 10 },
+  "ports": [
+    {
+      "name": "ac",
+      "type": "AC",
+      "group": "input",
+      "at": [0, 0]
+    },
+    {
+      "name": "out{n}",
+      "range": [1, 8],
+      "type": "DC",
+      "group": "output",
+      "at": [0, 1],
+      "layout": "row"
+    },
+    {
+      "name": "mon",
+      "type": "RJ45",
+      "group": "management",
+      "at": [0, 9]
+    }
+  ],
+  "attributes": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "serialNumber": {
+        "type": "string"
+      },
+      "nominalVoltage": {
+        "enum": [-48, 24, 230]
+      },
+      "capacityAh": {
+        "type": "number",
+        "minimum": 0
+      }
+    },
+    "additionalProperties": false
+  }
+}

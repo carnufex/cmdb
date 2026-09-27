@@ -1,0 +1,55 @@
+{
+  "key": "acme-odf-48",
+  "manufacturer": "Acme Optical",
+  "model": "ODF-48",
+  "category": "odf",
+  "rackUnits": 2,
+  "panel": { "rows": 4, "columns": 12 },
+  "ports": [
+    {
+      "name": "{n}",
+      "range": [1, 12],
+      "type": "LC",
+      "group": "front",
+      "at": [0, 0],
+      "layout": "row"
+    },
+    {
+      "name": "{n}",
+      "range": [13, 24],
+      "type": "LC",
+      "group": "front",
+      "at": [1, 0],
+      "layout": "row"
+    },
+    {
+      "name": "{n}",
+      "range": [25, 36],
+      "type": "LC",
+      "group": "front",
+      "at": [2, 0],
+      "layout": "row"
+    },
+    {
+      "name": "{n}",
+      "range": [37, 48],
+      "type": "LC",
+      "group": "front",
+      "at": [3, 0],
+      "layout": "row"
+    }
+  ],
+  "attributes": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "connector": {
+        "enum": ["LC", "SC"]
+      },
+      "label": {
+        "type": "string"
+      }
+    },
+    "additionalProperties": false
+  }
+}

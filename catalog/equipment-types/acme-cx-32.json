@@ -1,0 +1,35 @@
+{
+  "key": "acme-cx-32",
+  "manufacturer": "Acme Networks",
+  "model": "CX-32",
+  "category": "switch",
+  "rackUnits": 1,
+  "panel": { "rows": 2, "columns": 16 },
+  "ports": [
+    {
+      "name": "et-0/0/{n}",
+      "range": [1, 32],
+      "type": "QSFP28",
+      "group": "core",
+      "at": [0, 0],
+      "layout": "zigzag"
+    }
+  ],
+  "attributes": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "serialNumber": {
+        "type": "string"
+      },
+      "firmware": {
+        "type": "string"
+      },
+      "managementIp": {
+        "type": "string",
+        "format": "ipv4"
+      }
+    },
+    "additionalProperties": false
+  }
+}

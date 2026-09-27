@@ -3,6 +3,9 @@
   <Folder Name="/src/api/">
     <Project Path="src/api/Cmdb.Api.csproj" />
   </Folder>
+  <Folder Name="/src/catalog/">
+    <Project Path="src/catalog/Cmdb.Catalog.csproj" />
+  </Folder>
   <Folder Name="/src/database/">
     <Project Path="src/database/Cmdb.Database.csproj" />
   </Folder>

@@ -1,0 +1,46 @@
+{
+  "key": "acme-ot-40",
+  "manufacturer": "Acme Optical",
+  "model": "OT-40",
+  "category": "transmission",
+  "rackUnits": 2,
+  "panel": { "rows": 2, "columns": 21 },
+  "ports": [
+    {
+      "name": "ch{n}",
+      "range": [1, 40],
+      "type": "LC",
+      "group": "client",
+      "at": [0, 0],
+      "layout": "zigzag"
+    },
+    {
+      "name": "line-in",
+      "type": "LC",
+      "group": "line",
+      "at": [0, 20]
+    },
+    {
+      "name": "line-out",
+      "type": "LC",
+      "group": "line",
+      "at": [1, 20]
+    }
+  ],
+  "attributes": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "serialNumber": {
+        "type": "string"
+      },
+      "channelPlan": {
+        "type": "string"
+      },
+      "lineRateGbps": {
+        "enum": [10, 100, 400]
+      }
+    },
+    "additionalProperties": false
+  }
+}

@@ -1,3 +1,4 @@
+using Cmdb.Catalog;
 using Cmdb.Database;
 using System.Security.Claims;
 using System.Security.Cryptography;
@@ -35,6 +36,7 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         await _container.StartAsync();
         Db = NpgsqlDataSource.Create(ConnectionString);
         await Migrator.MigrateAsync(Db);
+        await CatalogSync.SyncAsync(Db, TypeCatalog.Embedded);
     }
 
     /// <summary>Creates an empty database with PostGIS available but no migrations applied.</summary>

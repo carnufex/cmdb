@@ -1,0 +1,39 @@
+{
+  "key": "acme-bat-100",
+  "manufacturer": "Acme Power",
+  "model": "BAT-100",
+  "category": "power",
+  "rackUnits": 3,
+  "panel": { "rows": 1, "columns": 2 },
+  "ports": [
+    {
+      "name": "plus",
+      "type": "DC",
+      "group": "terminal",
+      "at": [0, 0]
+    },
+    {
+      "name": "minus",
+      "type": "DC",
+      "group": "terminal",
+      "at": [0, 1]
+    }
+  ],
+  "attributes": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "serialNumber": {
+        "type": "string"
+      },
+      "nominalVoltage": {
+        "enum": [-48, 24, 230]
+      },
+      "capacityAh": {
+        "type": "number",
+        "minimum": 0
+      }
+    },
+    "additionalProperties": false
+  }
+}
