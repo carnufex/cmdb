@@ -76,10 +76,23 @@ Innan en PR körs hela kedjan (format, bygg, test, lint och valfritt containerby
 scripts/verify.sh            # --images bygger även containrarna
 ```
 
+### Schemaändringar
+
+Schemat ägs av EF Core-modellen i `src/database` (ADR-0009). Ändra modellen och generera en migrering:
+
+```bash
+dotnet tool restore
+dotnet ef migrations add <Namn> --project src/database --output-dir Migrations
+```
+
+Migreringarna körs vid start i utvecklingsläge och med `dotnet Cmdb.Api.dll --migrate` i drift. Gör aldrig ändringar direkt i databasen.
+
 | Katalog | Innehåll |
 |---|---|
 | `src/api` | .NET 10-API, FastEndpoints, en mapp per feature under `Features/` |
 | `src/web` | Angular-app (standalone-komponenter, signals) |
+| `src/database` | EF Core-modell och migreringar |
+| `src/catalog` | Typkatalogen: laddning, validering, portexpansion och synk |
 | `tests/Cmdb.Api.Tests` | Enhetstester |
 | `tests/Cmdb.Api.IntegrationTests` | Integrationstester mot riktig PostGIS |
 

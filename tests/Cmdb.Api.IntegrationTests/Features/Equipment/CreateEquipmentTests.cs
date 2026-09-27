@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using Cmdb.Api.Features.Equipment;
 using Cmdb.Catalog;
+using Cmdb.Database;
 
 namespace Cmdb.Api.IntegrationTests.Features.Equipment;
 
@@ -80,7 +81,8 @@ public sealed class CreateEquipmentTests(ApiFactory factory)
     [Fact]
     public async Task Catalog_sync_is_idempotent()
     {
-        (await CatalogSync.SyncAsync(factory.Db, TypeCatalog.Embedded, Ct)).ShouldBe(0);
+        await using var context = CmdbDatabase.CreateContext(factory.Db);
+        (await CatalogSync.SyncAsync(context, TypeCatalog.Embedded, Ct)).ShouldBe(0);
         (await Scalar<long>("SELECT count(*) FROM equipment_type WHERE key LIKE 'acme-%'")).ShouldBe(TypeCatalog.Embedded.Types.Count);
     }
 

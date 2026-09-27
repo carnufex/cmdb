@@ -5,7 +5,6 @@
   <ItemGroup>
     <PackageReference Include="FastEndpoints" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
-    <PackageReference Include="Npgsql" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Cmdb.Api.Tests" />

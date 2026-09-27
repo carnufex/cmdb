@@ -34,9 +34,10 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     public async ValueTask InitializeAsync()
     {
         await _container.StartAsync();
-        Db = NpgsqlDataSource.Create(ConnectionString);
-        await Migrator.MigrateAsync(Db);
-        await CatalogSync.SyncAsync(Db, TypeCatalog.Embedded);
+        Db = CmdbDatabase.CreateDataSource(ConnectionString);
+        await CmdbDatabase.MigrateAsync(Db);
+        await using var context = CmdbDatabase.CreateContext(Db);
+        await CatalogSync.SyncAsync(context, TypeCatalog.Embedded);
     }
 
     /// <summary>Creates an empty database with PostGIS available but no migrations applied.</summary>
@@ -47,7 +48,7 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         {
             await cmd.ExecuteNonQueryAsync();
         }
-        return NpgsqlDataSource.Create(new NpgsqlConnectionStringBuilder(ConnectionString) { Database = name }.ConnectionString);
+        return CmdbDatabase.CreateDataSource(new NpgsqlConnectionStringBuilder(ConnectionString) { Database = name }.ConnectionString);
     }
 
     public const string Issuer = "https://idp.test/application/o/cmdb/";
