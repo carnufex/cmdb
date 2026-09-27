@@ -3,6 +3,7 @@ import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 import { Auth } from './auth/auth';
 import { PanelStack } from './shell/panels';
+import { SearchComponent } from './shell/search';
 import { ThemeStore } from './shell/theme';
 
 /** The user as the API sees them (GET /api/me). */
@@ -15,7 +16,7 @@ export interface Me {
 
 @Component({
   selector: 'app-root',
-  imports: [RouterOutlet],
+  imports: [RouterOutlet, SearchComponent],
   templateUrl: './app.html',
   styleUrl: './app.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

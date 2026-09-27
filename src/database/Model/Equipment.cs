@@ -76,5 +76,6 @@ internal sealed class EquipmentConfiguration : IEntityTypeConfiguration<Equipmen
         e.HasOne(x => x.Parent).WithMany().OnDelete(DeleteBehavior.Restrict);
         e.Property(x => x.Attributes).HasColumnType("jsonb").HasDefaultValueSql("'{}'");
         e.HasIndex(x => new { x.ParentId, x.Slot }).IsUnique().HasFilter("parent_id IS NOT NULL");
+        e.HasIndex(x => x.Name, "ix_equipment_name_trgm").HasMethod("gin").HasOperators("gin_trgm_ops").HasDatabaseName("ix_equipment_name_trgm");
     }
 }

@@ -35,6 +35,7 @@ import {
   tileUrl,
 } from './map-grid';
 import { createStyler, Palette, readPalette } from './map-style';
+import { MapView } from './map-view';
 
 interface Hover {
   x: number;
@@ -59,6 +60,7 @@ export class MapComponent {
   private readonly config = inject(RUNTIME_CONFIG);
   private readonly panels = inject(PanelStack);
   private readonly theme = inject(ThemeStore);
+  private readonly mapView = inject(MapView);
   private readonly host = inject(ElementRef<HTMLElement>);
   private readonly target = viewChild.required<ElementRef<HTMLDivElement>>('target');
 
@@ -84,6 +86,18 @@ export class MapComponent {
       this.panels.top();
       this.network?.changed();
     });
+    // Other parts of the app (search, panels) ask the map to go somewhere.
+    effect(() => {
+      const focus = this.mapView.focusRequest();
+      const view = this.map?.getView();
+      if (focus && view) {
+        view.animate({
+          center: [focus.x, focus.y],
+          zoom: Math.max(view.getZoom() ?? 0, 8),
+          duration: 400,
+        });
+      }
+    });
   }
 
   private create(): void {
@@ -107,7 +121,8 @@ export class MapComponent {
       }),
       style: styler,
       declutter: false,
-      renderMode: 'hybrid',
+      // Vector mode redraws interim tiles as vectors while zooming, instead of scaling blurry images.
+      renderMode: 'vector',
     });
 
     const layers: (TileLayer | VectorTileLayer)[] = [this.network];
@@ -127,6 +142,12 @@ export class MapComponent {
       }),
     });
     this.map.getView().fit(HOME_EXTENT, { padding: [24, 24, 24, 24] });
+    const reportCenter = () => {
+      const [x, y] = this.map!.getView().getCenter() ?? [0, 0];
+      this.mapView.center.set({ x, y });
+    };
+    reportCenter();
+    this.map.on('moveend', reportCenter);
     this.zoom.set(Math.round(this.map.getView().getZoom() ?? 0));
     this.map
       .getView()

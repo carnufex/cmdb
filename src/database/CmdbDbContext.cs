@@ -33,6 +33,7 @@ public sealed class CmdbDbContext(DbContextOptions<CmdbDbContext> options) : DbC
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasPostgresExtension("postgis");
+        modelBuilder.HasPostgresExtension("pg_trgm");
 
         // Declared explicitly so the labels keep their natural order; enum order is what ORDER BY and < use.
         modelBuilder.HasPostgresEnum("lifecycle_state", ["planned", "under_construction", "in_service", "decommissioning", "removed"]);
