@@ -41,6 +41,18 @@ Klient, grupper och användare definieras i blueprinten `apps-cmdb.yaml` i `Rose
 
 Portarna styrs av `CMDB_*_PORT` i `.env`. API:t kör migreringarna vid start i compose (`Database__MigrateOnStartup`). I drift körs de som ett separat steg: `dotnet Cmdb.Api.dll --migrate`.
 
+### Vad finns i appen
+
+- **Karta** över hela nätet i SWEREF 99 TM. Nav och aggregering syns direkt, accessiter och små kablar från zoom 5. Färg betyder status.
+- **Snabbsök** (Ctrl+K eller `/`) över siter, utrustning (även serienummer och IP), kablar, tjänster och kretsar. Ett val öppnar objektet och flyger kartan dit.
+- **Objektpaneler** som staplas till höger med brödsmulor. Allt ligger i URL:en (`?p=site:42,equipment:7`), så bakåt och framåt i webbläsaren och delbara länkar fungerar. Varje referens är en länk med hover-kort.
+  - **Site:** utrustning per rack, kablar till grannsiter och påverkan.
+  - **Utrustning:** frontpanel ritad ur portmallen, vad varje port är kopplad till, kort i slotar och attribut.
+  - **Kabel:** ändar, ledare i bruk, kretsar genom kabeln och vilka tjänster som berörs om den kapas.
+  - **Tjänst och krets:** vägen hopp för hopp genom lagren.
+- **Redigering direkt i panelen** för namn och livscykel på siter och utrustning (gruppen `cmdb-full`).
+- **Mörkt och ljust tema**, sparat i användarprofilen.
+
 ### Utveckling med hot reload
 
 Kör databasen i Docker och apparna lokalt:

@@ -95,3 +95,13 @@
   min-width: 0;
   position: relative;
 }
+
+.panels {
+  display: flex;
+  flex-direction: column;
+  width: var(--panel-width);
+  max-width: 100%;
+  min-height: 0;
+  background: var(--surface-1);
+  border-left: var(--line);
+}

@@ -41,4 +41,9 @@
   <section class="lens">
     <router-outlet />
   </section>
+  @if (panels.top()) {
+    <aside class="panels" aria-label="Objekt">
+      <cmdb-panel-host />
+    </aside>
+  }
 </main>
