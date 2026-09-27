@@ -1,4 +1,4 @@
-import { computed, inject, Injectable } from '@angular/core';
+import { computed, inject, Injectable, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { map } from 'rxjs';
@@ -33,6 +33,20 @@ export class PanelStack {
   );
 
   readonly top = computed(() => this.panels().at(-1) ?? null);
+
+  /** Human labels for the breadcrumb, filled in by panels once their object has loaded. */
+  private readonly labels = signal<ReadonlyMap<string, string>>(new Map());
+
+  label(ref: ObjectRef): string | undefined {
+    return this.labels().get(`${ref.type}:${ref.id}`);
+  }
+
+  setLabel(ref: ObjectRef, label: string): void {
+    const key = `${ref.type}:${ref.id}`;
+    if (this.labels().get(key) !== label) {
+      this.labels.update((m) => new Map(m).set(key, label));
+    }
+  }
 
   /** Opens an object on top of the stack. From the search or the map, pass replace to start a new stack. */
   open(ref: ObjectRef, options: { replace?: boolean } = {}): void {
