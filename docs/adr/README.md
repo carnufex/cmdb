@@ -14,3 +14,4 @@ Nya beslut: kopiera närmaste ADR, öka numret och sätt status **Föreslagen**.
 | [0008](0008-oidc-authentik.md) | OIDC med homelabbets Authentik |
 | [0009](0009-ef-core-code-first.md) | EF Core code-first för schema och migreringar |
 | [0010](0010-kartbakgrund-esri-i-poc.md) | Kartbakgrund från Esri i POC:en (ersätter bakgrundsdelen av 0004) |
+| [0011](0011-agentic-first-mcp.md) | Agentic-first: MCP-server i API:t, agenter som vanliga konsumenter (föreslagen) |
