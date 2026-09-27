@@ -19,35 +19,34 @@ Befintliga CMDB-verktyg för telekom är ofta långsamma, klickintensiva och sv�
 Krav: Docker med Compose v2.
 
 ```bash
-scripts/init-env.sh         # skapar .env med slumpade hemligheter och skriver ut demolösenordet
+scripts/init-env.sh         # skapar .env med slumpade hemligheter
 docker compose up -d --build
 ```
 
-Öppna http://localhost:8480. Du skickas till Authentik och loggar in som någon av demoanvändarna, alla med lösenordet `CMDB_DEMO_PASSWORD` från `.env`:
+Öppna http://localhost:8480. Inloggningen går mot homelabbets Authentik (`https://authentik.rosenvall.se`). Där finns tre syntetiska demoanvändare, alla med lösenordet i Bitwarden Secrets Manager (`CMDB_DEMO_PASSWORD`, projekt *homelab*):
 
 | Användare | Grupp | Tänkt omfång |
 |---|---|---|
-| `demo-full` | `cmdb-full` | Hela nätet |
-| `demo-region` | `cmdb-region-nord` | En region (polygon) |
-| `demo-projekt` | `cmdb-projekt-a` | Ett projekt |
+| `cmdb-demo-full` | `cmdb-full` | Hela nätet |
+| `cmdb-demo-region` | `cmdb-region-nord` | En region (polygon) |
+| `cmdb-demo-projekt` | `cmdb-projekt-a` | Ett projekt |
 
-Authentik konfigureras helt av [blueprinten](infra/authentik/blueprints/cmdb.yaml). Administratören är `akadmin` med `AUTHENTIK_BOOTSTRAP_PASSWORD`.
+Klient, grupper och användare definieras i blueprinten `apps-cmdb.yaml` i `Rosenvalls-Homelab` (`kubernetes/infrastructure/controllers/authentik-runtime/`). Endast medlemmar i cmdb-grupperna kan logga in. Egna konton ges åtkomst genom att läggas i en av grupperna.
 
 | Tjänst | Adress |
 |---|---|
 | Webb | http://localhost:8480 |
 | API | http://localhost:8481 (`/health`, `/health/ready`, allt annat under `/api`) |
-| Authentik | http://localhost:9000 |
 | PostGIS | localhost:15432 |
 
-Portarna styrs av `CMDB_*_PORT` och `AUTHENTIK_PORT` i `.env`. API:t kör migreringarna vid start i compose (`Database__MigrateOnStartup`). I drift körs de som ett separat steg: `dotnet Cmdb.Api.dll --migrate`.
+Portarna styrs av `CMDB_*_PORT` i `.env`. API:t kör migreringarna vid start i compose (`Database__MigrateOnStartup`). I drift körs de som ett separat steg: `dotnet Cmdb.Api.dll --migrate`.
 
 ### Utveckling med hot reload
 
-Kör databasen och Authentik i Docker och apparna lokalt:
+Kör databasen i Docker och apparna lokalt:
 
 ```bash
-docker compose up -d db authentik-server authentik-worker
+docker compose up -d db
 export PGPASSWORD=<CMDB_DB_PASSWORD från .env>
 dotnet watch --project src/api          # http://localhost:5080, migrerar vid start
 cd src/web && npx ng serve              # http://localhost:4200, proxar /api till 5080

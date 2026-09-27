@@ -71,7 +71,7 @@ public sealed class CreateEquipmentTests(ApiFactory factory)
     [Fact]
     public async Task Only_fully_authorised_users_may_write_until_access_scopes_exist()
     {
-        using var client = factory.CreateAuthenticatedClient("demo-region", ["cmdb-region-nord"]);
+        using var client = factory.CreateAuthenticatedClient("cmdb-demo-region", ["cmdb-region-nord"]);
 
         var response = await client.PostAsJsonAsync("/api/equipment", new { typeKey = "acme-ax-24", name = "X", locationId = 1 }, Ct);
 

@@ -12,4 +12,4 @@ while IFS= read -r line; do
     echo "$line"
   fi
 done < .env.example > .env
-echo "Skapade .env. Demolösenordet: $(sed -n 's/^CMDB_DEMO_PASSWORD=//p' .env)"
+echo "Skapade .env. Demoanvändarnas lösenord finns i Bitwarden (CMDB_DEMO_PASSWORD)."

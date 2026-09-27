@@ -59,7 +59,7 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 
     /// <summary>Issues a token shaped like Authentik's, with the claims the API reads.</summary>
     public static string Token(
-        string username = "demo-full",
+        string username = "cmdb-demo-full",
         IEnumerable<string>? groups = null,
         string audience = Audience,
         DateTime? expires = null,
@@ -86,7 +86,7 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     }
 
     /// <summary>A client that sends a valid bearer token.</summary>
-    public HttpClient CreateAuthenticatedClient(string username = "demo-full", IEnumerable<string>? groups = null)
+    public HttpClient CreateAuthenticatedClient(string username = "cmdb-demo-full", IEnumerable<string>? groups = null)
     {
         var client = CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", Token(username, groups));
