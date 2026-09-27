@@ -14,7 +14,7 @@ server {
   location = /config.json {
     default_type application/json;
     add_header Cache-Control "no-store";
-    return 200 '{"oidcAuthority":"${OIDC_AUTHORITY}","oidcClientId":"${OIDC_CLIENT_ID}"}';
+    return 200 '{"oidcAuthority":"${OIDC_AUTHORITY}","oidcClientId":"${OIDC_CLIENT_ID}","lantmaterietKey":"${LANTMATERIET_KEY}"}';
   }
 
   location / {

@@ -4,6 +4,8 @@ import { InjectionToken } from '@angular/core';
 export interface RuntimeConfig {
   oidcAuthority: string;
   oidcClientId: string;
+  /** Lantmäteriet API key for the background map. Empty: the map shows the network without a background. */
+  lantmaterietKey?: string;
 }
 
 export const RUNTIME_CONFIG = new InjectionToken<RuntimeConfig>('RUNTIME_CONFIG');
