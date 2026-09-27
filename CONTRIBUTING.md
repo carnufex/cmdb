@@ -11,7 +11,7 @@ Samma flöde gäller för människor och agenter. Se [CLAUDE.md](CLAUDE.md) för
 | `fas-0` … `fas-4` | Fas enligt planen |
 | `status:ready` | Tillräckligt specificerat för att påbörjas |
 | `status:in-progress` / `status:blocked` | Pågår / blockerat |
-| `needs-human` | Kräver mänskligt beslut eller granskning |
+| `needs-human` | Kräver mänskligt beslut. Issuet har alltid ett avsnitt *Vad behövs från dig* med en konkret fråga och hur den besvaras. |
 
 ## Verifiering
 

@@ -13,6 +13,12 @@ body:
   - type: textarea
     id: rekommendation
     attributes: { label: "Rekommendation" }
+  - type: textarea
+    id: fraga
+    attributes:
+      label: "Vad behövs från dig"
+      description: "En konkret fråga eller åtgärd och hur den besvaras (t.ex. kommentera A eller B). Utan detta sätts inte needs-human."
+    validations: { required: true }
   - type: input
     id: adr
     attributes: { label: "ADR-förslag", placeholder: "docs/adr/00XX-...md" }
