@@ -28,6 +28,32 @@ docker compose up -d        # PostGIS + Authentik (api/web läggs till i backlog
 | Authentik | http://localhost:9000 |
 | PostGIS | localhost:5432 |
 
+## Bygga och testa
+
+Krav: .NET SDK 10, Node 24.15+ och Docker (för integrationstester och containrar).
+
+```bash
+dotnet build Cmdb.slnx
+dotnet test --solution Cmdb.slnx          # enhet + integration mot PostGIS (Testcontainers)
+
+cd src/web
+npm ci
+npx ng serve                              # http://localhost:4200
+npx ng test --watch=false
+
+docker build -f src/api/Dockerfile -t cmdb-api .
+docker build -t cmdb-web src/web
+```
+
+| Katalog | Innehåll |
+|---|---|
+| `src/api` | .NET 10-API, FastEndpoints, en mapp per feature under `Features/` |
+| `src/web` | Angular-app (standalone-komponenter, signals) |
+| `tests/Cmdb.Api.Tests` | Enhetstester |
+| `tests/Cmdb.Api.IntegrationTests` | Integrationstester mot riktig PostGIS |
+
+Båda containrarna kör som icke-root och fungerar med godtyckligt UID (OpenShift). API:t lyssnar på 8080 och exponerar `/health` och `/health/ready`.
+
 ## Dokumentation
 
 - [Plan](docs/plan.md): vision, demoscenarier, faser och avgränsningar
