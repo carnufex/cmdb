@@ -1,0 +1,27 @@
+{
+  "key": "acme-lc-4c",
+  "manufacturer": "Acme Networks",
+  "model": "LC-4C",
+  "category": "card",
+  "panel": { "rows": 1, "columns": 4 },
+  "ports": [
+    {
+      "name": "et-{slot}/0/{n}",
+      "range": [1, 4],
+      "type": "QSFP28",
+      "group": "line",
+      "at": [0, 0],
+      "layout": "row"
+    }
+  ],
+  "attributes": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "serialNumber": {
+        "type": "string"
+      }
+    },
+    "additionalProperties": false
+  }
+}

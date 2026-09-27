@@ -1,0 +1,47 @@
+{
+  "key": "acme-rr-2",
+  "manufacturer": "Acme Radio",
+  "model": "RR-2",
+  "category": "radio",
+  "panel": { "rows": 1, "columns": 4 },
+  "ports": [
+    {
+      "name": "ant{n}",
+      "range": [1, 2],
+      "type": "N",
+      "group": "antenna",
+      "at": [0, 0],
+      "layout": "row"
+    },
+    {
+      "name": "cpri",
+      "type": "LC",
+      "group": "fronthaul",
+      "at": [0, 2]
+    },
+    {
+      "name": "dc",
+      "type": "DC",
+      "group": "power",
+      "at": [0, 3]
+    }
+  ],
+  "attributes": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "serialNumber": {
+        "type": "string"
+      },
+      "bandMHz": {
+        "enum": [700, 800, 900, 1800, 2100, 2600, 3500]
+      },
+      "transmitPowerW": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 200
+      }
+    },
+    "additionalProperties": false
+  }
+}

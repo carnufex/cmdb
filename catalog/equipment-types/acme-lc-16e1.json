@@ -1,0 +1,27 @@
+{
+  "key": "acme-lc-16e1",
+  "manufacturer": "Acme Networks",
+  "model": "LC-16E1",
+  "category": "card",
+  "panel": { "rows": 2, "columns": 8 },
+  "ports": [
+    {
+      "name": "e1-{slot}/0/{n}",
+      "range": [1, 16],
+      "type": "E1",
+      "group": "tdm",
+      "at": [0, 0],
+      "layout": "zigzag"
+    }
+  ],
+  "attributes": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "serialNumber": {
+        "type": "string"
+      }
+    },
+    "additionalProperties": false
+  }
+}

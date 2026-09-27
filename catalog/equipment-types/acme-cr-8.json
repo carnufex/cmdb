@@ -1,0 +1,78 @@
+{
+  "key": "acme-cr-8",
+  "manufacturer": "Acme Networks",
+  "model": "CR-8",
+  "category": "router",
+  "rackUnits": 8,
+  "panel": { "rows": 1, "columns": 2 },
+  "ports": [
+    {
+      "name": "mgmt",
+      "type": "RJ45",
+      "group": "management",
+      "at": [0, 0]
+    },
+    {
+      "name": "console",
+      "type": "RJ45",
+      "group": "management",
+      "at": [0, 1]
+    }
+  ],
+  "slots": [
+    {
+      "name": "1",
+      "accepts": ["card"]
+    },
+    {
+      "name": "2",
+      "accepts": ["card"]
+    },
+    {
+      "name": "3",
+      "accepts": ["card"]
+    },
+    {
+      "name": "4",
+      "accepts": ["card"]
+    },
+    {
+      "name": "5",
+      "accepts": ["card"]
+    },
+    {
+      "name": "6",
+      "accepts": ["card"]
+    },
+    {
+      "name": "7",
+      "accepts": ["card"]
+    },
+    {
+      "name": "8",
+      "accepts": ["card"]
+    }
+  ],
+  "attributes": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "serialNumber": {
+        "type": "string"
+      },
+      "firmware": {
+        "type": "string"
+      },
+      "loopbackIp": {
+        "type": "string",
+        "format": "ipv4"
+      },
+      "asNumber": {
+        "type": "integer",
+        "minimum": 64512,
+        "maximum": 65534
+      }
+    },
+    "additionalProperties": false
+  }
+}

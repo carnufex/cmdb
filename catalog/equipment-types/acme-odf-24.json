@@ -1,0 +1,39 @@
+{
+  "key": "acme-odf-24",
+  "manufacturer": "Acme Optical",
+  "model": "ODF-24",
+  "category": "odf",
+  "rackUnits": 1,
+  "panel": { "rows": 2, "columns": 12 },
+  "ports": [
+    {
+      "name": "{n}",
+      "range": [1, 12],
+      "type": "LC",
+      "group": "front",
+      "at": [0, 0],
+      "layout": "row"
+    },
+    {
+      "name": "{n}",
+      "range": [13, 24],
+      "type": "LC",
+      "group": "front",
+      "at": [1, 0],
+      "layout": "row"
+    }
+  ],
+  "attributes": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "connector": {
+        "enum": ["LC", "SC"]
+      },
+      "label": {
+        "type": "string"
+      }
+    },
+    "additionalProperties": false
+  }
+}

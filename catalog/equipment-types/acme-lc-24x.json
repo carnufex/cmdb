@@ -1,0 +1,27 @@
+{
+  "key": "acme-lc-24x",
+  "manufacturer": "Acme Networks",
+  "model": "LC-24X",
+  "category": "card",
+  "panel": { "rows": 2, "columns": 12 },
+  "ports": [
+    {
+      "name": "xe-{slot}/0/{n}",
+      "range": [1, 24],
+      "type": "SFP+",
+      "group": "line",
+      "at": [0, 0],
+      "layout": "zigzag"
+    }
+  ],
+  "attributes": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "serialNumber": {
+        "type": "string"
+      }
+    },
+    "additionalProperties": false
+  }
+}

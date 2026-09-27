@@ -1,0 +1,42 @@
+{
+  "key": "acme-ot-8",
+  "manufacturer": "Acme Optical",
+  "model": "OT-8",
+  "category": "transmission",
+  "rackUnits": 1,
+  "panel": { "rows": 2, "columns": 5 },
+  "ports": [
+    {
+      "name": "client{n}",
+      "range": [1, 8],
+      "type": "SFP+",
+      "group": "client",
+      "at": [0, 0],
+      "layout": "zigzag"
+    },
+    {
+      "name": "line{n}",
+      "range": [1, 2],
+      "type": "LC",
+      "group": "line",
+      "at": [0, 4],
+      "layout": "column"
+    }
+  ],
+  "attributes": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "serialNumber": {
+        "type": "string"
+      },
+      "channelPlan": {
+        "type": "string"
+      },
+      "lineRateGbps": {
+        "enum": [10, 100, 400]
+      }
+    },
+    "additionalProperties": false
+  }
+}

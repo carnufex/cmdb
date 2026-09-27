@@ -1,0 +1,42 @@
+{
+  "key": "acme-sdh-63",
+  "manufacturer": "Acme Optical",
+  "model": "SDH-63",
+  "category": "transmission",
+  "rackUnits": 2,
+  "panel": { "rows": 2, "columns": 33 },
+  "ports": [
+    {
+      "name": "e1-{n}",
+      "range": [1, 63],
+      "type": "E1",
+      "group": "tributary",
+      "at": [0, 0],
+      "layout": "zigzag"
+    },
+    {
+      "name": "stm1-{n}",
+      "range": [1, 2],
+      "type": "LC",
+      "group": "aggregate",
+      "at": [0, 32],
+      "layout": "column"
+    }
+  ],
+  "attributes": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "serialNumber": {
+        "type": "string"
+      },
+      "channelPlan": {
+        "type": "string"
+      },
+      "lineRateGbps": {
+        "enum": [10, 100, 400]
+      }
+    },
+    "additionalProperties": false
+  }
+}

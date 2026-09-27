@@ -1,0 +1,28 @@
+{
+  "key": "acme-pp-24",
+  "manufacturer": "Acme Networks",
+  "model": "PP-24",
+  "category": "patch",
+  "rackUnits": 1,
+  "panel": { "rows": 1, "columns": 24 },
+  "ports": [
+    {
+      "name": "{n}",
+      "range": [1, 24],
+      "type": "RJ45",
+      "group": "front",
+      "at": [0, 0],
+      "layout": "row"
+    }
+  ],
+  "attributes": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "label": {
+        "type": "string"
+      }
+    },
+    "additionalProperties": false
+  }
+}

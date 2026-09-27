@@ -52,6 +52,33 @@ Utrustningstyper modelleras inte som tabeller. En `EquipmentType` har:
 
 När en utrustning skapas genereras portarna från mallen, och frontpanelen kan ritas direkt ur den. En ny modell är en katalogpost och inte en migrering.
 
+### Format
+
+En fil per modell i [`catalog/equipment-types/`](../catalog/equipment-types/). Filnamnet är `<key>.json`. Alla tillverkare är fiktiva (`Acme …`).
+
+```json
+{
+  "key": "acme-ax-48",
+  "manufacturer": "Acme Networks",
+  "model": "AX-48",
+  "category": "switch",
+  "rackUnits": 1,
+  "panel": { "rows": 2, "columns": 26 },
+  "ports": [
+    { "name": "ge-0/0/{n}", "range": [1, 48], "type": "RJ45", "group": "access", "at": [0, 0], "layout": "zigzag" },
+    { "name": "xe-0/1/{n}", "range": [1, 4], "type": "SFP+", "group": "uplink", "at": [0, 24], "layout": "zigzag" }
+  ],
+  "slots": [ { "name": "1", "accepts": ["card"] } ],
+  "attributes": { "type": "object", "properties": { "serialNumber": { "type": "string" } }, "additionalProperties": false }
+}
+```
+
+- `ports` är mallar. `{n}` ersätts med numret i `range` och `{slot}` med sloten som ett kort sitter i. `at` är första cellen `[rad, kolumn]` på panelen, och `layout` är `row`, `column` eller `zigzag` (udda nummer överst, som på de flesta switchar).
+- Portarna får positionsnummer 1…N i mallens ordning. Samma typ ger därför alltid samma numrering.
+- `attributes` är ett JSON Schema (2020-12) för instansens JSONB-attribut. Det valideras när utrustning skapas.
+- Kategorier: `switch`, `router`, `card`, `radio`, `antenna`, `transmission`, `odf`, `patch`, `power`.
+- Katalogen valideras vid laddning (unika namn, portar inom panelen, inga överlapp, giltigt schema, kända kategorier) och synkas till `equipment_type` i samma steg som migreringarna. Om en portmall ändras genereras inte portarna om på befintlig utrustning.
+
 ## Livscykel
 
 ```

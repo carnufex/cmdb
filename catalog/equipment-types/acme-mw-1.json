@@ -1,0 +1,48 @@
+{
+  "key": "acme-mw-1",
+  "manufacturer": "Acme Radio",
+  "model": "MW-1",
+  "category": "radio",
+  "panel": { "rows": 1, "columns": 3 },
+  "ports": [
+    {
+      "name": "ant",
+      "type": "N",
+      "group": "antenna",
+      "at": [0, 0]
+    },
+    {
+      "name": "eth",
+      "type": "RJ45",
+      "group": "traffic",
+      "at": [0, 1]
+    },
+    {
+      "name": "dc",
+      "type": "DC",
+      "group": "power",
+      "at": [0, 2]
+    }
+  ],
+  "attributes": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "serialNumber": {
+        "type": "string"
+      },
+      "bandMHz": {
+        "enum": [700, 800, 900, 1800, 2100, 2600, 3500]
+      },
+      "transmitPowerW": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 200
+      },
+      "linkId": {
+        "type": "string"
+      }
+    },
+    "additionalProperties": false
+  }
+}
