@@ -37,6 +37,8 @@ Totalt cirka 5–10 miljoner noder och lika många kanter. Det ryms i minnet (~1
 | Kartplatta per omfång | < 100 ms |
 | Växla vy mellan produktion och plan | < 100 ms |
 
+Budgeten kan mätas direkt i appen: **Prestanda** i verktygsfältet kör interaktionerna mot det laddade nätet och visar p50 och p95 för servern (`Server-Timing`) och webbläsaren. Status bedöms på serverns p95.
+
 ## Demoscenarier (prioritetsordning)
 
 1. **Navigering.** Ctrl+K, hitta en switch, borra ner till en port och följ en tjänst till slututrustningen medan alla linser följer med.

@@ -1,4 +1,5 @@
 using Cmdb.Api.Auth;
+using Cmdb.Api.Diagnostics;
 using Cmdb.Catalog;
 using Cmdb.Database;
 using FastEndpoints;
@@ -52,6 +53,7 @@ if (migrateOnly || app.Configuration.GetValue<bool>("Database:MigrateOnStartup")
     }
 }
 
+app.UseServerTiming();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseFastEndpoints(c => c.Endpoints.RoutePrefix = "api");

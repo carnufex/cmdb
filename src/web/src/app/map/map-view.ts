@@ -23,6 +23,12 @@ export class MapView {
   readonly focusRequest = signal<(Point & { seq: number }) | null>(null);
   readonly highlight = signal<Highlight | null>(null);
 
+  /**
+   * Set by the map while it is shown: animates the view over the country and returns frame times in ms.
+   * Used by the performance panel (#56).
+   */
+  renderBenchmark: ((signal: AbortSignal) => Promise<number[]>) | null = null;
+
   private seq = 0;
 
   focus(point: Point): void {

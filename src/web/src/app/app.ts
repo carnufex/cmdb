@@ -8,6 +8,7 @@ import { SearchComponent } from './shell/search';
 import { ThemeStore } from './shell/theme';
 import { Tools } from './shell/tools';
 import { QueryPanelComponent } from './query/query-panel';
+import { PerfPanelComponent } from './perf/perf-panel';
 
 /** The user as the API sees them (GET /api/me). */
 export interface Me {
@@ -19,7 +20,13 @@ export interface Me {
 
 @Component({
   selector: 'app-root',
-  imports: [RouterOutlet, SearchComponent, PanelHostComponent, QueryPanelComponent],
+  imports: [
+    RouterOutlet,
+    SearchComponent,
+    PanelHostComponent,
+    QueryPanelComponent,
+    PerfPanelComponent,
+  ],
   templateUrl: './app.html',
   styleUrl: './app.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

@@ -17,6 +17,14 @@
   <div class="actions">
     <button
       type="button"
+      class="text-button tool-button"
+      [attr.aria-pressed]="tools.open() === 'perf'"
+      (click)="tools.toggle('perf')"
+    >
+      Prestanda
+    </button>
+    <button
+      type="button"
       class="icon-button"
       (click)="theme.toggle()"
       [attr.aria-label]="theme.theme() === 'dark' ? 'Byt till ljust tema' : 'Byt till mörkt tema'"
@@ -52,6 +60,8 @@
     <router-outlet />
     @if (tools.open() === 'query') {
       <aside class="tool" aria-label="Avancerad sökning"><cmdb-query-panel /></aside>
+    } @else if (tools.open() === 'perf') {
+      <aside class="tool wide" aria-label="Prestanda"><cmdb-perf-panel /></aside>
     }
   </section>
   @if (panels.top()) {
