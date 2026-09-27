@@ -227,9 +227,10 @@ internal static class Loader
             w.Write(s.Circuit);
         }, ct);
 
-        await Exec(conn, "SET session_replication_role = origin", ct);
         if (checks != "on")
         {
+            // Setting the role at all needs superuser, so only reset it when it was changed.
+            await Exec(conn, "SET session_replication_role = origin", ct);
             var violations = await IntegrityCheck.RunAsync(conn, log, ct);
             if (violations.Count > 0)
             {
