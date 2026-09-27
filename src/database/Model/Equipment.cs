@@ -77,5 +77,7 @@ internal sealed class EquipmentConfiguration : IEntityTypeConfiguration<Equipmen
         e.Property(x => x.Attributes).HasColumnType("jsonb").HasDefaultValueSql("'{}'");
         e.HasIndex(x => new { x.ParentId, x.Slot }).IsUnique().HasFilter("parent_id IS NOT NULL");
         e.HasIndex(x => x.Name, "ix_equipment_name_trgm").HasMethod("gin").HasOperators("gin_trgm_ops").HasDatabaseName("ix_equipment_name_trgm");
+        // Attribute equality in advanced search (#55) is a jsonb containment test.
+        e.HasIndex(x => x.Attributes, "ix_equipment_attributes_path").HasMethod("gin").HasOperators("jsonb_path_ops").HasDatabaseName("ix_equipment_attributes_path");
     }
 }
