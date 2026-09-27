@@ -45,6 +45,12 @@ docker build -f src/api/Dockerfile -t cmdb-api .
 docker build -t cmdb-web src/web
 ```
 
+Innan en PR körs hela kedjan (format, bygg, test, lint och valfritt containerbygge) med samma skript som en framtida CI-runner ska använda:
+
+```bash
+scripts/verify.sh            # --images bygger även containrarna
+```
+
 | Katalog | Innehåll |
 |---|---|
 | `src/api` | .NET 10-API, FastEndpoints, en mapp per feature under `Features/` |
