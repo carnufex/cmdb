@@ -19,9 +19,19 @@ Befintliga CMDB-verktyg för telekom är ofta långsamma, klickintensiva och sv�
 Krav: Docker med Compose v2.
 
 ```bash
-cp .env.example .env        # fyll i hemligheter enligt kommentarerna
+scripts/init-env.sh         # skapar .env med slumpade hemligheter och skriver ut demolösenordet
 docker compose up -d --build
 ```
+
+Öppna http://localhost:8480. Du skickas till Authentik och loggar in som någon av demoanvändarna, alla med lösenordet `CMDB_DEMO_PASSWORD` från `.env`:
+
+| Användare | Grupp | Tänkt omfång |
+|---|---|---|
+| `demo-full` | `cmdb-full` | Hela nätet |
+| `demo-region` | `cmdb-region-nord` | En region (polygon) |
+| `demo-projekt` | `cmdb-projekt-a` | Ett projekt |
+
+Authentik konfigureras helt av [blueprinten](infra/authentik/blueprints/cmdb.yaml). Administratören är `akadmin` med `AUTHENTIK_BOOTSTRAP_PASSWORD`.
 
 | Tjänst | Adress |
 |---|---|

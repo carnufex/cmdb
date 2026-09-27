@@ -1,6 +1,13 @@
 using Cmdb.Database;
+using System.Security.Claims;
+using System.Security.Cryptography;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.IdentityModel.Tokens;
 using Npgsql;
 using Testcontainers.PostgreSql;
 
@@ -41,8 +48,60 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         return NpgsqlDataSource.Create(new NpgsqlConnectionStringBuilder(ConnectionString) { Database = name }.ConnectionString);
     }
 
-    protected override void ConfigureWebHost(IWebHostBuilder builder) =>
+    public const string Issuer = "https://idp.test/application/o/cmdb/";
+    public const string Audience = "cmdb-web";
+
+    // Tokens are signed locally; the API is pointed at this key instead of fetching IdP metadata.
+    private static readonly RsaSecurityKey SigningKey = new(RSA.Create(2048)) { KeyId = "test" };
+
+    /// <summary>Issues a token shaped like Authentik's, with the claims the API reads.</summary>
+    public static string Token(
+        string username = "demo-full",
+        IEnumerable<string>? groups = null,
+        string audience = Audience,
+        DateTime? expires = null,
+        SecurityKey? key = null)
+    {
+        var claims = new Dictionary<string, object>
+        {
+            ["preferred_username"] = username,
+            ["name"] = $"Demo {username}",
+            ["email"] = $"{username}@cmdb.local",
+            ["groups"] = (groups ?? ["cmdb-full"]).ToArray(),
+        };
+        var now = DateTime.UtcNow;
+        return new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
+        {
+            Issuer = Issuer,
+            Audience = audience,
+            Claims = claims,
+            IssuedAt = now.AddMinutes(-10),
+            NotBefore = now.AddMinutes(-10),
+            Expires = expires ?? now.AddMinutes(5),
+            SigningCredentials = new SigningCredentials(key ?? SigningKey, SecurityAlgorithms.RsaSha256),
+        });
+    }
+
+    /// <summary>A client that sends a valid bearer token.</summary>
+    public HttpClient CreateAuthenticatedClient(string username = "demo-full", IEnumerable<string>? groups = null)
+    {
+        var client = CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", Token(username, groups));
+        return client;
+    }
+
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
         builder.UseSetting("ConnectionStrings:Cmdb", ConnectionString);
+        builder.UseSetting("Auth:Authority", Issuer);
+        builder.UseSetting("Auth:Audience", Audience);
+        builder.ConfigureTestServices(services =>
+            services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, o =>
+            {
+                o.ConfigurationManager = null;
+                o.TokenValidationParameters.IssuerSigningKey = SigningKey;
+            }));
+    }
 
     public override async ValueTask DisposeAsync()
     {

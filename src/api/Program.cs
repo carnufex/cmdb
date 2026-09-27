@@ -1,3 +1,4 @@
+using Cmdb.Api.Auth;
 using Cmdb.Database;
 using FastEndpoints;
 using Npgsql;
@@ -27,6 +28,7 @@ var builder = WebApplication.CreateBuilder(args);
 var connectionString = builder.Configuration.GetConnectionString("Cmdb")
     ?? throw new InvalidOperationException("ConnectionStrings:Cmdb is not configured.");
 builder.Services.AddSingleton(_ => NpgsqlDataSource.Create(connectionString));
+builder.Services.AddCmdbAuthentication(builder.Configuration);
 builder.Services.AddFastEndpoints();
 
 var app = builder.Build();
@@ -43,6 +45,8 @@ if (migrateOnly || app.Configuration.GetValue<bool>("Database:MigrateOnStartup")
     }
 }
 
+app.UseAuthentication();
+app.UseAuthorization();
 app.UseFastEndpoints(c => c.Endpoints.RoutePrefix = "api");
 await app.RunAsync();
 return 0;

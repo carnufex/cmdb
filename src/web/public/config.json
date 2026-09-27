@@ -1,0 +1,4 @@
+{
+  "oidcAuthority": "http://localhost:9000/application/o/cmdb/",
+  "oidcClientId": "cmdb-web"
+}

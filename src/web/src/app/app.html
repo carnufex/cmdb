@@ -1,6 +1,18 @@
 <header class="topbar">
-  <span class="product">{{ productName() }}</span>
+  <span class="product">CMDB</span>
   <span class="synthetic">Syntetisk data</span>
+  <span class="spacer"></span>
+  @if (me.value(); as me) {
+    <span class="user" [title]="me.groups.join(', ')">
+      {{ me.name ?? me.username }}
+      <span class="groups">{{ me.groups.join(', ') }}</span>
+    </span>
+  } @else if (me.error()) {
+    <span class="user">API:t svarar inte</span>
+  }
+  @if (auth.isAuthenticated()) {
+    <button type="button" (click)="auth.logout()">Logga ut</button>
+  }
 </header>
 <main>
   <router-outlet />

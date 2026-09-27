@@ -45,6 +45,9 @@ services:
       AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
       AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD:-}
       AUTHENTIK_BOOTSTRAP_EMAIL: ${AUTHENTIK_BOOTSTRAP_EMAIL:-admin@cmdb.local}
+      # Read by the cmdb blueprint.
+      CMDB_DEMO_PASSWORD: ${CMDB_DEMO_PASSWORD:?sätt CMDB_DEMO_PASSWORD i .env}
+      CMDB_WEB_PORT: ${CMDB_WEB_PORT:-8480}
     volumes:
       - ./infra/authentik/blueprints:/blueprints/custom:ro
     ports:
@@ -70,6 +73,10 @@ services:
     environment:
       ConnectionStrings__Cmdb: Host=db;Database=cmdb;Username=cmdb;Password=${CMDB_DB_PASSWORD}
       Database__MigrateOnStartup: "true"
+      # Tokens carry the issuer the browser sees; metadata is fetched over the compose network.
+      Auth__Authority: http://localhost:${AUTHENTIK_PORT:-9000}/application/o/cmdb/
+      Auth__MetadataAddress: http://authentik-server:9000/application/o/cmdb/.well-known/openid-configuration
+      Auth__RequireHttpsMetadata: "false"
     ports:
       - "${CMDB_API_PORT:-8481}:8080"
     healthcheck:
@@ -83,6 +90,9 @@ services:
   web:
     build: ./src/web
     restart: unless-stopped
+    environment:
+      OIDC_AUTHORITY: http://localhost:${AUTHENTIK_PORT:-9000}/application/o/cmdb/
+      OIDC_CLIENT_ID: cmdb-web
     ports:
       - "${CMDB_WEB_PORT:-8480}:8080"
     depends_on:
