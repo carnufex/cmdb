@@ -44,6 +44,28 @@ public sealed class LoaderTests(ApiFactory factory)
         ((long)(await cmd.ExecuteScalarAsync(Ct))!).ShouldBe(network.Terminals + 1);
     }
 
+    [Fact]
+    public async Task Loads_as_a_role_without_superuser()
+    {
+        // The demo database owner (CloudNativePG) is not superuser, so the fast path must fall back quietly.
+        await using var admin = await factory.NewDatabaseAsync();
+        var database = new NpgsqlConnectionStringBuilder(admin.ConnectionString).Database;
+        var role = $"owner_{Guid.NewGuid():N}";
+        await using (var cmd = admin.CreateCommand(
+            $"CREATE ROLE {role}; GRANT {role} TO CURRENT_USER; " +
+            $"ALTER DATABASE {database} OWNER TO {role}; ALTER SCHEMA public OWNER TO {role}"))
+        {
+            await cmd.ExecuteNonQueryAsync(Ct);
+        }
+        var asRole = new NpgsqlConnectionStringBuilder(factory.ConnectionString) { Database = database, Options = $"-c role={role}" };
+        await using var db = Cmdb.Database.CmdbDatabase.CreateDataSource(asRole.ConnectionString);
+        var network = NetworkBuilder.Build(1, Scale.Small, TypeCatalog.Embedded);
+
+        await Loader.LoadAsync(db, network, reset: false, TextWriter.Null, ct: Ct);
+
+        (await Count(db, "service")).ShouldBe(network.Services.Count);
+    }
+
     [Theory]
     [InlineData(55.40, 13.35)]
     [InlineData(59.33, 18.07)]
