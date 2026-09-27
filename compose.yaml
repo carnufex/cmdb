@@ -1,0 +1,74 @@
+name: cmdb
+
+services:
+  db:
+    image: postgis/postgis:17-3.5
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: cmdb
+      POSTGRES_USER: cmdb
+      POSTGRES_PASSWORD: ${CMDB_DB_PASSWORD:?sätt CMDB_DB_PASSWORD i .env}
+    ports:
+      - "5432:5432"
+    volumes:
+      - cmdb-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cmdb -d cmdb"]
+      interval: 10s
+      retries: 10
+
+  authentik-db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: authentik
+      POSTGRES_USER: authentik
+      POSTGRES_PASSWORD: ${AUTHENTIK_DB_PASSWORD:?sätt AUTHENTIK_DB_PASSWORD i .env}
+    volumes:
+      - authentik-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U authentik -d authentik"]
+      interval: 10s
+      retries: 10
+
+  # Authentik behöver inte Redis sedan 2025.10. Lås taggen till senaste stabila version.
+  authentik-server:
+    image: ghcr.io/goauthentik/server:${AUTHENTIK_TAG:-2026.8}
+    restart: unless-stopped
+    command: server
+    environment: &authentik-env
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?sätt AUTHENTIK_SECRET_KEY i .env}
+      AUTHENTIK_POSTGRESQL__HOST: authentik-db
+      AUTHENTIK_POSTGRESQL__USER: authentik
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD}
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+      AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD:-}
+      AUTHENTIK_BOOTSTRAP_EMAIL: ${AUTHENTIK_BOOTSTRAP_EMAIL:-admin@cmdb.local}
+    volumes:
+      - ./infra/authentik/blueprints:/blueprints/custom:ro
+    ports:
+      - "9000:9000"
+    depends_on:
+      authentik-db: { condition: service_healthy }
+
+  authentik-worker:
+    image: ghcr.io/goauthentik/server:${AUTHENTIK_TAG:-2026.8}
+    restart: unless-stopped
+    command: worker
+    environment: *authentik-env
+    volumes:
+      - ./infra/authentik/blueprints:/blueprints/custom:ro
+    depends_on:
+      authentik-db: { condition: service_healthy }
+
+  # Läggs till i backloggen (issue: lokal miljö)
+  # api:
+  #   build: ./src/api
+  #   depends_on: { db: { condition: service_healthy } }
+  # web:
+  #   build: ./src/web
+
+volumes:
+  cmdb-db:
+  authentik-db:

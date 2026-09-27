@@ -1,0 +1,15 @@
+name: Bugg
+description: Något fungerar inte som det ska
+labels: ["type:bug"]
+body:
+  - type: textarea
+    id: beteende
+    attributes: { label: "Vad händer?" }
+    validations: { required: true }
+  - type: textarea
+    id: forvantat
+    attributes: { label: "Vad borde hända?" }
+    validations: { required: true }
+  - type: textarea
+    id: reproducera
+    attributes: { label: "Steg för att reproducera", description: "Inklusive generatorns seed och skala om relevant" }

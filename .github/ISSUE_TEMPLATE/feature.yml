@@ -1,0 +1,22 @@
+name: Funktion
+description: Ny funktion eller förmåga
+labels: ["type:feature"]
+body:
+  - type: textarea
+    id: bakgrund
+    attributes: { label: "Bakgrund", description: "Varför behövs detta?" }
+    validations: { required: true }
+  - type: textarea
+    id: mal
+    attributes: { label: "Mål" }
+    validations: { required: true }
+  - type: textarea
+    id: acceptans
+    attributes: { label: "Acceptanskriterier", value: "- [ ] " }
+    validations: { required: true }
+  - type: textarea
+    id: avgransning
+    attributes: { label: "Avgränsningar" }
+  - type: textarea
+    id: referenser
+    attributes: { label: "Referenser", description: "ADR:er, dokument, relaterade issues" }

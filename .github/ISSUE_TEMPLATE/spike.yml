@@ -1,0 +1,15 @@
+name: Spike
+description: Tidsboxad undersökning
+labels: ["type:spike"]
+body:
+  - type: textarea
+    id: fraga
+    attributes: { label: "Fråga att besvara" }
+    validations: { required: true }
+  - type: input
+    id: tidsbox
+    attributes: { label: "Tidsbox", placeholder: "t.ex. 1 dag" }
+    validations: { required: true }
+  - type: textarea
+    id: resultat
+    attributes: { label: "Förväntat resultat", description: "t.ex. rekommendation, prototyp, ADR-förslag" }

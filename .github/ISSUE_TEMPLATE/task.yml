@@ -1,0 +1,15 @@
+name: Uppgift
+description: Tekniskt arbete utan ny användarfunktion
+labels: ["type:task"]
+body:
+  - type: textarea
+    id: beskrivning
+    attributes: { label: "Beskrivning" }
+    validations: { required: true }
+  - type: textarea
+    id: acceptans
+    attributes: { label: "Acceptanskriterier", value: "- [ ] " }
+    validations: { required: true }
+  - type: textarea
+    id: referenser
+    attributes: { label: "Referenser" }
