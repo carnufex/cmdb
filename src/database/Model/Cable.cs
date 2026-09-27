@@ -64,6 +64,8 @@ internal sealed class CableConfiguration : IEntityTypeConfiguration<Cable>
         e.ToTable(t => t.HasCheckConstraint("ck_cable_distinct_ends", "a_site_id <> b_site_id"));
         e.Property(x => x.Id).UseIdentityAlwaysColumn();
         e.HasIndex(x => x.Code).IsUnique();
+        e.HasIndex(x => x.Code, "ix_cable_code_pattern").HasOperators("text_pattern_ops").HasDatabaseName("ix_cable_code_pattern");
+        e.HasIndex(x => x.Code, "ix_cable_code_trgm").HasMethod("gin").HasOperators("gin_trgm_ops").HasDatabaseName("ix_cable_code_trgm");
         e.HasOne(x => x.CableType).WithMany().OnDelete(DeleteBehavior.Restrict);
         e.HasOne(x => x.ASite).WithMany().HasForeignKey(x => x.ASiteId).OnDelete(DeleteBehavior.Restrict);
         e.HasOne(x => x.BSite).WithMany().HasForeignKey(x => x.BSiteId).OnDelete(DeleteBehavior.Restrict);

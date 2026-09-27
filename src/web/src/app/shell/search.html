@@ -1,0 +1,62 @@
+<div class="search" [class.open]="open() && results().state !== 'idle'">
+  <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
+    <circle cx="7" cy="7" r="4.5" />
+    <path d="m10.5 10.5 3.5 3.5" />
+  </svg>
+  <input
+    #input
+    type="search"
+    role="combobox"
+    aria-label="Sök"
+    aria-controls="search-results"
+    [attr.aria-expanded]="open() && hits().length > 0"
+    [attr.aria-activedescendant]="hits().length ? 'hit-' + active() : null"
+    placeholder="Sök site, utrustning, kabel, tjänst…"
+    autocomplete="off"
+    spellcheck="false"
+    [value]="query()"
+    (input)="onInput(input.value)"
+    (keydown)="onKey($event)"
+    (focus)="open.set(true)"
+    (blur)="close()"
+  />
+  <kbd>Ctrl K</kbd>
+
+  @if (open() && results().state !== 'idle') {
+    <ul id="search-results" class="results" role="listbox">
+      @switch (results().state) {
+        @case ('loading') {
+          <li class="note">Söker…</li>
+        }
+        @case ('error') {
+          <li class="note error">Sökningen misslyckades.</li>
+        }
+        @default {
+          @for (hit of hits(); track hit.type + hit.id; let i = $index) {
+            <li
+              [id]="'hit-' + i"
+              role="option"
+              [attr.aria-selected]="i === active()"
+              [class.active]="i === active()"
+              (mousedown)="$event.preventDefault()"
+              (click)="select(hit)"
+              (mouseenter)="active.set(i)"
+            >
+              <span class="type">{{ typeLabels[hit.type] }}</span>
+              <span class="main">
+                <span class="code mono">{{ hit.code }}</span>
+                @if (hit.name) {
+                  <span class="name">{{ hit.name }}</span>
+                }
+              </span>
+              <span class="detail">{{ hit.detail }}</span>
+              <cmdb-status [value]="hit.lifecycle" />
+            </li>
+          } @empty {
+            <li class="note">Inga träffar.</li>
+          }
+        }
+      }
+    </ul>
+  }
+</div>

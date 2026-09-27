@@ -25,6 +25,9 @@ internal sealed class SiteConfiguration : IEntityTypeConfiguration<Site>
         e.ToTable(t => t.HasCheckConstraint("ck_site_geom_type", "GeometryType(geom) IN ('POINT', 'POLYGON', 'MULTIPOLYGON')"));
         e.Property(x => x.Id).UseIdentityAlwaysColumn();
         e.HasIndex(x => x.Code).IsUnique();
+        e.HasIndex(x => x.Code, "ix_site_code_trgm").HasMethod("gin").HasOperators("gin_trgm_ops").HasDatabaseName("ix_site_code_trgm");
+        e.HasIndex(x => x.Code, "ix_site_code_pattern").HasOperators("text_pattern_ops").HasDatabaseName("ix_site_code_pattern");
+        e.HasIndex(x => x.Name, "ix_site_name_trgm").HasMethod("gin").HasOperators("gin_trgm_ops").HasDatabaseName("ix_site_name_trgm");
         e.Property(x => x.Geom).HasColumnType("geometry(Geometry, 3006)");
         e.HasIndex(x => x.Geom).HasMethod("gist");
         e.Property(x => x.Attributes).HasColumnType("jsonb").HasDefaultValueSql("'{}'");
