@@ -9,7 +9,7 @@ services:
       POSTGRES_USER: cmdb
       POSTGRES_PASSWORD: ${CMDB_DB_PASSWORD:?sätt CMDB_DB_PASSWORD i .env}
     ports:
-      - "5432:5432"
+      - "${CMDB_DB_PORT:-15432}:5432"
     volumes:
       - cmdb-db:/var/lib/postgresql/data
     healthcheck:
@@ -48,7 +48,7 @@ services:
     volumes:
       - ./infra/authentik/blueprints:/blueprints/custom:ro
     ports:
-      - "9000:9000"
+      - "${AUTHENTIK_PORT:-9000}:9000"
     depends_on:
       authentik-db: { condition: service_healthy }
 
@@ -62,12 +62,31 @@ services:
     depends_on:
       authentik-db: { condition: service_healthy }
 
-  # Läggs till i backloggen (issue: lokal miljö)
-  # api:
-  #   build: ./src/api
-  #   depends_on: { db: { condition: service_healthy } }
-  # web:
-  #   build: ./src/web
+  api:
+    build:
+      context: .
+      dockerfile: src/api/Dockerfile
+    restart: unless-stopped
+    environment:
+      ConnectionStrings__Cmdb: Host=db;Database=cmdb;Username=cmdb;Password=${CMDB_DB_PASSWORD}
+      Database__MigrateOnStartup: "true"
+    ports:
+      - "${CMDB_API_PORT:-8481}:8080"
+    healthcheck:
+      test: ["CMD", "dotnet", "Cmdb.Api.dll", "--healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    depends_on:
+      db: { condition: service_healthy }
+
+  web:
+    build: ./src/web
+    restart: unless-stopped
+    ports:
+      - "${CMDB_WEB_PORT:-8480}:8080"
+    depends_on:
+      api: { condition: service_healthy }
 
 volumes:
   cmdb-db:
