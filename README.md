@@ -140,6 +140,7 @@ Båda containrarna kör som icke-root och fungerar med godtyckligt UID (OpenShif
 - [Domänmodell](docs/domanmodell.md)
 - [Arkitektur](docs/arkitektur.md): grafmotor, säkerhet och drift
 - [UX-principer](docs/ux.md)
+- [Drift och leveransflöde](docs/drift.md): demomiljön på https://cmdb.rosenvall.se, deploy, demodata och rollback
 - [Arkitekturbeslut (ADR)](docs/adr/)
 
 ## Arbetssätt

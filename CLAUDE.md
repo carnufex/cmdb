@@ -23,8 +23,13 @@ Instruktioner för agenter (Claude Code) som arbetar i det här repot.
    `needs-human` får **bara** sättas tillsammans med ett avsnitt `## Vad behövs från dig` i issuet: en konkret fråga eller åtgärd, vilka alternativ som finns (med din rekommendation) och hur svaret ges, till exempel "kommentera A eller B". Kan du själv ta reda på svaret, i repot, i homelab-repot eller i dokumentationen, gör det i stället. Ta bort etiketten när svaret finns.
 9. **Pull request** med `Closes #<nr>`, en beskrivning av hur det verifierats, prestandasiffror där det är relevant och eventuella skärmdumpar.
 10. **Uppdatera dokumentationen** i `docs/` när beteende eller modell ändras.
+11. **Merga och driftsätt.** När `scripts/verify.sh` är grön: squash-merga PR:en och kör `scripts/deploy.sh --deploy --wait` från en ren `main`. Verifiera ändringen på https://cmdb.rosenvall.se och kommentera den utrullade taggen i issuet. Följ skillen `cmdb-delivery` och [docs/drift.md](docs/drift.md).
 
-Slash-kommandon: `/work-issue <nr>` och `/new-issue <beskrivning>` (se `.claude/commands/`).
+Slash-kommandon: `/work-issue <nr>` och `/new-issue <beskrivning>` (se `.claude/commands/`). Skill: `cmdb-delivery` (`.claude/skills/`) för allt från PR till demomiljön.
+
+## Parallellt arbete
+
+Christopher och Codex arbetar i samma repo samtidigt. Har huvudcheckouten ändringar du inte gjort: rör dem inte, arbeta i en worktree (`git worktree add ../cmdb-<nr> <nr>-slug`). Stagea explicita sökvägar, aldrig `git add -A`, och kör `git fetch` innan varje push.
 
 ## Konventioner
 

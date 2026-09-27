@@ -7,4 +7,5 @@ Arbeta med GitHub-issue #$ARGUMENTS enligt flödet i CLAUDE.md.
 5. Skapa branchen `$ARGUMENTS-<kort-slug>`.
 6. Implementera med tester. Kommentera beslut och mätvärden i issuet under arbetets gång.
 7. Skapa nya issues för upptäckt arbete utanför scope och länka dem.
-8. Öppna en PR med `Closes #$ARGUMENTS`, verifieringsbeskrivning och prestandasiffror.
+8. Kör `scripts/verify.sh` och öppna en PR med `Closes #$ARGUMENTS`, verifieringsbeskrivning och prestandasiffror.
+9. Squash-merga när verifieringen är grön, driftsätt och verifiera på https://cmdb.rosenvall.se enligt skillen `cmdb-delivery`. Kommentera den utrullade taggen i issuet.
