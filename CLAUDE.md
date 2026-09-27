@@ -20,6 +20,7 @@ Instruktioner för agenter (Claude Code) som arbetar i det här repot.
 6. **Dokumentera medan du arbetar.** Kommentera beslut, överraskningar och mätvärden i issuet. Issuet ska räcka för att förstå varför koden ser ut som den gör.
 7. **Upptäckt arbete utanför scope** blir ett nytt issue, länkat till det aktuella med "Upptäckt i #<nr>". Utöka inte scope tyst.
 8. **Blockerad?** Sätt `status:blocked` och beskriv vad som behövs. Behövs ett mänskligt beslut sätter du även `needs-human`.
+   `needs-human` får **bara** sättas tillsammans med ett avsnitt `## Vad behövs från dig` i issuet: en konkret fråga eller åtgärd, vilka alternativ som finns (med din rekommendation) och hur svaret ges, till exempel "kommentera A eller B". Kan du själv ta reda på svaret, i repot, i homelab-repot eller i dokumentationen, gör det i stället. Ta bort etiketten när svaret finns.
 9. **Pull request** med `Closes #<nr>`, en beskrivning av hur det verifierats, prestandasiffror där det är relevant och eventuella skärmdumpar.
 10. **Uppdatera dokumentationen** i `docs/` när beteende eller modell ändras.
 
