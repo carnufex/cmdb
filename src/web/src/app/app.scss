@@ -32,7 +32,14 @@
   flex: 1;
   display: flex;
   justify-content: center;
+  align-items: center;
+  gap: var(--space-2);
   min-width: 0;
+}
+
+.tool-button[aria-pressed='true'] {
+  border-color: var(--focus);
+  background: color-mix(in srgb, var(--focus) 16%, transparent);
 }
 
 .actions {
@@ -104,4 +111,19 @@
   min-height: 0;
   background: var(--surface-1);
   border-left: var(--line);
+}
+
+.tool {
+  position: absolute;
+  inset: var(--space-2) auto var(--space-2) var(--space-2);
+  z-index: 5;
+  width: 380px;
+  max-width: calc(100% - 2 * var(--space-2));
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-1);
+  border: var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.25);
+  overflow: hidden;
 }

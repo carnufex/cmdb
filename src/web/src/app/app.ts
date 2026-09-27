@@ -6,6 +6,8 @@ import { PanelStack } from './shell/panels';
 import { PanelHostComponent } from './shell/panel-host';
 import { SearchComponent } from './shell/search';
 import { ThemeStore } from './shell/theme';
+import { Tools } from './shell/tools';
+import { QueryPanelComponent } from './query/query-panel';
 
 /** The user as the API sees them (GET /api/me). */
 export interface Me {
@@ -17,7 +19,7 @@ export interface Me {
 
 @Component({
   selector: 'app-root',
-  imports: [RouterOutlet, SearchComponent, PanelHostComponent],
+  imports: [RouterOutlet, SearchComponent, PanelHostComponent, QueryPanelComponent],
   templateUrl: './app.html',
   styleUrl: './app.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -26,6 +28,7 @@ export class App {
   protected readonly auth = inject(Auth);
   protected readonly theme = inject(ThemeStore);
   protected readonly panels = inject(PanelStack);
+  protected readonly tools = inject(Tools);
   protected readonly me = httpResource<Me>(() =>
     this.auth.isAuthenticated() ? '/api/me' : undefined,
   );

@@ -1,0 +1,221 @@
+<header class="head">
+  <h2>Avancerad sökning</h2>
+  <button type="button" class="close" aria-label="Stäng avancerad sökning" (click)="close()">
+    ×
+  </button>
+</header>
+
+<div class="body">
+  <section aria-label="Exempel">
+    <h3>Exempel</h3>
+    <div class="chips">
+      @for (example of examples; track example.label) {
+        <button type="button" class="chip" (click)="useExample(example.draft)">
+          {{ example.label }}
+        </button>
+      }
+    </div>
+  </section>
+
+  @if (fields.value(); as f) {
+    <form (submit)="$event.preventDefault(); run()">
+      <fieldset>
+        <legend>Sitetyp</legend>
+        <div class="chips">
+          @for (t of f.siteTypes; track t) {
+            <button
+              type="button"
+              class="chip"
+              [attr.aria-pressed]="draft().siteTypes.includes(t)"
+              (click)="toggle('siteTypes', t)"
+            >
+              {{ siteTypeLabels[t] ?? t }}
+            </button>
+          }
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Livscykel</legend>
+        <div class="chips">
+          @for (l of f.lifecycles; track l) {
+            <button
+              type="button"
+              class="chip status-chip"
+              [attr.aria-pressed]="draft().lifecycles.includes(l)"
+              (click)="toggle('lifecycles', l)"
+            >
+              <cmdb-status [value]="l" />
+            </button>
+          }
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Har utrustning</legend>
+        @for (e of draft().equipment; track $index; let i = $index) {
+          <div class="condition">
+            <div class="row">
+              <label>
+                <span>Kategori</span>
+                <select
+                  [value]="e.category"
+                  (change)="updateEquipment(i, { category: $any($event.target).value })"
+                >
+                  <option value="">Alla</option>
+                  @for (c of categories(); track c.key) {
+                    <option [value]="c.key" [selected]="c.key === e.category">
+                      {{ categoryLabels[c.key] ?? c.key }}
+                    </option>
+                  }
+                </select>
+              </label>
+              <label>
+                <span>Modell</span>
+                <select
+                  [value]="e.typeKey"
+                  (change)="updateEquipment(i, { typeKey: $any($event.target).value })"
+                >
+                  <option value="">Alla</option>
+                  @for (t of typesFor(e.category); track t.key) {
+                    <option [value]="t.key" [selected]="t.key === e.typeKey">
+                      {{ t.manufacturer }} {{ t.model }}
+                    </option>
+                  }
+                </select>
+              </label>
+              <label class="count">
+                <span>Minst</span>
+                <input
+                  type="number"
+                  min="1"
+                  max="1000"
+                  [value]="e.minCount"
+                  (change)="updateEquipment(i, { minCount: +$any($event.target).value || 1 })"
+                />
+              </label>
+            </div>
+            <div class="row">
+              <label>
+                <span>Attribut</span>
+                <select
+                  [value]="e.key"
+                  (change)="updateEquipment(i, { key: $any($event.target).value })"
+                >
+                  <option value="">Inget</option>
+                  @for (a of attributesFor(e); track a.key) {
+                    <option [value]="a.key" [selected]="a.key === e.key">{{ a.key }}</option>
+                  }
+                </select>
+              </label>
+              @if (e.key) {
+                <label class="op">
+                  <span>Villkor</span>
+                  <select
+                    [value]="e.op"
+                    (change)="updateEquipment(i, { op: $any($event.target).value })"
+                  >
+                    @for (op of opsFor(e); track op) {
+                      <option [value]="op" [selected]="op === e.op">{{ opLabels[op] }}</option>
+                    }
+                  </select>
+                </label>
+                @if (e.op !== 'exists') {
+                  <label>
+                    <span>Värde</span>
+                    @if (valuesFor(e); as values) {
+                      <select
+                        [value]="e.value"
+                        (change)="updateEquipment(i, { value: $any($event.target).value })"
+                      >
+                        <option value="">Välj</option>
+                        @for (v of values; track v) {
+                          <option [value]="v" [selected]="'' + v === e.value">{{ v }}</option>
+                        }
+                      </select>
+                    } @else {
+                      <input
+                        [value]="e.value"
+                        (input)="updateEquipment(i, { value: $any($event.target).value })"
+                      />
+                    }
+                  </label>
+                }
+              }
+            </div>
+            @if (draft().equipment.length > 1) {
+              <button type="button" class="link remove" (click)="removeEquipment(i)">
+                Ta bort villkor
+              </button>
+            }
+          </div>
+        }
+        <button type="button" class="link" (click)="addEquipment()">
+          + Villkor på utrustning (och)
+        </button>
+      </fieldset>
+
+      <fieldset>
+        <legend>Bär tjänst av typ</legend>
+        <div class="chips">
+          @for (s of f.serviceTypes; track s) {
+            <button
+              type="button"
+              class="chip"
+              [attr.aria-pressed]="draft().serviceTypes.includes(s)"
+              (click)="toggle('serviceTypes', s)"
+            >
+              {{ serviceTypeLabels[s] ?? s }}
+            </button>
+          }
+        </div>
+      </fieldset>
+
+      <div class="actions">
+        <button type="submit" class="primary" [disabled]="running()">
+          {{ running() ? 'Söker…' : 'Sök' }}
+        </button>
+        <button type="button" class="link" (click)="reset()">Rensa</button>
+      </div>
+    </form>
+  } @else if (fields.error()) {
+    <p class="error">Kunde inte hämta sökbara fält.</p>
+  }
+
+  @if (error(); as e) {
+    <p class="error" role="alert">{{ e }}</p>
+  }
+
+  @if (result(); as r) {
+    <section class="results" aria-live="polite">
+      <p class="summary">
+        <strong>{{ r.total.toLocaleString('sv-SE') }}</strong> siter · {{ r.elapsedMs }} ms på
+        servern
+        @if (r.total > r.points.length) {
+          <span class="muted"
+            >· {{ r.points.length.toLocaleString('sv-SE') }} markerade i kartan</span
+          >
+        }
+      </p>
+      <ol>
+        @for (s of r.sites; track s.id) {
+          <li>
+            <button type="button" (click)="open(s)">
+              <span class="code">{{ s.code }}</span>
+              <span class="name">{{ siteTypeLabels[s.siteType] ?? s.siteType }}</span>
+              @if (s.matching !== null) {
+                <span class="muted">{{ s.matching }} st</span>
+              }
+              <cmdb-status [value]="s.lifecycle" />
+            </button>
+          </li>
+        }
+      </ol>
+      @if (r.total > r.sites.length) {
+        <p class="muted">
+          Visar de första {{ r.sites.length }} av {{ r.total.toLocaleString('sv-SE') }}.
+        </p>
+      }
+    </section>
+  }
+</div>

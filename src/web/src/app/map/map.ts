@@ -15,6 +15,11 @@ import { FeatureLike } from 'ol/Feature';
 import MVT from 'ol/format/MVT';
 import TileLayer from 'ol/layer/Tile';
 import VectorTileLayer from 'ol/layer/VectorTile';
+import VectorLayer from 'ol/layer/Vector';
+import VectorSource from 'ol/source/Vector';
+import Feature from 'ol/Feature';
+import OlPoint from 'ol/geom/Point';
+import { Circle, Fill, Stroke, Style } from 'ol/style';
 import TileState from 'ol/TileState';
 import Attribution from 'ol/control/Attribution';
 import XYZ from 'ol/source/XYZ';
@@ -73,6 +78,7 @@ export class MapComponent {
   private map?: OlMap;
   private network?: VectorTileLayer;
   private basemap?: TileLayer<XYZ>;
+  private marks?: VectorLayer<VectorSource<Feature<OlPoint>>>;
   private palette?: Palette;
 
   constructor() {
@@ -89,6 +95,14 @@ export class MapComponent {
     effect(() => {
       this.panels.top();
       this.network?.changed();
+    });
+    // Advanced search marks its results; they get their own layer so they show at every zoom.
+    effect(() => {
+      const highlight = this.mapView.highlight();
+      if (!this.marks || !this.map) {
+        return;
+      }
+      this.showMarks(highlight?.points ?? [], highlight?.extent ?? null);
     });
     // Other parts of the app (search, panels) ask the map to go somewhere.
     effect(() => {
@@ -113,6 +127,7 @@ export class MapComponent {
     this.restyle = () => {
       reset();
       this.network?.changed();
+      this.marks?.changed();
     };
 
     this.network = new VectorTileLayer({
@@ -129,7 +144,12 @@ export class MapComponent {
       renderMode: 'vector',
     });
 
-    const layers: (TileLayer | VectorTileLayer)[] = [this.network];
+    this.marks = new VectorLayer({
+      source: new VectorSource<Feature<OlPoint>>(),
+      style: () => this.markStyle(),
+      zIndex: 10,
+    });
+    const layers: (TileLayer | VectorTileLayer | VectorLayer)[] = [this.network, this.marks];
     if (parseBasemap(this.config.basemap) === 'esri') {
       this.basemap = createBasemap(this.theme.theme());
       layers.unshift(this.basemap);
@@ -147,6 +167,10 @@ export class MapComponent {
       }),
     });
     this.map.getView().fit(HOME_EXTENT, { padding: [24, 24, 24, 24] });
+    const pending = this.mapView.highlight();
+    if (pending) {
+      this.showMarks(pending.points, pending.extent);
+    }
     const reportCenter = () => {
       const [x, y] = this.map!.getView().getCenter() ?? [0, 0];
       this.mapView.center.set({ x, y });
@@ -165,7 +189,7 @@ export class MapComponent {
       const feature = this.map!.forEachFeatureAtPixel(e.pixel, (f) => f, { hitTolerance: 4 });
       this.target().nativeElement.style.cursor = feature ? 'pointer' : '';
       this.hover.set(
-        feature
+        feature && !feature.get('mark')
           ? {
               x: e.pixel[0],
               y: e.pixel[1],
@@ -177,7 +201,9 @@ export class MapComponent {
     });
     this.map.on('click', (e) => {
       const feature = this.map!.forEachFeatureAtPixel(e.pixel, (f) => f, { hitTolerance: 4 });
-      if (feature) {
+      if (feature?.get('mark')) {
+        this.panels.open({ type: 'site', id: String(feature.getId()) }, { replace: true });
+      } else if (feature) {
         const type = feature.get('layer') === 'sites' ? 'site' : 'cable';
         this.panels.open({ type, id: String(feature.getId()) }, { replace: true });
       }
@@ -185,6 +211,53 @@ export class MapComponent {
   }
 
   private restyle: () => void = () => undefined;
+
+  private markStyleCache?: { key: string; style: Style };
+
+  private markStyle(): Style {
+    const palette = (this.palette ??= readPalette(this.host.nativeElement));
+    const key = `${palette.focus}|${palette.bg}`;
+    if (this.markStyleCache?.key !== key) {
+      this.markStyleCache = {
+        key,
+        style: new Style({
+          image: new Circle({
+            radius: 4.5,
+            fill: new Fill({ color: palette.focus }),
+            stroke: new Stroke({ color: palette.bg, width: 1.5 }),
+          }),
+        }),
+      };
+    }
+    return this.markStyleCache.style;
+  }
+
+  /** Draws marked sites and dims the network while there are any, then frames them. */
+  private showMarks(
+    points: readonly (readonly [number, number, number])[],
+    extent: readonly number[] | null,
+  ): void {
+    const source = this.marks!.getSource()!;
+    source.clear(true);
+    source.addFeatures(
+      points.map(([id, x, y]) => {
+        const f = new Feature(new OlPoint([x, y]));
+        f.setId(id);
+        f.set('mark', true);
+        return f;
+      }),
+    );
+    this.network?.setOpacity(points.length > 0 ? 0.35 : 1);
+    if (extent && points.length > 0) {
+      const [minX, minY, maxX, maxY] = extent;
+      const pad = Math.max(maxX - minX, maxY - minY) < 2_000 ? 2_000 : 0;
+      this.map!.getView().fit([minX - pad, minY - pad, maxX + pad, maxY + pad], {
+        padding: [48, 48, 48, 48],
+        duration: 400,
+        maxZoom: 11,
+      });
+    }
+  }
 
   private isSelected(feature: FeatureLike): boolean {
     const top = this.panels.top();

@@ -44,3 +44,12 @@ Allt massarbete sker i en plan: förhandsvisning av skillnader, konfliktkontroll
 | Frontpanel | Vilka portar, vad är kopplat? |
 | Spårschema | Vilken väg tar tjänsten? |
 | Grannskapsgraf | Vad finns runt omkring? Expandera och backa. |
+
+## Avancerad sökning
+
+Snabbsöket (Ctrl+K) hittar objekt på namn och kod. För frågor som *alla radiositer med en radio på 3500 MHz* eller *siter med minst tre antenner* finns **Avancerad sökning** i verktygsfältet:
+
+- Villkor på site (typ, livscykel), på utrustning (kategori, modell, attribut och minsta antal) och på tjänster som passerar siten. Flera utrustningsvillkor kombineras med OCH.
+- Attribut och tillåtna värden kommer från typkatalogen, så nya modeller blir sökbara utan kodändring.
+- Träffarna markeras i kartan i ett eget lager, på alla zoomnivåer, och övriga nätet tonas ned. En rad i listan öppnar siten i panelstacken.
+- Färdiga exempel visar vad sökningen klarar och används i demon.
