@@ -7,6 +7,8 @@ import { App, Me } from './app';
 import { Auth } from './auth/auth';
 
 describe('App', () => {
+  let http: HttpTestingController;
+
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [App],
@@ -17,23 +19,42 @@ describe('App', () => {
         { provide: Auth, useValue: { isAuthenticated: signal(true), logout: () => undefined } },
       ],
     }).compileComponents();
+    http = TestBed.inject(HttpTestingController);
   });
 
-  it('marks the data as synthetic and shows the user the API sees', async () => {
+  it('marks the data as synthetic, shows the user and applies the saved theme', async () => {
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();
+    http.expectOne('/api/me/preferences').flush({ theme: 'light' });
     const me: Me = {
       username: 'cmdb-demo-region',
       name: 'Demo Region',
       email: null,
       groups: ['cmdb-region-nord'],
     };
-    TestBed.inject(HttpTestingController).expectOne('/api/me').flush(me);
+    http.expectOne('/api/me').flush(me);
     await fixture.whenStable();
     const el = fixture.nativeElement as HTMLElement;
 
     expect(el.querySelector('.synthetic')?.textContent).toContain('Syntetisk');
     expect(el.querySelector('.user')?.textContent).toContain('Demo Region');
-    expect(el.querySelector('.groups')?.textContent).toBe('cmdb-region-nord');
+    expect(document.documentElement.dataset['theme']).toBe('light');
+  });
+
+  it('saves the theme in the profile when toggled', async () => {
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    http.expectOne('/api/me/preferences').flush({ theme: 'dark' });
+    http.expectOne('/api/me').flush({ username: 'x', name: null, email: null, groups: [] });
+    await fixture.whenStable();
+
+    (fixture.nativeElement as HTMLElement)
+      .querySelector<HTMLButtonElement>('.icon-button')!
+      .click();
+
+    const put = http.expectOne((r) => r.method === 'PUT' && r.url === '/api/me/preferences');
+    expect(put.request.body).toEqual({ theme: 'light' });
+    expect(document.documentElement.dataset['theme']).toBe('light');
+    put.flush({ theme: 'light' });
   });
 });

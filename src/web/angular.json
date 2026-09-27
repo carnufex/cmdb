@@ -30,6 +30,8 @@
               }
             ],
             "styles": [
+              "@fontsource-variable/inter/index.css",
+              "@fontsource/jetbrains-mono/400.css",
               "src/styles.scss"
             ]
           },

@@ -35,6 +35,8 @@ if [[ $WEB -eq 1 ]]; then
   npm ci --no-audit --no-fund
   step "web: format"
   npx prettier --check "src/**/*.{ts,html,scss}"
+  step "web: contrast"
+  node scripts/check-contrast.mjs
   step "web: build"
   npx ng build
   step "web: test"

@@ -67,6 +67,7 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     {
         var claims = new Dictionary<string, object>
         {
+            ["sub"] = $"sub-{username}",
             ["preferred_username"] = username,
             ["name"] = $"Demo {username}",
             ["email"] = $"{username}@cmdb.local",

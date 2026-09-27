@@ -1,1 +1,112 @@
-/* You can add global styles to this file, and also import other style files */
+// Fonts are self-hosted from npm packages and bundled via angular.json. No external CDNs (docs/arkitektur.md#drift).
+
+// Design tokens. Everything visual reads these; components never hard-code colours or sizes.
+// Colour carries meaning only: status, focus and the one primary action (docs/ux.md).
+// Contrast pairs are checked against WCAG 2.1 AA by scripts/check-contrast.mjs (run in verify.sh).
+:root,
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  --bg: #0f1115;
+  --surface-1: #15181e;
+  --surface-2: #1b1f26;
+  --surface-3: #232831;
+  --border: #2a2f39;
+  --border-strong: #3b414d;
+  --text: #e6e8ec;
+  --text-muted: #a0a7b4;
+  --text-faint: #8e95a2;
+  --focus: #7aa7ff;
+
+  --status-planned: #b39dfb;
+  --status-construction: #6aaefc;
+  --status-in-service: #5ccf93;
+  --status-decommissioning: #e3b35c;
+  --status-removed: #8e95a2;
+  --status-conflict: #ff8474;
+  --action: #ff8474;
+  --action-text: #1a0d0a;
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+
+  --bg: #f6f7f9;
+  --surface-1: #ffffff;
+  --surface-2: #f0f2f5;
+  --surface-3: #e6e9ee;
+  --border: #dde1e7;
+  --border-strong: #c3c9d2;
+  --text: #15181e;
+  --text-muted: #525a67;
+  --text-faint: #5b6370;
+  --focus: #2459c9;
+
+  --status-planned: #6a45d6;
+  --status-construction: #1c64c4;
+  --status-in-service: #177a47;
+  --status-decommissioning: #8f5c00;
+  --status-removed: #5b6370;
+  --status-conflict: #c23a28;
+  --action: #c23a28;
+  --action-text: #ffffff;
+}
+
+:root {
+  --font-sans: 'Inter Variable', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 13px;
+  --text-lg: 15px;
+  --text-xl: 18px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --line: 1px solid var(--border);
+  --topbar-height: 44px;
+  --panel-width: 420px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: 0.95em;
+}
