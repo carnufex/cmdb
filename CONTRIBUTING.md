@@ -17,6 +17,10 @@ Samma flöde gäller för människor och agenter. Se [CLAUDE.md](CLAUDE.md) för
 
 GitHub Actions används inte just nu. `scripts/verify.sh` är CI: kör det innan PR och redovisa resultatet i PR-beskrivningen.
 
+## Driftsättning
+
+`main` är det som körs på https://cmdb.rosenvall.se. Efter merge driftsätts med `scripts/deploy.sh --deploy --wait` från en ren `main`. Hela flödet, databasen, demodata och rollback beskrivs i [docs/drift.md](docs/drift.md).
+
 ## Definition of done
 
 - Acceptanskriterierna i issuet är uppfyllda.

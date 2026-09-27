@@ -71,3 +71,4 @@ Grundregeln är att allt är nekat tills något uttryckligen beviljas. Omfång b
 - Postgres via operator (CloudNativePG/Crunchy PGO) i produktion. **Ingen distribuerad databas**, se ADR-0003.
 - Designat för isolerad miljö: inga externa CDN:er, egenhostade typsnitt och kartresurser, få och välkända beroenden.
 - Autentisering via ren OIDC. Authentik i POC:en, organisationens IdP i produktion.
+- Demomiljön körs i homelabbets Kubernetes via ArgoCD, med migreringarna som init-container. Se [drift.md](drift.md).

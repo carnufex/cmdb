@@ -51,6 +51,8 @@ build_push() { # <name> <dockerfile> <context>
 }
 build_push cmdb-api src/api/Dockerfile .
 build_push cmdb-web src/web/Dockerfile src/web
+# Not deployed; scripts/load-demo-data.sh runs it as a Job with the same tag as the API.
+build_push cmdb-datagen src/datagen/Dockerfile .
 
 digest() { docker inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$REGISTRY/$1:$tag" \
   | grep "^$REGISTRY/$1@" | head -n1 | cut -d@ -f2; }
