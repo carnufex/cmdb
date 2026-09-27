@@ -10,4 +10,7 @@
     <InternalsVisibleTo Include="Cmdb.Api.Tests" />
     <InternalsVisibleTo Include="Cmdb.Api.IntegrationTests" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\database\Cmdb.Database.csproj" />
+  </ItemGroup>
 </Project>
