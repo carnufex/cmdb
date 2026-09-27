@@ -17,54 +17,6 @@ services:
       interval: 10s
       retries: 10
 
-  authentik-db:
-    image: postgres:17-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: authentik
-      POSTGRES_USER: authentik
-      POSTGRES_PASSWORD: ${AUTHENTIK_DB_PASSWORD:?sätt AUTHENTIK_DB_PASSWORD i .env}
-    volumes:
-      - authentik-db:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U authentik -d authentik"]
-      interval: 10s
-      retries: 10
-
-  # Authentik behöver inte Redis sedan 2025.10. Lås taggen till senaste stabila version.
-  authentik-server:
-    image: ghcr.io/goauthentik/server:${AUTHENTIK_TAG:-2026.8}
-    restart: unless-stopped
-    command: server
-    environment: &authentik-env
-      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?sätt AUTHENTIK_SECRET_KEY i .env}
-      AUTHENTIK_POSTGRESQL__HOST: authentik-db
-      AUTHENTIK_POSTGRESQL__USER: authentik
-      AUTHENTIK_POSTGRESQL__NAME: authentik
-      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD}
-      AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
-      AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD:-}
-      AUTHENTIK_BOOTSTRAP_EMAIL: ${AUTHENTIK_BOOTSTRAP_EMAIL:-admin@cmdb.local}
-      # Read by the cmdb blueprint.
-      CMDB_DEMO_PASSWORD: ${CMDB_DEMO_PASSWORD:?sätt CMDB_DEMO_PASSWORD i .env}
-      CMDB_WEB_PORT: ${CMDB_WEB_PORT:-8480}
-    volumes:
-      - ./infra/authentik/blueprints:/blueprints/custom:ro
-    ports:
-      - "${AUTHENTIK_PORT:-9000}:9000"
-    depends_on:
-      authentik-db: { condition: service_healthy }
-
-  authentik-worker:
-    image: ghcr.io/goauthentik/server:${AUTHENTIK_TAG:-2026.8}
-    restart: unless-stopped
-    command: worker
-    environment: *authentik-env
-    volumes:
-      - ./infra/authentik/blueprints:/blueprints/custom:ro
-    depends_on:
-      authentik-db: { condition: service_healthy }
-
   api:
     build:
       context: .
@@ -73,10 +25,8 @@ services:
     environment:
       ConnectionStrings__Cmdb: Host=db;Database=cmdb;Username=cmdb;Password=${CMDB_DB_PASSWORD}
       Database__MigrateOnStartup: "true"
-      # Tokens carry the issuer the browser sees; metadata is fetched over the compose network.
-      Auth__Authority: http://localhost:${AUTHENTIK_PORT:-9000}/application/o/cmdb/
-      Auth__MetadataAddress: http://authentik-server:9000/application/o/cmdb/.well-known/openid-configuration
-      Auth__RequireHttpsMetadata: "false"
+      # The homelab's Authentik (Rosenvalls-Homelab, blueprint apps-cmdb.yaml).
+      Auth__Authority: ${OIDC_AUTHORITY:-https://authentik.rosenvall.se/application/o/cmdb/}
     ports:
       - "${CMDB_API_PORT:-8481}:8080"
     healthcheck:
@@ -91,7 +41,7 @@ services:
     build: ./src/web
     restart: unless-stopped
     environment:
-      OIDC_AUTHORITY: http://localhost:${AUTHENTIK_PORT:-9000}/application/o/cmdb/
+      OIDC_AUTHORITY: ${OIDC_AUTHORITY:-https://authentik.rosenvall.se/application/o/cmdb/}
       OIDC_CLIENT_ID: cmdb-web
     ports:
       - "${CMDB_WEB_PORT:-8480}:8080"
@@ -100,4 +50,3 @@ services:
 
 volumes:
   cmdb-db:
-  authentik-db:

@@ -23,7 +23,7 @@ describe('App', () => {
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();
     const me: Me = {
-      username: 'demo-region',
+      username: 'cmdb-demo-region',
       name: 'Demo Region',
       email: null,
       groups: ['cmdb-region-nord'],

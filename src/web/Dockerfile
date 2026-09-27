@@ -8,7 +8,7 @@ RUN npx ng build
 
 FROM nginxinc/nginx-unprivileged:1.29-alpine
 ENV API_UPSTREAM=http://api:8080 \
-    OIDC_AUTHORITY=http://localhost:9000/application/o/cmdb/ \
+    OIDC_AUTHORITY=https://authentik.rosenvall.se/application/o/cmdb/ \
     OIDC_CLIENT_ID=cmdb-web \
     NGINX_ENVSUBST_FILTER=^(API_|OIDC_)
 COPY nginx/default.conf.template /etc/nginx/templates/default.conf.template

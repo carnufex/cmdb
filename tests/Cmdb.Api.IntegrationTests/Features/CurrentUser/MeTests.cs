@@ -13,13 +13,13 @@ public sealed class MeTests(ApiFactory factory)
     [Fact]
     public async Task Returns_the_user_and_their_groups()
     {
-        using var client = factory.CreateAuthenticatedClient("demo-region", ["cmdb-region-nord"]);
+        using var client = factory.CreateAuthenticatedClient("cmdb-demo-region", ["cmdb-region-nord"]);
 
         var me = await client.GetFromJsonAsync<MeResponse>("/api/me", Ct);
 
         me.ShouldNotBeNull();
-        me.Username.ShouldBe("demo-region");
-        me.Email.ShouldBe("demo-region@cmdb.local");
+        me.Username.ShouldBe("cmdb-demo-region");
+        me.Email.ShouldBe("cmdb-demo-region@cmdb.local");
         me.Groups.ShouldBe(["cmdb-region-nord"]);
     }
 
