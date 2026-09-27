@@ -1,4 +1,5 @@
 {
   "oidcAuthority": "https://authentik.rosenvall.se/application/o/cmdb/",
-  "oidcClientId": "cmdb-web"
+  "oidcClientId": "cmdb-web",
+  "lantmaterietKey": ""
 }

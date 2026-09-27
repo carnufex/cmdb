@@ -30,6 +30,7 @@
               }
             ],
             "styles": [
+              "ol/ol.css",
               "@fontsource-variable/inter/index.css",
               "@fontsource/jetbrains-mono/400.css",
               "src/styles.scss"
@@ -40,8 +41,8 @@
               "budgets": [
                 {
                   "type": "initial",
-                  "maximumWarning": "500kB",
-                  "maximumError": "1MB"
+                  "maximumWarning": "1MB",
+                  "maximumError": "2MB"
                 },
                 {
                   "type": "anyComponentStyle",

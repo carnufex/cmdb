@@ -1,0 +1,49 @@
+:host {
+  position: absolute;
+  inset: 0;
+  display: block;
+  background: var(--bg);
+}
+
+.map {
+  position: absolute;
+  inset: 0;
+}
+
+.hover {
+  position: absolute;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-1) var(--space-2);
+  background: var(--surface-2);
+  border: var(--line);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+
+  .name {
+    color: var(--text-muted);
+  }
+}
+
+.legend {
+  position: absolute;
+  left: var(--space-3);
+  bottom: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  background: color-mix(in srgb, var(--surface-1) 92%, transparent);
+  border: var(--line);
+  border-radius: var(--radius-md);
+
+  .hint {
+    margin: var(--space-1) 0 0;
+    max-width: 200px;
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+  }
+}

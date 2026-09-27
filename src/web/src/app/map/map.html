@@ -1,0 +1,19 @@
+<div #target class="map" aria-label="Karta över nätet"></div>
+
+@if (hover(); as h) {
+  <div class="hover" [style.left.px]="h.x + 14" [style.top.px]="h.y + 14">
+    <span class="mono">{{ h.code }}</span>
+    @if (h.name) {
+      <span class="name">{{ h.name }}</span>
+    }
+  </div>
+}
+
+<aside class="legend" aria-label="Teckenförklaring">
+  <cmdb-status value="in_service" />
+  <cmdb-status value="under_construction" />
+  <cmdb-status value="planned" />
+  @if (zoom() < detailZoom) {
+    <p class="hint">Zooma in för att se accessiter och små kablar.</p>
+  }
+</aside>
