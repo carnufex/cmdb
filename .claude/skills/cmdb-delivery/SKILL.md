@@ -66,8 +66,9 @@ From a clean, up-to-date `main` in Git Bash:
 scripts/deploy.sh --deploy --wait
 ```
 
-It refuses a dirty tree, a branch other than `main` and a `main` that differs
-from `origin/main`. It builds three images for `linux/amd64`, pushes them,
+It refuses a dirty tree and any HEAD other than `origin/main`. When the main
+checkout is busy with someone else's changes, deploy from your worktree with
+`git switch --detach origin/main` instead. It builds three images for `linux/amd64`, pushes them,
 rewrites `kubernetes/applications/cmdb/app.yaml` in the homelab repo
 (`HOMELAB_REPO`, default `~/source/repos/Rosenvalls-Homelab`), commits
 `cmdb: deploy sha-<commit>`, pushes, refreshes the ArgoCD app, waits for both

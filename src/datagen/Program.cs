@@ -3,6 +3,7 @@ using System.Globalization;
 using Cmdb.Catalog;
 using Cmdb.DataGen;
 using Cmdb.Database;
+using Npgsql;
 
 namespace Cmdb.DataGen;
 
@@ -72,7 +73,10 @@ internal static class Cli
         }
 
         var load = Stopwatch.StartNew();
-        await using var db = CmdbDatabase.CreateDataSource(connection);
+        // Finishing a large COPY (FK checks, index maintenance) takes minutes on network storage,
+        // far past Npgsql's 30 s default, and the binary importer inherits the connection's timeout.
+        var bulk = new NpgsqlConnectionStringBuilder(connection) { CommandTimeout = 0 };
+        await using var db = CmdbDatabase.CreateDataSource(bulk.ConnectionString);
         await Loader.LoadAsync(db, network, reset, Console.Out);
         Console.WriteLine($"Loaded in {load.Elapsed.TotalSeconds:0.0} s, total {total.Elapsed.TotalSeconds:0.0} s");
         return 0;

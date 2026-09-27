@@ -28,14 +28,12 @@ die()  { printf '\033[31m%s\033[0m\n' "$*" >&2; exit 1; }
 
 step "kontroller"
 [[ -z "$(git status --porcelain)" ]] || die "Arbetskatalogen är inte ren. Committa eller stasha först."
-branch=$(git rev-parse --abbrev-ref HEAD)
-if [[ "$branch" != main ]]; then
-  [[ $ALLOW_BRANCH -eq 1 && $DEPLOY -eq 0 ]] || die "Deploy sker bara från main (nu: $branch)."
-fi
-if [[ "$branch" == main ]]; then
-  git fetch -q origin main
-  [[ "$(git rev-parse HEAD)" == "$(git rev-parse origin/main)" ]] \
-    || die "main är inte i takt med origin/main. Kör git pull (och push) först."
+# HEAD must be exactly origin/main: a main checkout or a detached worktree
+# (git switch --detach origin/main) when the main checkout is busy.
+git fetch -q origin main
+if [[ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]]; then
+  [[ $ALLOW_BRANCH -eq 1 && $DEPLOY -eq 0 ]] \
+    || die "Deploy sker bara från origin/main (HEAD är $(git rev-parse --short HEAD)). Kör git pull, eller git switch --detach origin/main."
 fi
 sha=$(git rev-parse --short=7 HEAD)
 tag="sha-$sha"
