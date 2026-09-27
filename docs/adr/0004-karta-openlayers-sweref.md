@@ -6,7 +6,7 @@
 Målorganisationen använder ArcGIS-lager och svenska kartkällor i SWEREF 99 TM. Utländska kartlager är inte tillåtna.
 
 ## Beslut
-OpenLayers som kartmotor. Lagring i EPSG:3006. Bakgrundskarta från Lantmäteriets WMTS.
+OpenLayers som kartmotor. Lagring i EPSG:3006. Bakgrundskarta från Lantmäteriets WMTS. *Bakgrunden ersatt av ADR-0010 i POC:en.*
 
 ## Alternativ
 - **MapLibre GL.** Modern WebGL-rendering men enbart Web Mercator, som är olämpligt för analys särskilt i norr.

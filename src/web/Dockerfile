@@ -10,8 +10,8 @@ FROM nginxinc/nginx-unprivileged:1.29-alpine
 ENV API_UPSTREAM=http://api:8080 \
     OIDC_AUTHORITY=https://authentik.rosenvall.se/application/o/cmdb/ \
     OIDC_CLIENT_ID=cmdb-web \
-    LANTMATERIET_KEY="" \
-    NGINX_ENVSUBST_FILTER=^(API_|OIDC_|LANTMATERIET_)
+    MAP_BASEMAP=esri \
+    NGINX_ENVSUBST_FILTER=^(API_|OIDC_|MAP_)
 COPY nginx/default.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=build /app/dist/web/browser /usr/share/nginx/html
 EXPOSE 8080

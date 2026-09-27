@@ -63,7 +63,7 @@ Grundregeln är att allt är nekat tills något uttryckligen beviljas. Omfång b
 
 - Lagring i SWEREF 99 TM (EPSG:3006), så att längder och avstånd blir korrekta.
 - Kartmotor: OpenLayers. Den stöder godtyckliga projektioner, WMTS, ArcGIS REST och vektorplattor.
-- Bakgrundskarta från svenska källor (Lantmäteriets WMTS). Inga utländska kartlager. Kartan kapslas in i en egen komponent så att motorn går att byta.
+- Bakgrundskarta i POC:en: Esris nyckelfria Canvas-kartor, omprojicerade till SWEREF 99 TM (ADR-0010). Med `MAP_BASEMAP=none` görs inga externa kartanrop, och det är läget för miljöer med klassad data. Kartan kapslas in i en egen komponent så att motorn och bakgrunden går att byta.
 
 ## Drift
 
