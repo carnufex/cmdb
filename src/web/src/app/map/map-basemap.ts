@@ -32,6 +32,9 @@ export function createBasemap(theme: Theme): TileLayer<XYZ> {
       maxZoom: 16,
       attributions: ESRI_ATTRIBUTION,
       attributionsCollapsible: false,
+      // Reprojection cost is dominated by triangulation; a few pixels of error is invisible on a toned-down background.
+      reprojectionErrorThreshold: 4,
+      transition: 0,
     }),
   });
 }
