@@ -39,6 +39,18 @@ public sealed class GetEquipmentEndpoint(NpgsqlDataSource db) : Endpoint<Equipme
 
     public override async Task HandleAsync(EquipmentRequest req, CancellationToken ct)
     {
+        var detail = await LoadAsync(db, req.Id, ct);
+        if (detail is null)
+        {
+            await Send.NotFoundAsync(ct);
+            return;
+        }
+        await Send.OkAsync(detail, ct);
+    }
+
+    /// <summary>Also used by the MCP tools (#61), so agents see exactly what the UI shows.</summary>
+    internal static async Task<EquipmentDetail?> LoadAsync(NpgsqlDataSource db, long id, CancellationToken ct)
+    {
         // TODO(#22): the caller's scope decides visibility; peers outside it become placeholders.
         await using var conn = await db.OpenConnectionAsync(ct);
         await using var batch = new NpgsqlBatch(conn)
@@ -61,21 +73,21 @@ public sealed class GetEquipmentEndpoint(NpgsqlDataSource db) : Endpoint<Equipme
                     JOIN site s ON s.id = e.site_id
                     LEFT JOIN equipment pe ON pe.id = e.parent_id
                     WHERE e.id = $1
-                    """) { Parameters = { new() { Value = req.Id } } },
+                    """) { Parameters = { new() { Value = id } } },
                 new("""
                     SELECT c.slot, c.id, c.name, c.lifecycle::text FROM equipment c WHERE c.parent_id = $1 ORDER BY c.slot
-                    """) { Parameters = { new() { Value = req.Id } } },
+                    """) { Parameters = { new() { Value = id } } },
                 new("""
                     SELECT p.terminal_id, p.name, p.port_type, p.port_group, p.position,
                            (SELECT count(*) FROM circuit_hop h WHERE h.terminal_id = p.terminal_id)::int
                     FROM port p WHERE p.equipment_id = $1 ORDER BY p.position
-                    """) { Parameters = { new() { Value = req.Id } } },
+                    """) { Parameters = { new() { Value = id } } },
                 new("""
                     SELECT p.terminal_id, CASE WHEN c.a_terminal_id = p.terminal_id THEN c.b_terminal_id ELSE c.a_terminal_id END,
                            c.kind::text, c.lifecycle::text
                     FROM port p JOIN connection c ON (c.a_terminal_id = p.terminal_id OR c.b_terminal_id = p.terminal_id) AND c.valid_to IS NULL
                     WHERE p.equipment_id = $1
-                    """) { Parameters = { new() { Value = req.Id } } },
+                    """) { Parameters = { new() { Value = id } } },
             },
         };
 
@@ -88,8 +100,7 @@ public sealed class GetEquipmentEndpoint(NpgsqlDataSource db) : Endpoint<Equipme
         {
             if (!await reader.ReadAsync(ct))
             {
-                await Send.NotFoundAsync(ct);
-                return;
+                return null;
             }
             detail = new EquipmentDetail(
                 reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetString(4), reader.GetString(5),
@@ -126,7 +137,7 @@ public sealed class GetEquipmentEndpoint(NpgsqlDataSource db) : Endpoint<Equipme
         var freeSlots = JsonDocument.Parse(slotTemplate!).RootElement.EnumerateArray()
             .Select(s => s.GetProperty("name").GetString()!).Where(s => !usedSlots.Contains(s)).ToList();
 
-        await Send.OkAsync(detail with
+        return detail with
         {
             FreeSlots = freeSlots,
             Cards = cards,
@@ -137,7 +148,7 @@ public sealed class GetEquipmentEndpoint(NpgsqlDataSource db) : Endpoint<Equipme
                     [.. byPort[p.Terminal].Where(c => peers.ContainsKey(c.Peer)).Select(c => new PortConnection(c.Kind, c.Lifecycle, peers[c.Peer]))],
                     p.Circuits);
             })],
-        }, ct);
+        };
     }
 
     /// <summary>Front-panel cell per port position, from the type's template.</summary>

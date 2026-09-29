@@ -10,6 +10,17 @@ server {
     proxy_set_header X-Forwarded-Proto $scheme;
   }
 
+  # MCP for agents (ADR-0011). Responses may stream, so nothing is buffered.
+  location = /mcp {
+    proxy_pass ${API_UPSTREAM};
+    proxy_http_version 1.1;
+    proxy_buffering off;
+    proxy_read_timeout 300s;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+
   # Runtime settings for the SPA; overrides public/config.json (which is for ng serve).
   location = /config.json {
     default_type application/json;

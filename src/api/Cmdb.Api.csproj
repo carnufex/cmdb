@@ -5,6 +5,7 @@
   <ItemGroup>
     <PackageReference Include="FastEndpoints" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <PackageReference Include="ModelContextProtocol.AspNetCore" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Cmdb.Api.Tests" />
@@ -13,5 +14,9 @@
   <ItemGroup>
     <ProjectReference Include="..\database\Cmdb.Database.csproj" />
     <ProjectReference Include="..\catalog\Cmdb.Catalog.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Served to agents as MCP resources (ADR-0011), so they read the same documentation as humans. -->
+    <EmbeddedResource Include="..\..\docs\domanmodell.md;..\..\docs\plan.md;..\..\docs\arkitektur.md" LogicalName="docs/%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

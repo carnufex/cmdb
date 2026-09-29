@@ -47,8 +47,14 @@ public sealed class ImpactEndpoint(NpgsqlDataSource db) : Endpoint<ImpactRequest
     public override async Task HandleAsync(ImpactRequest req, CancellationToken ct)
     {
         var isSite = HttpContext.Request.Path.Value!.Contains("/sites/", StringComparison.Ordinal);
-        await using var cmd = db.CreateCommand(isSite ? SiteSql : CableSql);
-        cmd.Parameters.Add(new NpgsqlParameter { Value = req.Id });
+        await Send.OkAsync(await RunAsync(db, isSite ? "site" : "cable", req.Id, ct), ct);
+    }
+
+    /// <summary>Impact of a cable or a site. Also used by the MCP tool <c>impact</c> (#61).</summary>
+    internal static async Task<Impact> RunAsync(NpgsqlDataSource db, string type, long id, CancellationToken ct)
+    {
+        await using var cmd = db.CreateCommand(type == "site" ? SiteSql : CableSql);
+        cmd.Parameters.Add(new NpgsqlParameter { Value = id });
 
         var circuits = 0;
         var services = new List<ObjectRef>();
@@ -61,6 +67,6 @@ public sealed class ImpactEndpoint(NpgsqlDataSource db) : Endpoint<ImpactRequest
                 services.Add(new ObjectRef("service", reader.GetInt64(1), reader.GetString(2), reader.GetString(3), reader.GetString(4)));
             }
         }
-        await Send.OkAsync(new Impact(circuits, services), ct);
+        return new Impact(circuits, services);
     }
 }

@@ -1,3 +1,4 @@
+using Cmdb.Api.Agents;
 using Cmdb.Api.Auth;
 using Cmdb.Api.Diagnostics;
 using Cmdb.Catalog;
@@ -34,6 +35,7 @@ builder.Services.AddDbContext<CmdbDbContext>((sp, o) => o.UseCmdb(sp.GetRequired
 builder.Services.AddSingleton(TypeCatalog.Embedded);
 builder.Services.AddCmdbAuthentication(builder.Configuration);
 builder.Services.AddFastEndpoints();
+builder.Services.AddCmdbMcp();
 
 var app = builder.Build();
 
@@ -57,6 +59,7 @@ app.UseServerTiming();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseFastEndpoints(c => c.Endpoints.RoutePrefix = "api");
+app.MapCmdbMcp();
 await app.RunAsync();
 return 0;
 

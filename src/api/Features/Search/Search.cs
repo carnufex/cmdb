@@ -120,6 +120,12 @@ public sealed class SearchEndpoint(NpgsqlDataSource db) : Endpoint<SearchRequest
         {
             (nx, ny) = (x, y);
         }
+        await Send.OkAsync(await RunAsync(db, q, nx, ny, req.Limit, ct), ct);
+    }
+
+    /// <summary>Also used by the MCP tool <c>search</c> (#61).</summary>
+    internal static async Task<List<SearchHit>> RunAsync(NpgsqlDataSource db, string q, double? nx, double? ny, int limit, CancellationToken ct)
+    {
         var literal = EscapeLike(q);
 
         // Values are passed as plain parameters so each execution is planned with them; a LIKE 'prefix%' can
@@ -143,7 +149,7 @@ public sealed class SearchEndpoint(NpgsqlDataSource db) : Endpoint<SearchRequest
         cmd.Parameters.Add(new NpgsqlParameter { Value = q.Length >= 3 ? $"%{literal}%" : DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
         cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)nx ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Double });
         cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)ny ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Double });
-        cmd.Parameters.Add(new NpgsqlParameter { Value = req.Limit });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = limit });
         // An id match only when the query is a number, so the primary key index is used.
         cmd.Parameters.Add(new NpgsqlParameter
         {
@@ -151,7 +157,7 @@ public sealed class SearchEndpoint(NpgsqlDataSource db) : Endpoint<SearchRequest
             NpgsqlDbType = NpgsqlDbType.Bigint,
         });
 
-        var hits = new List<SearchHit>(req.Limit);
+        var hits = new List<SearchHit>(limit);
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
         {
@@ -165,7 +171,7 @@ public sealed class SearchEndpoint(NpgsqlDataSource db) : Endpoint<SearchRequest
                 reader.IsDBNull(6) ? null : reader.GetDouble(6),
                 reader.IsDBNull(7) ? null : reader.GetDouble(7)));
         }
-        await Send.OkAsync(hits, ct);
+        return hits;
     }
 
     private static string EscapeLike(string value) =>

@@ -7,6 +7,7 @@ COPY src/database/Cmdb.Database.csproj src/database/
 COPY src/catalog/Cmdb.Catalog.csproj src/catalog/
 RUN dotnet restore src/api/Cmdb.Api.csproj
 COPY catalog/ catalog/
+COPY docs/ docs/
 COPY src/database/ src/database/
 COPY src/catalog/ src/catalog/
 COPY src/api/ src/api/
