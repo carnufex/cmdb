@@ -33,6 +33,7 @@ public static class ScopeCatalog
             // Roughly north of Sundsvall.
             Area = Wkt.Read("POLYGON((200000 6950000, 1000000 6950000, 1000000 7800000, 200000 7800000, 200000 6950000))"),
             Groups = ["cmdb-region-nord"],
+            DbRoles = ["cmdb_rapport_nord"],
             Reason = "Regional drift i norr (demo).",
             GrantedBy = "demo-behorighetsagare",
             ApprovedBy = "demo-sakerhetschef",
@@ -77,6 +78,7 @@ public static class ScopeCatalog
             row.Plans = scope.Plans;
             row.CrossingMode = scope.CrossingMode;
             row.Groups = scope.Groups;
+            row.DbRoles = scope.DbRoles;
             row.ValidTo = scope.ValidTo;
             row.Reason = scope.Reason;
             row.GrantedBy = scope.GrantedBy;
