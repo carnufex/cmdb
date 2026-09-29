@@ -33,3 +33,28 @@ internal sealed class GraphChangeConfiguration : IEntityTypeConfiguration<GraphC
         e.HasIndex(x => x.Tx);
     }
 }
+
+/// <summary>
+/// How far the outbox has been pruned (#78): one row. A reader whose watermark is at or below <see cref="Tx"/> may
+/// have missed changes and must reload in full.
+/// </summary>
+public class GraphChangePruned
+{
+    public int Id { get; set; } = 1;
+
+    /// <summary>The highest transaction id removed from <c>graph_change</c>.</summary>
+    public ulong Tx { get; set; }
+
+    public DateTimeOffset PrunedAt { get; set; }
+}
+
+internal sealed class GraphChangePrunedConfiguration : IEntityTypeConfiguration<GraphChangePruned>
+{
+    public void Configure(EntityTypeBuilder<GraphChangePruned> e)
+    {
+        e.ToTable("graph_change_pruned", t => t.HasCheckConstraint("ck_graph_change_pruned_single", "id = 1"));
+        e.Property(x => x.Id).ValueGeneratedNever();
+        e.Property(x => x.Tx).HasColumnType("xid8");
+        e.Property(x => x.PrunedAt).HasDefaultValueSql("now()");
+    }
+}
