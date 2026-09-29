@@ -17,3 +17,4 @@ Nya beslut: kopiera närmaste ADR, öka numret och sätt status **Föreslagen**.
 | [0011](0011-agentic-first-mcp.md) | Agentic-first: MCP-server i API:t, agenter som vanliga konsumenter |
 | [0012](0012-rls-for-direkt-databasatkomst.md) | Var Postgres RLS gäller (direkt databasåtkomst, #96) |
 | [0013](0013-lagring-av-historik-och-loggar.md) | Lagring av historik, operationslogg och läslogg (**Föreslagen**, #101) |
+| [0014](0014-kanalisation.md) | Kanalisation: trasé, dukt, subdukt och beläggning (**Föreslagen**, #103) |
