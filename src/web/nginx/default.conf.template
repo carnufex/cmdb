@@ -1,4 +1,12 @@
 # Rendered by the nginx image's envsubst step at start. API_UPSTREAM defaults to the compose service.
+
+# Behind the cluster gateway TLS ends before nginx, so keep the scheme the gateway saw (https in the demo);
+# locally there is no such header and nginx's own scheme is right.
+map $http_x_forwarded_proto $forwarded_proto {
+  default $http_x_forwarded_proto;
+  ''      $scheme;
+}
+
 server {
   listen 8080;
   root /usr/share/nginx/html;
@@ -7,7 +15,7 @@ server {
     proxy_pass ${API_UPSTREAM};
     proxy_set_header Host $http_host;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Proto $forwarded_proto;
   }
 
   # MCP for agents (ADR-0011). Responses may stream, so nothing is buffered.
@@ -18,14 +26,14 @@ server {
     proxy_read_timeout 300s;
     proxy_set_header Host $http_host;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Proto $forwarded_proto;
   }
 
   # OAuth Protected Resource Metadata (RFC 9728): MCP clients discover the identity provider here.
   location ^~ /.well-known/oauth-protected-resource {
     proxy_pass ${API_UPSTREAM};
     proxy_set_header Host $http_host;
-    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Proto $forwarded_proto;
   }
 
   # Runtime settings for the SPA; overrides public/config.json (which is for ng serve).
