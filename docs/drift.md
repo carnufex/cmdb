@@ -49,6 +49,20 @@ En image från en branch kan byggas för att testa den (`scripts/deploy.sh --all
 - **Migreringar måste tåla att den förra versionen fortfarande kör** under utrullningen och vid en rollback. Lägg till först och ta bort i en senare release (expand/contract). En destruktiv migrering kräver ett issue med `type:decision`.
 - Databasen säkerhetskopieras inte. All data är syntetisk och genereras om.
 
+### Direkt databasåtkomst
+
+Integrationer, rapporter och export som läser databasen utan API:t får en egen roll (ADR-0012):
+
+1. Skapa rollen som managed role i CloudNativePG (`database.yaml` i homelabbet) med lösenordet i Bitwarden och en ExternalSecret, som `cmdb_rapport_nord`.
+2. Lägg rollen i `db_roles` på de omfång den ska ha (i demon: `ScopeCatalog`).
+3. Starta om API:t. Migreringssteget ger rollen SELECT på de tabeller som har radpolicyer och inget annat.
+
+Rollen ser bara det dess omfång visar. Tas den bort ur `db_roles` ser den ingenting, även om behörigheterna ligger kvar. Så här provar du demorollen:
+
+```bash
+kubectl -n cmdb exec -it cmdb-postgresql-1 -- psql "host=localhost dbname=cmdb user=cmdb_rapport_nord password=$(kubectl -n cmdb get secret cmdb-rapport-nord -o jsonpath='{.data.password}' | base64 -d)" -c "SELECT count(*) FROM site"
+```
+
 ### Ladda eller ladda om data
 
 ```bash

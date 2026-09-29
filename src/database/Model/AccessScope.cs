@@ -34,6 +34,12 @@ public class AccessScope
     /// <summary>Identity provider groups the scope is granted to.</summary>
     public string[] Groups { get; set; } = [];
 
+    /// <summary>
+    /// Database roles that read the database directly with this scope (ADR-0012): integrations, reports, export.
+    /// Row-level security limits them to what the scope shows. The API does not use it.
+    /// </summary>
+    public string[] DbRoles { get; set; } = [];
+
     /// <summary>After this the scope grants nothing until renewed.</summary>
     public DateTimeOffset? ValidTo { get; set; }
 

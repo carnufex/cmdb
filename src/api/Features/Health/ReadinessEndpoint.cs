@@ -5,7 +5,7 @@ using Npgsql;
 namespace Cmdb.Api.Features.Health;
 
 /// <summary>Ready to serve traffic: the database answers, the network graph is loaded and access scopes are known.</summary>
-public sealed class ReadinessEndpoint(NpgsqlDataSource db, GraphHolder graph, Cmdb.Api.Auth.ScopeRefreshService scopes) : EndpointWithoutRequest<HealthResponse>
+public sealed class ReadinessEndpoint(Cmdb.Api.Auth.SystemDb system, GraphHolder graph, Cmdb.Api.Auth.ScopeRefreshService scopes) : EndpointWithoutRequest<HealthResponse>
 {
     public override void Configure()
     {
@@ -18,7 +18,7 @@ public sealed class ReadinessEndpoint(NpgsqlDataSource db, GraphHolder graph, Cm
     {
         try
         {
-            await using var cmd = db.CreateCommand("SELECT 1");
+            await using var cmd = system.Source.CreateCommand("SELECT 1");
             await cmd.ExecuteScalarAsync(ct);
             if (!graph.IsReady)
             {

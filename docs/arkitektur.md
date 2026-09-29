@@ -11,7 +11,7 @@
    ├── Behörighet (omfång → synlighetsmasker)
    └── Kommandon → operationslogg + tillstånd (samma transaktion)
         ▼
- PostgreSQL + PostGIS (sanningskälla, RLS som sista spärr)
+ PostgreSQL + PostGIS (sanningskälla, RLS för direkt databasåtkomst)
 ```
 
 ## Grafmotor i minnet
@@ -75,7 +75,7 @@ Grundregeln är att allt är nekat tills något uttryckligen beviljas. Omfång b
 - Varje förfrågan får sina omfång från token-grupperna (`UserScope`). Alla SQL-ytor filtrerar på omfångsnycklarna: sök, sitevy, utrustning, kabel, tjänst, krets, hovringskort, avancerad sökning, grannskap, grannskapsgraf och kartplattor. Ett objekt utanför omfånget ger 404, inte 403. Dolda attribut tas bort ur svaren.
 - Grafmotorn får synlighetsmasker (bool per site, kabel, krets och tjänst), byggda ur samma tabeller och cachade per grafinstans och omfångskombination. Spårningen stannar vid gränsen (`TraceEnd.Boundary`) och visar en neutral platshållare utan id eller namn. Påverkan och spårning räknar kretsar och tjänster utanför omfånget (`hiddenServices`, `hidden`) utan att nämna dem.
 - MCP-verktygen går genom samma kod med agentens token. `/api/me` visar gällande omfång, och webben visar dem i verktygsfältet.
-- **Postgres RLS (steg 2) är tillbakadragen** i väntan på beslut (#96, ADR-0012 *Föreslagen*). Under RLS fick sök och kartplattor sekventiella genomsökningar, eftersom deras villkor inte är leakproof. API:t har kvar anslutningspooler per omfångskombination (`ScopedDataSources`, `RequestDb`, `SystemDb`), och den vanliga poolen nekar allt, så RLS kan slås på igen för de roller beslutet gäller.
+- **Postgres RLS gäller direkt databasåtkomst** (ADR-0012, #96). API:t ansluter som tabellägare, som RLS inte gäller (ingen FORCE), och tillämpar omfången själv. Roller som läser databasen direkt (integrationer, rapporter, export) listas i `access_scope.db_roles`. Policyer på `site`, `location`, `equipment`, `port`, `cable`, `conductor`, `circuit`, `circuit_hop`, `service` och `service_circuit` begränsar dem till vad deras omfång visar (`cmdb_direct_scopes()` läser `current_user`, så en sessionsinställning kan inte vidga något). Vid start får de SELECT på just de tabellerna, typkatalogerna och omfångstabellerna (`DirectAccess.GrantAsync`), inget annat. Döljer omfånget attribut får rollen inte kolumnen `attributes`, och dolda koordinater tar bort `geom`. Demon har rollen `cmdb_rapport_nord` (Region Nord). Steg 2 med RLS för API:ts egna frågor drogs tillbaka: sök och kartplattor fick sekventiella genomsökningar eftersom deras villkor inte är leakproof.
 - Kvar i #22 (steg 3): klippning av kabelgeometri i kartplattor och dolda koordinater.
 
 ## Databas

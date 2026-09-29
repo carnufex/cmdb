@@ -1,6 +1,6 @@
 # ADR-0012: Var Postgres RLS gäller
 
-**Status:** Föreslagen · **Datum:** 2026-09-29 · **Beslut:** #96 · **Ändrar:** punkten om RLS i ADR-0007
+**Status:** Accepterad · **Datum:** 2026-09-29 (accepterad samma dag, alternativ C, #96) · **Ändrar:** punkten om RLS i ADR-0007
 
 ## Kontext
 ADR-0007 säger att behörighetsomfång tillämpas som synlighetsmasker i grafmotorn, med Postgres RLS som sista spärr. Steg 1 i #22 tillämpar omfången på alla läsytor i API:t, i grafmotorn och i MCP, med negativa tester per yta och demoanvändare.
@@ -19,3 +19,6 @@ Steg 2 införde RLS med FORCE på `site`, `equipment`, `cable`, `circuit` och `s
 - En roll med `BYPASSRLS` för API:t och en roll per direktkonsument, båda som managed roles i CloudNativePG (homelabbets `database.yaml`).
 - Policyerna från steg 2 återinförs, men gäller bara rollerna utan `BYPASSRLS`. Direktkonsumenter får samma omfångsnycklar via `cmdb.scopes`, satt i rollens standardinställningar (`ALTER ROLE … SET`).
 - API:ts omfångsfilter och tester är den primära spärren och behåller sin täckning.
+
+## Beslut
+**C**, beslutat i #96. Genomfört så här, med en skillnad mot förslaget ovan: omfånget för en direktroll kommer från `access_scope.db_roles` och `current_user`, inte från `cmdb.scopes`. En sessionsinställning kan rollen själv ändra, så den kan inte vara en spärr. API:t behöver ingen roll med `BYPASSRLS`: det ansluter som tabellägare, och policyerna har ingen FORCE.

@@ -30,14 +30,12 @@ var builder = WebApplication.CreateBuilder(args);
 
 var connectionString = builder.Configuration.GetConnectionString("Cmdb")
     ?? throw new InvalidOperationException("ConnectionStrings:Cmdb is not configured.");
-// Row-level security (#22): requests get a pool carrying their scopes, system work one that sees everything, and a
-// plain NpgsqlDataSource sees nothing, so a forgotten choice fails closed.
-var dataSources = new Cmdb.Api.Auth.ScopedDataSources(connectionString);
-builder.Services.AddSingleton(dataSources);
-builder.Services.AddSingleton(new Cmdb.Api.Auth.SystemDb(dataSources.System));
-builder.Services.AddSingleton(dataSources.Deny);
-builder.Services.AddScoped(sp => new Cmdb.Api.Auth.RequestDb(
-    sp.GetRequiredService<Cmdb.Api.Auth.ScopedDataSources>().For(sp.GetRequiredService<Cmdb.Api.Auth.UserScope>())));
+// One pool as the table owner. Request paths take RequestDb and apply the caller's scopes; system work takes SystemDb.
+// Row-level security only applies to roles reading the database directly (ADR-0012). NpgsqlDataSource itself is not
+// registered, so code that has not chosen fails at startup.
+var dataSource = CmdbDatabase.CreateDataSource(connectionString);
+builder.Services.AddSingleton(new Cmdb.Api.Auth.SystemDb(dataSource));
+builder.Services.AddSingleton(new Cmdb.Api.Auth.RequestDb(dataSource));
 builder.Services.AddDbContext<CmdbDbContext>((sp, o) => o.UseCmdb(sp.GetRequiredService<Cmdb.Api.Auth.RequestDb>().Source));
 builder.Services.AddSingleton(TypeCatalog.Embedded);
 builder.Services.AddCmdbAuthentication(builder.Configuration);
@@ -73,6 +71,7 @@ if (migrateOnly || app.Configuration.GetValue<bool>("Database:MigrateOnStartup")
     // Access scopes (#22) are synthetic demo data too; what they show is materialised after the sync.
     await Cmdb.Database.Scopes.ScopeCatalog.SyncAsync(scope.ServiceProvider.GetRequiredService<CmdbDbContext>());
     await Cmdb.Database.Scopes.ScopeVisibility.RefreshAsync(app.Services.GetRequiredService<Cmdb.Api.Auth.SystemDb>().Source);
+    await Cmdb.Database.Scopes.DirectAccess.GrantAsync(app.Services.GetRequiredService<Cmdb.Api.Auth.SystemDb>().Source);
     if (migrateOnly)
     {
         return 0;
