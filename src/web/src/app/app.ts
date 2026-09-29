@@ -1,6 +1,6 @@
 import { httpResource } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
-import { RouterOutlet } from '@angular/router';
+import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { Auth } from './auth/auth';
 import { PanelStack } from './shell/panels';
 import { PanelHostComponent } from './shell/panel-host';
@@ -23,6 +23,8 @@ export interface Me {
   selector: 'app-root',
   imports: [
     RouterOutlet,
+    RouterLink,
+    RouterLinkActive,
     SearchComponent,
     PanelHostComponent,
     QueryPanelComponent,

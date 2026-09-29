@@ -34,6 +34,11 @@
               "@fontsource-variable/inter/index.css",
               "@fontsource/jetbrains-mono/400.css",
               "src/styles.scss"
+            ],
+            "allowedCommonJsDependencies": [
+              "graphology-layout-forceatlas2",
+              "events",
+              "graphology-utils"
             ]
           },
           "configurations": {

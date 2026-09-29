@@ -46,6 +46,7 @@ public static class OpenApiSetup
             ["/api/search"] = "Quick search by code, name, id or attribute text over sites, equipment, cables, services and circuits.",
             ["/api/sites/{id}"] = "A site with its locations, equipment and cables.",
             ["/api/sites/{id}/neighbourhood"] = "Sites within 1–3 cable hops, nearest first.",
+            ["/api/sites/{id}/graph"] = "One level of the neighbourhood graph: sites next to this one by cable and by transmission and logical circuits.",
             ["/api/sites/{id}/impact"] = "Circuits and services affected if the site goes down, each service with its path.",
             ["/api/cables/{id}"] = "A cable with its conductors and where they are spliced.",
             ["/api/cables/{id}/impact"] = "Circuits and services affected if the cable is cut, each service with its path.",

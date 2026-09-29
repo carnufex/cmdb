@@ -49,6 +49,8 @@ Allt massarbete sker i en plan: förhandsvisning av skillnader, konfliktkontroll
 | Spårschema | Vilken väg tar tjänsten? |
 | Grannskapsgraf | Vad finns runt omkring? Expandera och backa. |
 
+**Grannskapsgrafen** (`/graf`, växla med *Karta | Grannskap* uppe till höger, #20) utgår från den site som är öppen, eller från `?g=`. Kanter är kablar (fysiskt lager) och transmissions- och logiska kretsar mellan siter, sammanslagna per site och lager. *Expandera en nivå* hämtar grannarna till upp till 40 oexpanderade siter åt gången. Dubbelklick expanderar en enskild site, *Backa* tar tillbaka senaste expansionen och *Fokusera på vald* börjar om från den öppna siten. Lager och sitetyper filtreras med kryssrutor. Färg är status, storlek är sitetyp. Grafen ritas med Sigma (WebGL) och startar från kartpositionerna innan ForceAtlas2 ordnar den.
+
 ## Avancerad sökning
 
 Snabbsöket (Ctrl+K) hittar objekt på namn och kod. För frågor som *alla radiositer med en radio på 3500 MHz* eller *siter med minst tre antenner* finns **Avancerad sökning** i verktygsfältet:

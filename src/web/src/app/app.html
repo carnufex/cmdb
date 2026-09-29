@@ -58,6 +58,23 @@
 <main class="workspace">
   <section class="lens">
     <router-outlet />
+    <nav class="lens-switch" aria-label="Lins">
+      <a
+        routerLink="/"
+        queryParamsHandling="preserve"
+        routerLinkActive="active"
+        [routerLinkActiveOptions]="{ exact: true }"
+        ariaCurrentWhenActive="page"
+        >Karta</a
+      >
+      <a
+        routerLink="/graf"
+        queryParamsHandling="preserve"
+        routerLinkActive="active"
+        ariaCurrentWhenActive="page"
+        >Grannskap</a
+      >
+    </nav>
     @if (tools.open() === 'query') {
       <aside class="tool" aria-label="Avancerad sökning"><cmdb-query-panel /></aside>
     } @else if (tools.open() === 'perf') {
