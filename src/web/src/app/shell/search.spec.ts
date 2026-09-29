@@ -3,6 +3,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { MapView } from '../map/map-view';
+import { CommandRegistry } from './commands';
 import { PanelStack } from './panels';
 import { SearchComponent, SearchHit } from './search';
 
@@ -66,5 +67,29 @@ describe('SearchComponent', () => {
     input.dispatchEvent(new Event('input'));
     await vi.advanceTimersByTimeAsync(150);
     http.expectOne((r) => r.url === '/api/search' && r.params.get('q') === '42').flush([]);
+  });
+
+  it('is a command palette: ">" searches commands only and Enter runs the chosen one', async () => {
+    const run = vi.fn();
+    TestBed.inject(CommandRegistry).register(
+      { id: 'x', label: 'Byt tema', run },
+      { id: 'y', label: 'Avancerad sökning', run: vi.fn() },
+    );
+    const fixture = TestBed.createComponent(SearchComponent);
+    fixture.detectChanges();
+    const input = (fixture.nativeElement as HTMLElement).querySelector('input')!;
+
+    input.value = '>tema';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(150);
+    fixture.detectChanges();
+    TestBed.inject(HttpTestingController).expectNone('/api/search');
+    const rows = (fixture.nativeElement as HTMLElement).querySelectorAll('li.command');
+    expect([...rows].map((r) => r.textContent?.trim())).toEqual([
+      expect.stringContaining('Byt tema'),
+    ]);
+
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    expect(run).toHaveBeenCalledOnce();
   });
 });

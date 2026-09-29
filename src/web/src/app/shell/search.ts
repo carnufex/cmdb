@@ -19,6 +19,7 @@ import {
   switchMap,
 } from 'rxjs';
 import { MapView } from '../map/map-view';
+import { Command, CommandRegistry } from './commands';
 import { PanelStack } from './panels';
 import { Lifecycle, StatusComponent } from './status';
 
@@ -41,13 +42,20 @@ const typeLabels: Record<SearchHit['type'], string> = {
   circuit: 'Krets',
 };
 
+/** A row in the palette: a command, or an object from the search. */
+export type PaletteItem = { kind: 'command'; command: Command } | { kind: 'hit'; hit: SearchHit };
+
 type Results =
   | { state: 'idle' }
   | { state: 'loading' }
   | { state: 'done'; hits: SearchHit[] }
   | { state: 'error' };
 
-/** Quick search in the top bar. Ctrl+K or / focuses it; arrows and Enter pick a hit. */
+/**
+ * The command palette in the top bar (#21): quick search over objects plus commands from the registry.
+ * Ctrl+K or / focuses it. Empty, it lists what can be done with the open object; typed text shows matching
+ * commands first, then objects; a leading ">" searches commands only. Arrows and Enter pick a row.
+ */
 @Component({
   selector: 'cmdb-search',
   imports: [StatusComponent],
@@ -60,6 +68,7 @@ export class SearchComponent {
   private readonly http = inject(HttpClient);
   private readonly panels = inject(PanelStack);
   private readonly mapView = inject(MapView);
+  private readonly registry = inject(CommandRegistry);
   private readonly input = viewChild.required<ElementRef<HTMLInputElement>>('input');
 
   protected readonly query = signal('');
@@ -73,7 +82,7 @@ export class SearchComponent {
       debounceTime(120),
       distinctUntilChanged(),
       switchMap((q): import('rxjs').Observable<Results> => {
-        if (q.length < 3 && !/^\d+$/.test(q)) {
+        if (q.startsWith('>') || (q.length < 3 && !/^\d+$/.test(q))) {
           return of({ state: 'idle' });
         }
         let params = new HttpParams().set('q', q);
@@ -96,6 +105,27 @@ export class SearchComponent {
     return r.state === 'done' ? r.hits : [];
   });
 
+  protected readonly commands = computed(() => {
+    const q = this.query().trim();
+    const list = this.registry.match(q.startsWith('>') ? q.slice(1) : q);
+    // Without a command prefix, typed text is mostly a search: keep the commands to the few best.
+    return q && !q.startsWith('>') ? list.slice(0, 4) : list;
+  });
+
+  protected readonly items = computed<PaletteItem[]>(() => [
+    ...this.commands().map((command) => ({ kind: 'command' as const, command })),
+    ...this.hits().map((hit) => ({ kind: 'hit' as const, hit })),
+  ]);
+
+  protected readonly showList = computed(
+    () =>
+      this.open() &&
+      (this.items().length > 0 ||
+        this.results().state === 'loading' ||
+        this.results().state === 'error' ||
+        (this.results().state === 'done' && this.query().trim() !== '')),
+  );
+
   protected onInput(value: string): void {
     this.query.set(value);
     this.active.set(0);
@@ -103,16 +133,16 @@ export class SearchComponent {
   }
 
   protected onKey(event: KeyboardEvent): void {
-    const hits = this.hits();
+    const items = this.items();
     if (event.key === 'ArrowDown') {
       event.preventDefault();
-      this.active.set(Math.min(this.active() + 1, hits.length - 1));
+      this.active.set(Math.min(this.active() + 1, items.length - 1));
     } else if (event.key === 'ArrowUp') {
       event.preventDefault();
       this.active.set(Math.max(this.active() - 1, 0));
-    } else if (event.key === 'Enter' && hits[this.active()]) {
+    } else if (event.key === 'Enter' && items[this.active()]) {
       event.preventDefault();
-      this.select(hits[this.active()]);
+      this.pick(items[this.active()]);
     } else if (event.key === 'Escape') {
       this.open.set(false);
       this.input().nativeElement.blur();
@@ -126,8 +156,20 @@ export class SearchComponent {
       event.preventDefault();
       this.input().nativeElement.focus();
       this.input().nativeElement.select();
+      this.active.set(0);
       this.open.set(true);
     }
+  }
+
+  protected pick(item: PaletteItem): void {
+    if (item.kind === 'hit') {
+      this.select(item.hit);
+      return;
+    }
+    this.open.set(false);
+    this.query.set('');
+    this.input().nativeElement.blur();
+    void this.registry.run(item.command);
   }
 
   protected select(hit: SearchHit): void {
