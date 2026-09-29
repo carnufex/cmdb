@@ -36,6 +36,8 @@ builder.Services.AddSingleton(TypeCatalog.Embedded);
 builder.Services.AddCmdbAuthentication(builder.Configuration);
 builder.Services.AddFastEndpoints();
 builder.Services.AddCmdbMcp();
+builder.Services.AddSingleton<Cmdb.Graph.GraphHolder>();
+builder.Services.AddHostedService<Cmdb.Api.Features.Graph.GraphLoadingService>();
 builder.Services.AddCmdbOpenApi();
 
 var app = builder.Build();

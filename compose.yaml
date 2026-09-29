@@ -25,6 +25,8 @@ services:
     environment:
       ConnectionStrings__Cmdb: Host=db;Database=cmdb;Username=cmdb;Password=${CMDB_DB_PASSWORD}
       Database__MigrateOnStartup: "true"
+      # The graph snapshot (#8) survives restarts of the container but not of the volume-less stack.
+      Graph__SnapshotPath: /tmp/graph/graph.bin
       # The homelab's Authentik (Rosenvalls-Homelab, blueprint apps-cmdb.yaml).
       Auth__Authority: ${OIDC_AUTHORITY:-https://authentik.rosenvall.se/application/o/cmdb/}
     ports:
