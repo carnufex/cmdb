@@ -25,16 +25,28 @@ public sealed class GetServiceEndpoint(NpgsqlDataSource db) : Endpoint<ServiceRe
 
     public override async Task HandleAsync(ServiceRequest req, CancellationToken ct)
     {
+        var detail = await LoadAsync(db, req.Id, ct);
+        if (detail is null)
+        {
+            await Send.NotFoundAsync(ct);
+            return;
+        }
+        await Send.OkAsync(detail, ct);
+    }
+
+    /// <summary>Also used by the MCP tools (#61), so agents see exactly what the UI shows.</summary>
+    internal static async Task<ServiceDetail?> LoadAsync(NpgsqlDataSource db, long id, CancellationToken ct)
+    {
         await using var conn = await db.OpenConnectionAsync(ct);
         await using var batch = new NpgsqlBatch(conn)
         {
             BatchCommands =
             {
-                new("SELECT id, code, name, service_type, lifecycle::text, attributes::text FROM service WHERE id = $1") { Parameters = { new() { Value = req.Id } } },
+                new("SELECT id, code, name, service_type, lifecycle::text, attributes::text FROM service WHERE id = $1") { Parameters = { new() { Value = id } } },
                 new("""
                     SELECT r.id, r.code, r.layer::text, r.lifecycle::text, r.a_terminal_id, r.b_terminal_id
                     FROM service_circuit sc JOIN circuit r ON r.id = sc.circuit_id WHERE sc.service_id = $1 ORDER BY r.code
-                    """) { Parameters = { new() { Value = req.Id } } },
+                    """) { Parameters = { new() { Value = id } } },
             },
         };
 
@@ -44,8 +56,7 @@ public sealed class GetServiceEndpoint(NpgsqlDataSource db) : Endpoint<ServiceRe
         {
             if (!await reader.ReadAsync(ct))
             {
-                await Send.NotFoundAsync(ct);
-                return;
+                return null;
             }
             service = new ServiceDetail(reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3),
                 reader.GetString(4), Terminals.Json(reader.GetString(5)), []);
@@ -58,9 +69,9 @@ public sealed class GetServiceEndpoint(NpgsqlDataSource db) : Endpoint<ServiceRe
         }
 
         var terminals = await Terminals.DescribeAsync(conn, [.. circuits.SelectMany(c => new[] { c.A, c.B }).Distinct()], ct);
-        await Send.OkAsync(service with
+        return service with
         {
             Circuits = [.. circuits.Select(c => new ServiceCircuit(c.Ref, terminals.GetValueOrDefault(c.A), terminals.GetValueOrDefault(c.B)))],
-        }, ct);
+        };
     }
 }

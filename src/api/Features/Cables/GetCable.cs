@@ -31,6 +31,18 @@ public sealed class GetCableEndpoint(NpgsqlDataSource db) : Endpoint<CableReques
 
     public override async Task HandleAsync(CableRequest req, CancellationToken ct)
     {
+        var detail = await LoadAsync(db, req.Id, ct);
+        if (detail is null)
+        {
+            await Send.NotFoundAsync(ct);
+            return;
+        }
+        await Send.OkAsync(detail, ct);
+    }
+
+    /// <summary>Also used by the MCP tools (#61), so agents see exactly what the UI shows.</summary>
+    internal static async Task<CableDetail?> LoadAsync(NpgsqlDataSource db, long id, CancellationToken ct)
+    {
         // TODO(#22): scope filtering of the cable, its ends and the affected services.
         await using var conn = await db.OpenConnectionAsync(ct);
         await using var batch = new NpgsqlBatch(conn)
@@ -45,7 +57,7 @@ public sealed class GetCableEndpoint(NpgsqlDataSource db) : Endpoint<CableReques
                     JOIN site a ON a.id = c.a_site_id
                     JOIN site b ON b.id = c.b_site_id
                     WHERE c.id = $1
-                    """) { Parameters = { new() { Value = req.Id } } },
+                    """) { Parameters = { new() { Value = id } } },
                 new("""
                     SELECT DISTINCT r.id, r.code, r.layer::text, r.lifecycle::text
                     FROM conductor co
@@ -54,19 +66,18 @@ public sealed class GetCableEndpoint(NpgsqlDataSource db) : Endpoint<CableReques
                     JOIN circuit r ON r.id = h.circuit_id
                     WHERE co.cable_id = $1
                     ORDER BY r.code
-                    """) { Parameters = { new() { Value = req.Id } } },
+                    """) { Parameters = { new() { Value = id } } },
                 new("""
                     SELECT count(DISTINCT ce.conductor_id)::int
                     FROM conductor co JOIN conductor_end ce ON ce.conductor_id = co.id JOIN circuit_hop h ON h.terminal_id = ce.terminal_id
                     WHERE co.cable_id = $1
-                    """) { Parameters = { new() { Value = req.Id } } },
+                    """) { Parameters = { new() { Value = id } } },
             },
         };
         await using var reader = await batch.ExecuteReaderAsync(ct);
         if (!await reader.ReadAsync(ct))
         {
-            await Send.NotFoundAsync(ct);
-            return;
+            return null;
         }
         var cable = new CableDetail(
             reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetInt32(4), 0,
@@ -84,10 +95,10 @@ public sealed class GetCableEndpoint(NpgsqlDataSource db) : Endpoint<CableReques
 
         await reader.NextResultAsync(ct);
         await reader.ReadAsync(ct);
-        await Send.OkAsync(cable with
+        return cable with
         {
             ConductorsInUse = reader.GetInt32(0),
             Circuits = circuits,
-        }, ct);
+        };
     }
 }

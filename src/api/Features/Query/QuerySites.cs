@@ -86,20 +86,18 @@ public sealed class QuerySitesEndpoint(NpgsqlDataSource db, TypeCatalog catalog)
 
     public override async Task HandleAsync(SiteQuery req, CancellationToken ct)
     {
-        var keys = QueryFieldsEndpoint.AttributeKeys(catalog);
-        foreach (var condition in req.Equipment ?? [])
+        foreach (var error in CatalogErrors(req, catalog))
         {
-            if (condition.Attribute is { } a && !keys.Contains(a.Key))
-            {
-                AddError($"No equipment type has the attribute '{a.Key}'.");
-            }
-            if (condition.TypeKey is { } key && catalog.Find(key) is null)
-            {
-                AddError($"Unknown equipment type '{key}'.");
-            }
+            AddError(error);
         }
         ThrowIfAnyErrors();
 
+        await Send.OkAsync(await RunAsync(db, req, ct), ct);
+    }
+
+    /// <summary>Runs a validated query. Also used by the MCP tool <c>find_sites</c> (#61).</summary>
+    internal static async Task<SiteQueryResult> RunAsync(NpgsqlDataSource db, SiteQuery req, CancellationToken ct)
+    {
         var sw = Stopwatch.StartNew();
         var sql = Build(req, out var parameters);
         await using var conn = await db.OpenConnectionAsync(ct);
@@ -127,7 +125,24 @@ public sealed class QuerySitesEndpoint(NpgsqlDataSource db, TypeCatalog catalog)
                 }
             }
         }
-        await Send.OkAsync(new SiteQueryResult(total, sites, points, extent, Math.Round(sw.Elapsed.TotalMilliseconds, 1)), ct);
+        return new SiteQueryResult(total, sites, points, extent, Math.Round(sw.Elapsed.TotalMilliseconds, 1));
+    }
+
+    /// <summary>Attribute keys and models the catalog does not know. Shared with the MCP tool.</summary>
+    internal static IEnumerable<string> CatalogErrors(SiteQuery req, TypeCatalog catalog)
+    {
+        var keys = QueryFieldsEndpoint.AttributeKeys(catalog);
+        foreach (var condition in req.Equipment ?? [])
+        {
+            if (condition.Attribute is { } a && !keys.Contains(a.Key))
+            {
+                yield return $"No equipment type has the attribute '{a.Key}'.";
+            }
+            if (condition.TypeKey is { } key && catalog.Find(key) is null)
+            {
+                yield return $"Unknown equipment type '{key}'.";
+            }
+        }
     }
 
     internal static string Build(SiteQuery req, out List<NpgsqlParameter> parameters)

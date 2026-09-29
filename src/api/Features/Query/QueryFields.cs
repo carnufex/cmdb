@@ -30,10 +30,16 @@ public sealed class QueryFieldsEndpoint(NpgsqlDataSource db, TypeCatalog catalog
 
     public override async Task HandleAsync(CancellationToken ct)
     {
+        await Send.OkAsync(await LoadAsync(db, catalog, ct), ct);
+    }
+
+    /// <summary>Also used by the MCP tool <c>describe_catalog</c> (#61).</summary>
+    internal static async Task<QueryFields> LoadAsync(NpgsqlDataSource db, TypeCatalog catalog, CancellationToken ct)
+    {
         await using var conn = await db.OpenConnectionAsync(ct);
         var siteTypes = await Distinct(conn, "SELECT DISTINCT site_type FROM site ORDER BY 1", ct);
         var serviceTypes = await Distinct(conn, "SELECT DISTINCT service_type FROM service ORDER BY 1", ct);
-        await Send.OkAsync(new QueryFields(siteTypes, Lifecycles, serviceTypes, Categories(catalog), Types(catalog)), ct);
+        return new QueryFields(siteTypes, Lifecycles, serviceTypes, Categories(catalog), Types(catalog));
     }
 
     internal static IReadOnlyList<CategoryField> Categories(TypeCatalog catalog) =>
