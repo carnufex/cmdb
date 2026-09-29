@@ -1,3 +1,4 @@
+using Cmdb.Api.Auth;
 using FastEndpoints;
 using Npgsql;
 
@@ -22,7 +23,7 @@ public sealed class TilesEndpoint(NpgsqlDataSource db) : Endpoint<TileRequest>
         }
 
         // Access sites and small cables only from DetailZoom: a national view of 40 000 points is noise and
-        // blows the tile budget. TODO(#22): filter by the caller's access scope here.
+        // blows the tile budget. Only what the caller's scopes show is drawn (#22); tiles are per user and private.
         await using var cmd = db.CreateCommand($"""
             WITH bounds AS (
                 SELECT ST_TileEnvelope($1, $2, $3, ST_MakeEnvelope({TileGrid.MinX}, {TileGrid.MinY}, {TileGrid.MaxX}, {TileGrid.MaxY}, 3006)) AS geom
@@ -33,6 +34,7 @@ public sealed class TilesEndpoint(NpgsqlDataSource db) : Endpoint<TileRequest>
                 WHERE s.geom && b.geom
                   AND s.lifecycle <> 'removed'
                   AND ($1 >= {TileGrid.DetailZoom} OR s.site_type IN ('hub', 'aggregation'))
+                  AND {ScopeSql.Site("s.id", 4)}
             ), cables AS (
                 SELECT ST_AsMVTGeom(c.geom, b.geom, 4096, 64, true) AS geom,
                        c.id, c.code, c.lifecycle::text AS lifecycle, ct.medium::text AS medium, ct.conductor_count AS conductors
@@ -40,6 +42,7 @@ public sealed class TilesEndpoint(NpgsqlDataSource db) : Endpoint<TileRequest>
                 WHERE c.geom && b.geom
                   AND c.lifecycle <> 'removed'
                   AND ($1 >= {TileGrid.DetailZoom} OR ct.conductor_count >= 96)
+                  AND {ScopeSql.Cable("c.id", 4)}
             )
             SELECT (SELECT coalesce(ST_AsMVT(cables, 'cables', 4096, 'geom'), '') FROM cables)
                 || (SELECT coalesce(ST_AsMVT(sites, 'sites', 4096, 'geom'), '') FROM sites)
@@ -47,6 +50,7 @@ public sealed class TilesEndpoint(NpgsqlDataSource db) : Endpoint<TileRequest>
         cmd.Parameters.Add(new NpgsqlParameter { Value = req.Z });
         cmd.Parameters.Add(new NpgsqlParameter { Value = req.X });
         cmd.Parameters.Add(new NpgsqlParameter { Value = req.Y });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = HttpContext.Scope().Keys });
         var tile = (byte[])(await cmd.ExecuteScalarAsync(ct))!;
 
         HttpContext.Response.Headers.CacheControl = "private, max-age=60";

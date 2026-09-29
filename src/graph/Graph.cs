@@ -75,6 +75,21 @@ public sealed partial class Graph
 
     public int CircuitCount => CircuitIds.Length;
 
+    public int SiteCount => SiteIds.Length;
+
+    public int CableCount => CableIds.Length;
+
+    public int ServiceCount => ServiceIds.Length;
+
+    /// <summary>The site index of an equipment index.</summary>
+    public int SiteIndexOfEquipment(int equipment) => EquipmentSites[equipment];
+
+    /// <summary>The site index of a port's equipment, or -1 for a conductor end.</summary>
+    public int SiteIndexOfNode(int node) => TerminalKinds[node] == TerminalKind.Port ? EquipmentSites[TerminalOwners[node]] : -1;
+
+    /// <summary>The cable index of a conductor end, or -1 for a port.</summary>
+    public int CableIndexOfNode(int node) => TerminalKinds[node] == TerminalKind.ConductorEnd ? ConductorCables[TerminalOwners[node]] : -1;
+
     public bool TryGetNode(long terminalId, out int node)
     {
         node = Array.BinarySearch(TerminalIds, terminalId);

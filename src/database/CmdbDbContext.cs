@@ -31,6 +31,11 @@ public sealed class CmdbDbContext(DbContextOptions<CmdbDbContext> options) : DbC
     public DbSet<UserPreference> UserPreferences => Set<UserPreference>();
     public DbSet<GraphChange> GraphChanges => Set<GraphChange>();
     public DbSet<GraphChangePruned> GraphChangePruned => Set<GraphChangePruned>();
+    public DbSet<AccessScope> AccessScopes => Set<AccessScope>();
+    public DbSet<ScopeSite> ScopeSites => Set<ScopeSite>();
+    public DbSet<ScopeCable> ScopeCables => Set<ScopeCable>();
+    public DbSet<ScopeCircuit> ScopeCircuits => Set<ScopeCircuit>();
+    public DbSet<ScopeService> ScopeServices => Set<ScopeService>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

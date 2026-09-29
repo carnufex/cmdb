@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Cmdb.Api.Auth;
 using Cmdb.Api.Features.Objects;
 using FastEndpoints;
 using Npgsql;
@@ -32,7 +33,7 @@ public sealed class GetSiteEndpoint(NpgsqlDataSource db) : Endpoint<SiteRequest,
 
     public override async Task HandleAsync(SiteRequest req, CancellationToken ct)
     {
-        var detail = await LoadAsync(db, req.Id, ct);
+        var detail = await LoadAsync(db, req.Id, HttpContext.Scope(), ct);
         if (detail is null)
         {
             await Send.NotFoundAsync(ct);
@@ -42,18 +43,19 @@ public sealed class GetSiteEndpoint(NpgsqlDataSource db) : Endpoint<SiteRequest,
     }
 
     /// <summary>Also used by the MCP tools (#61), so agents see exactly what the UI shows.</summary>
-    internal static async Task<SiteDetail?> LoadAsync(NpgsqlDataSource db, long id, CancellationToken ct)
+    internal static async Task<SiteDetail?> LoadAsync(NpgsqlDataSource db, long id, UserScope scope, CancellationToken ct)
     {
-        // TODO(#22): the caller's scope decides whether the site and each related object is visible.
+        // Outside the caller's scope the site does not exist (404, #22); cables are listed when the scope shows them,
+        // and a far end outside it is a placeholder.
         await using var conn = await db.OpenConnectionAsync(ct);
         await using var batch = new NpgsqlBatch(conn)
         {
             BatchCommands =
             {
-                new("""
+                new($"""
                     SELECT id, code, name, site_type, lifecycle::text, ST_X(ST_PointOnSurface(geom)), ST_Y(ST_PointOnSurface(geom)), attributes::text
-                    FROM site WHERE id = $1
-                    """) { Parameters = { new() { Value = id } } },
+                    FROM site WHERE id = $1 AND {ScopeSql.Site("site.id", 2)}
+                    """) { Parameters = { new() { Value = id }, new() { Value = scope.Keys } } },
                 new("SELECT id, parent_id, kind, name FROM location WHERE site_id = $1 ORDER BY parent_id NULLS FIRST, name") { Parameters = { new() { Value = id } } },
                 new("""
                     SELECT e.id, e.location_id, e.name, et.model, et.category, e.lifecycle::text,
@@ -63,15 +65,15 @@ public sealed class GetSiteEndpoint(NpgsqlDataSource db) : Endpoint<SiteRequest,
                     WHERE e.site_id = $1 AND e.parent_id IS NULL
                     ORDER BY et.category, e.name
                     """) { Parameters = { new() { Value = id } } },
-                new("""
+                new($"""
                     SELECT c.id, c.code, ct.name, ct.medium::text, ct.conductor_count, c.length_m, c.lifecycle::text,
-                           o.id, o.code, o.name, o.lifecycle::text
+                           o.id, o.code, o.name, o.lifecycle::text, {ScopeSql.Site("o.id", 2)}
                     FROM cable c
                     JOIN cable_type ct ON ct.id = c.cable_type_id
                     JOIN site o ON o.id = CASE WHEN c.a_site_id = $1 THEN c.b_site_id ELSE c.a_site_id END
-                    WHERE c.a_site_id = $1 OR c.b_site_id = $1
+                    WHERE (c.a_site_id = $1 OR c.b_site_id = $1) AND {ScopeSql.Cable("c.id", 2)}
                     ORDER BY ct.conductor_count DESC, c.code
-                    """) { Parameters = { new() { Value = id } } },
+                    """) { Parameters = { new() { Value = id }, new() { Value = scope.Keys } } },
             },
         };
         await using var reader = await batch.ExecuteReaderAsync(ct);
@@ -109,10 +111,12 @@ public sealed class GetSiteEndpoint(NpgsqlDataSource db) : Endpoint<SiteRequest,
         {
             cables.Add(new SiteCable(reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetInt32(4),
                 reader.GetDouble(5), reader.GetString(6),
-                new ObjectRef("site", reader.GetInt64(7), reader.GetString(8), reader.GetString(9), reader.GetString(10))));
+                reader.GetBoolean(11)
+                    ? new ObjectRef("site", reader.GetInt64(7), reader.GetString(8), reader.GetString(9), reader.GetString(10))
+                    : ObjectRef.Hidden("site")));
         }
 
-        return new SiteDetail(siteId, code, name, type, lifecycle, x, y, Terminals.Json(attributes),
+        return new SiteDetail(siteId, code, name, type, lifecycle, x, y, Terminals.Json(scope.MaskAttributes(attributes)),
             [.. locations.Select(l => new SiteLocation(l.Id, l.Parent, l.Kind, l.Name, equipment.GetValueOrDefault(l.Id) ?? []))],
             cables);
     }

@@ -1,3 +1,4 @@
+using Cmdb.Api.Auth;
 using System.ComponentModel;
 using System.Globalization;
 using Cmdb.Api.Agents;
@@ -13,7 +14,7 @@ public sealed record AgentHit(string Ref, string Type, long Id, string Code, str
 public sealed record SearchToolResult(IReadOnlyList<AgentHit> Hits, bool Truncated);
 
 [McpServerToolType]
-public sealed class SearchTools(NpgsqlDataSource db, AgentLinks links)
+public sealed class SearchTools(NpgsqlDataSource db, AgentLinks links, IHttpContextAccessor http)
 {
     public const int MaxLimit = 50;
 
@@ -35,7 +36,7 @@ public sealed class SearchTools(NpgsqlDataSource db, AgentLinks links)
             throw new McpException($"limit must be between 1 and {MaxLimit}.");
         }
         // Ask for one more than requested to know whether the answer was cut.
-        var hits = await SearchEndpoint.RunAsync(db, q, null, null, limit + 1, ct);
+        var hits = await SearchEndpoint.RunAsync(db, q, null, null, limit + 1, http.HttpContext!.Scope(), ct);
         return new SearchToolResult(
             [.. hits.Take(limit).Select(h => new AgentHit(AgentLinks.Ref(h.Type, h.Id), h.Type, h.Id, h.Code, h.Name, h.Detail, h.Lifecycle, links.For(h.Type, h.Id)))],
             hits.Count > limit);

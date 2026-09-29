@@ -39,6 +39,9 @@ import {
             }
             <span>{{ t.sites.length }} siter · {{ t.cables.length }} kablar</span>
             <span class="mono">{{ t.elapsedMs }} ms</span>
+            @if (t.hidden) {
+              <span class="hidden-note">{{ t.hidden }} utanför ditt omfång</span>
+            }
             @if (t.route?.cables?.length || t.route?.sites?.length) {
               <button type="button" class="action" (click)="showRoute()">Visa i kartan</button>
             }
@@ -63,7 +66,11 @@ import {
                     </li>
                   }
                   @case ('hop') {
-                    <li class="hop" [class.start]="step.start">
+                    <li
+                      class="hop"
+                      [class.start]="step.start"
+                      [class.hidden]="step.hop.kind === 'hidden'"
+                    >
                       @if (step.edge) {
                         <span class="edge">{{ edgeLabels[step.edge] ?? step.edge }}</span>
                       }
@@ -117,7 +124,7 @@ import {
                       </li>
                     }
                     @case ('hop') {
-                      <li class="hop">
+                      <li class="hop" [class.hidden]="step.hop.kind === 'hidden'">
                         @if (step.edge) {
                           <span class="edge">{{ edgeLabels[step.edge] ?? step.edge }}</span>
                         }
@@ -160,6 +167,14 @@ import {
       margin: 0;
       color: var(--text-muted);
       font-size: var(--text-sm);
+    }
+    .hidden-note {
+      color: var(--text-muted);
+      font-style: italic;
+    }
+    li.hidden .mono {
+      color: var(--text-muted);
+      font-style: italic;
     }
     .layer {
       padding-left: calc(var(--space-4) + var(--depth, 0) * var(--space-4));

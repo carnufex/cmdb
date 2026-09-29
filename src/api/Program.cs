@@ -37,6 +37,15 @@ builder.Services.AddCmdbAuthentication(builder.Configuration);
 builder.Services.AddFastEndpoints();
 builder.Services.AddCmdbMcp();
 builder.Services.AddSingleton<Cmdb.Graph.GraphHolder>();
+// Access scopes (#22): the caller's scopes per request, the materialised visibility, and graph masks.
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddSingleton<Cmdb.Api.Auth.ScopeRegistry>();
+builder.Services.AddSingleton<Cmdb.Api.Auth.ScopeMasks>();
+builder.Services.AddSingleton<Cmdb.Api.Auth.ScopeRefreshService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<Cmdb.Api.Auth.ScopeRefreshService>());
+builder.Services.AddScoped(sp => sp.GetRequiredService<IHttpContextAccessor>().HttpContext?.User is { Identity.IsAuthenticated: true } user
+    ? sp.GetRequiredService<Cmdb.Api.Auth.ScopeRegistry>().For(user)
+    : Cmdb.Api.Auth.UserScope.None);
 builder.Services.AddSingleton<Cmdb.Graph.IGraphChangeFeed, Cmdb.Graph.PostgresGraphChangeFeed>();
 builder.Services.AddHostedService<Cmdb.Api.Features.Graph.GraphLoadingService>();
 builder.Services.AddHostedService<Cmdb.Api.Features.Graph.GraphChangePruning>();
@@ -54,6 +63,9 @@ if (migrateOnly || app.Configuration.GetValue<bool>("Database:MigrateOnStartup")
     await using var scope = app.Services.CreateAsyncScope();
     var synced = await CatalogSync.SyncAsync(scope.ServiceProvider.GetRequiredService<CmdbDbContext>(), TypeCatalog.Embedded);
     StartupLog.CatalogSynced(app.Logger, synced);
+    // Access scopes (#22) are synthetic demo data too; what they show is materialised after the sync.
+    await Cmdb.Database.Scopes.ScopeCatalog.SyncAsync(scope.ServiceProvider.GetRequiredService<CmdbDbContext>());
+    await Cmdb.Database.Scopes.ScopeVisibility.RefreshAsync(app.Services.GetRequiredService<NpgsqlDataSource>());
     if (migrateOnly)
     {
         return 0;

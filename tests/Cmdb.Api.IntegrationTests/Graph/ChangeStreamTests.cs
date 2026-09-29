@@ -152,7 +152,14 @@ public sealed class ChangeStreamTests(ApiFactory factory)
         var old = await feed.PositionAsync(Ct);
         await Exec(db, "UPDATE cable SET lifecycle = 'decommissioning' WHERE id = (SELECT min(id) FROM cable)");
         await Exec(db, "UPDATE graph_change SET created_at = now() - interval '8 days'");
+        // Transactions in other tests hold the cluster-wide horizon back; wait until it has passed the first update.
+        var updated = (ulong)await Scalar(db, "SELECT max(tx)::text::bigint FROM graph_change");
         var recent = await feed.PositionAsync(Ct);
+        for (var i = 0; i < 200 && PostgresGraphChangeFeed.Xid(recent) <= updated; i++)
+        {
+            await Task.Delay(50, Ct);
+            recent = await feed.PositionAsync(Ct);
+        }
         await Exec(db, "UPDATE cable SET lifecycle = 'in_service' WHERE id = (SELECT min(id) FROM cable)");
 
         var deleted = await PostgresGraphChangeFeed.PruneAsync(db, TimeSpan.FromDays(7), batchSize: 1, ct: Ct);

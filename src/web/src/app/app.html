@@ -53,7 +53,15 @@
     </button>
 
     @if (me.value(); as me) {
-      <span class="user" [title]="me.groups.join(', ')">{{ me.name ?? me.username }}</span>
+      <span class="user" [title]="'Grupper: ' + me.groups.join(', ')">{{
+        me.name ?? me.username
+      }}</span>
+      <span
+        class="scope"
+        [class.none]="!me.scopes?.length"
+        title="Behörighetsomfång: det du kan se i nätet"
+        >{{ me.scopes?.length ? me.scopes!.join(', ') : 'Inget omfång' }}</span
+      >
     } @else if (me.error()) {
       <span class="user error">API:t svarar inte</span>
     }

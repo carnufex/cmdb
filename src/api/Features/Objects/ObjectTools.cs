@@ -1,3 +1,4 @@
+using Cmdb.Api.Auth;
 using System.ComponentModel;
 using System.Globalization;
 using Cmdb.Api.Agents;
@@ -22,9 +23,12 @@ public sealed record AgentImpactedService(string Ref, string Code, string? Name,
 public sealed record AgentImpact(string Ref, string Url, int Circuits, int DirectCircuits, int Services, IReadOnlyList<AgentImpactedService> AffectedServices, bool Truncated);
 
 [McpServerToolType]
-public sealed class ObjectTools(NpgsqlDataSource db, GraphHolder holder, AgentLinks links)
+public sealed class ObjectTools(NpgsqlDataSource db, GraphHolder holder, AgentLinks links, ScopeMasks masks, IHttpContextAccessor http)
 {
     private const int MaxServices = 50;
+
+    /// <summary>The calling agent's scopes (#22).</summary>
+    private UserScope Scope => http.HttpContext!.Scope();
     private static readonly string[] Types = ["site", "equipment", "cable", "service", "circuit"];
 
     [McpServerTool(Name = "get_object", Title = "Hämta objekt", ReadOnly = true, Idempotent = true, OpenWorld = false)]
@@ -37,11 +41,11 @@ public sealed class ObjectTools(NpgsqlDataSource db, GraphHolder holder, AgentLi
         var (type, id) = await ResolveAsync(reference, ct);
         object? detail = type switch
         {
-            "site" => await GetSiteEndpoint.LoadAsync(db, id, ct),
-            "equipment" => await EquipmentSlice.LoadAsync(db, id, ct),
-            "cable" => await GetCableEndpoint.LoadAsync(db, id, ct),
-            "service" => await GetServiceEndpoint.LoadAsync(db, id, ct),
-            _ => await GetCircuitEndpoint.LoadAsync(db, id, ct),
+            "site" => await GetSiteEndpoint.LoadAsync(db, id, Scope, ct),
+            "equipment" => await EquipmentSlice.LoadAsync(db, id, Scope, ct),
+            "cable" => await GetCableEndpoint.LoadAsync(db, id, Scope, ct),
+            "service" => await GetServiceEndpoint.LoadAsync(db, id, Scope, ct),
+            _ => await GetCircuitEndpoint.LoadAsync(db, id, Scope, ct),
         };
         return detail is null
             ? throw new McpException($"No {type} with id {id}.")
@@ -64,7 +68,7 @@ public sealed class ObjectTools(NpgsqlDataSource db, GraphHolder holder, AgentLi
         {
             throw new McpException("The network graph is still loading; try again in a few seconds.");
         }
-        var impact = await ImpactEndpoint.RunAsync(graph, db, type, id, ct);
+        var impact = await ImpactEndpoint.RunAsync(graph, await masks.GetAsync(graph, Scope, ct), db, type, id, ct);
         return new AgentImpact(
             AgentLinks.Ref(type, id),
             links.For(type, id),
@@ -89,7 +93,7 @@ public sealed class ObjectTools(NpgsqlDataSource db, GraphHolder holder, AgentLi
         }
         if (value.Length >= 3)
         {
-            var exact = (await SearchEndpoint.RunAsync(db, value, null, null, 5, ct))
+            var exact = (await SearchEndpoint.RunAsync(db, value, null, null, 5, Scope, ct))
                 .FirstOrDefault(h => string.Equals(h.Code, value, StringComparison.OrdinalIgnoreCase));
             if (exact is not null)
             {

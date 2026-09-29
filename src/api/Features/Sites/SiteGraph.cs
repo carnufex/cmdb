@@ -1,3 +1,4 @@
+using Cmdb.Api.Auth;
 using System.Diagnostics;
 using Cmdb.Graph;
 using FastEndpoints;
@@ -21,7 +22,7 @@ public sealed record SiteGraph(SiteGraphNode Site, IReadOnlyList<SiteGraphNode> 
 /// One level of the neighbourhood graph (#20): the sites next to a site by cable, and by transmission and logical
 /// circuits ending at it (aggregated per site and layer). The lens expands one level at a time by asking again.
 /// </summary>
-public sealed class SiteGraphEndpoint(GraphHolder holder, NpgsqlDataSource db) : Endpoint<SiteGraphRequest, SiteGraph>
+public sealed class SiteGraphEndpoint(GraphHolder holder, NpgsqlDataSource db, ScopeMasks masks) : Endpoint<SiteGraphRequest, SiteGraph>
 {
     public const int Max = 500;
 
@@ -29,7 +30,9 @@ public sealed class SiteGraphEndpoint(GraphHolder holder, NpgsqlDataSource db) :
 
     public override async Task HandleAsync(SiteGraphRequest req, CancellationToken ct)
     {
-        var result = await RunAsync(holder.Current, db, req.Id, ct);
+        var scope = HttpContext.Scope();
+        var mask = holder.Current is { } g ? await masks.GetAsync(g, scope, ct) : null;
+        var result = await RunAsync(holder.Current, mask, db, req.Id, scope, ct);
         if (result is null)
         {
             await Send.NotFoundAsync(ct);
@@ -38,18 +41,22 @@ public sealed class SiteGraphEndpoint(GraphHolder holder, NpgsqlDataSource db) :
         await Send.OkAsync(result, ct);
     }
 
-    internal static async Task<SiteGraph?> RunAsync(Cmdb.Graph.Graph? g, NpgsqlDataSource db, long siteId, CancellationToken ct)
+    /// <remarks>Access scopes (#22): only cables, circuits and sites in scope; a site outside it is not found.</remarks>
+    internal static async Task<SiteGraph?> RunAsync(Cmdb.Graph.Graph? g, GraphMask? mask, NpgsqlDataSource db, long siteId, UserScope scope, CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
-        // TODO(#22): neighbours outside the caller's scope become placeholders.
         var edges = new List<SiteGraphEdge>();
-        await using (var cmd = db.CreateCommand("""
+        await using (var cmd = db.CreateCommand($"""
             SELECT c.id, c.code, c.lifecycle::text, c.a_site_id, c.b_site_id
-            FROM cable c WHERE (c.a_site_id = $1 OR c.b_site_id = $1) AND c.a_site_id <> c.b_site_id
+            FROM cable c
+            WHERE (c.a_site_id = $1 OR c.b_site_id = $1) AND c.a_site_id <> c.b_site_id
+              AND {ScopeSql.Cable("c.id", 2)}
+              AND {ScopeSql.Site("c.a_site_id", 2)} AND {ScopeSql.Site("c.b_site_id", 2)}
             ORDER BY c.code
             """))
         {
             cmd.Parameters.Add(new NpgsqlParameter { Value = siteId });
+            cmd.Parameters.Add(new NpgsqlParameter { Value = scope.Keys });
             await using var reader = await cmd.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct))
             {
@@ -59,7 +66,7 @@ public sealed class SiteGraphEndpoint(GraphHolder holder, NpgsqlDataSource db) :
         }
 
         // Circuits above the physical layer that end at the site, counted per far site and layer, from the graph.
-        if (g is not null && g.TryGetSite(siteId, out var site))
+        if (g is not null && mask is not null && g.TryGetSite(siteId, out var site) && mask.Sites[site])
         {
             var counts = new Dictionary<(long Other, CircuitLayer Layer), int>();
             var seen = new HashSet<int>();
@@ -70,7 +77,7 @@ public sealed class SiteGraphEndpoint(GraphHolder holder, NpgsqlDataSource db) :
                     foreach (var circuit in g.CircuitsThrough(port))
                     {
                         var layer = g.LayerOf(circuit);
-                        if (layer == CircuitLayer.Physical || !seen.Add(circuit))
+                        if (layer == CircuitLayer.Physical || !seen.Add(circuit) || !mask.CircuitVisible(circuit))
                         {
                             continue;
                         }
@@ -78,7 +85,8 @@ public sealed class SiteGraphEndpoint(GraphHolder holder, NpgsqlDataSource db) :
                         var a = g.SiteOf(hops[0]);
                         var b = g.SiteOf(hops[^1]);
                         var other = a == siteId ? b : a;
-                        if (other is { } o && o != siteId && (a == siteId || b == siteId))
+                        if (other is { } o && o != siteId && (a == siteId || b == siteId)
+                            && g.TryGetSite(o, out var otherIndex) && mask.Sites[otherIndex])
                         {
                             counts[(o, layer)] = counts.GetValueOrDefault((o, layer)) + 1;
                         }
@@ -101,12 +109,13 @@ public sealed class SiteGraphEndpoint(GraphHolder holder, NpgsqlDataSource db) :
         edges = [.. edges.Where(e => keep.Contains(e.Source == siteId ? e.Target : e.Source))];
 
         var nodes = new Dictionary<long, SiteGraphNode>();
-        await using (var cmd = db.CreateCommand("""
+        await using (var cmd = db.CreateCommand($"""
             SELECT id, code, name, site_type, lifecycle::text, ST_X(ST_PointOnSurface(geom)), ST_Y(ST_PointOnSurface(geom))
-            FROM site WHERE id = ANY($1)
+            FROM site WHERE id = ANY($1) AND {ScopeSql.Site("site.id", 2)}
             """))
         {
             cmd.Parameters.Add(new NpgsqlParameter { Value = neighbourIds.Append(siteId).ToArray() });
+            cmd.Parameters.Add(new NpgsqlParameter { Value = scope.Keys });
             await using var reader = await cmd.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct))
             {

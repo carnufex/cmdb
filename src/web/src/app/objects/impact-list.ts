@@ -37,6 +37,9 @@ import { ObjectLinkComponent } from './object-link';
       } @else {
         <p class="muted">{{ none() }}</p>
       }
+      @if (i.hiddenServices) {
+        <p class="muted">+ {{ i.hiddenServices }} tjänster utanför ditt omfång</p>
+      }
     } @else if (failed()) {
       <h3>Berörda tjänster</h3>
       <p class="muted">Påverkan kunde inte beräknas.</p>

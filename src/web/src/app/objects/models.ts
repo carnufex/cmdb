@@ -105,6 +105,8 @@ export interface Impact {
   /** Each service with the circuits that reach it: its own circuit first, down to the one hit directly. */
   services: { service: ObjectRef; path: { circuit: ObjectRef; layer: string }[] }[];
   elapsedMs: number;
+  /** Affected services outside the caller's access scope (#22): counted, not named. */
+  hiddenServices: number;
 }
 
 export interface ServiceDetail {

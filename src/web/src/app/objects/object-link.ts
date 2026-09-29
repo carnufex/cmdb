@@ -22,19 +22,26 @@ const HOVER_DELAY_MS = 450;
   selector: 'cmdb-link',
   imports: [StatusComponent],
   template: `
-    <a
-      [href]="href()"
-      (click)="open($event)"
-      (mouseenter)="startHover()"
-      (mouseleave)="endHover()"
-      (focus)="startHover()"
-      (blur)="endHover()"
-    >
-      <span class="mono">{{ ref().code }}</span>
-      @if (showName() && ref().name) {
-        <span class="name">{{ ref().name }}</span>
-      }
-    </a>
+    @if (ref().id === 0) {
+      <!-- Outside the caller's access scope (#22): nothing to open, nothing to show. -->
+      <span class="hidden" title="Objektet ligger utanför ditt behörighetsomfång">{{
+        ref().name ?? 'Utanför ditt omfång'
+      }}</span>
+    } @else {
+      <a
+        [href]="href()"
+        (click)="open($event)"
+        (mouseenter)="startHover()"
+        (mouseleave)="endHover()"
+        (focus)="startHover()"
+        (blur)="endHover()"
+      >
+        <span class="mono">{{ ref().code }}</span>
+        @if (showName() && ref().name) {
+          <span class="name">{{ ref().name }}</span>
+        }
+      </a>
+    }
     @if (card(); as c) {
       <div class="card" role="tooltip">
         <div class="head">
@@ -120,6 +127,10 @@ const HOVER_DELAY_MS = 450;
     }
     dd {
       margin: 0;
+    }
+    .hidden {
+      color: var(--text-muted);
+      font-style: italic;
     }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,

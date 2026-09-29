@@ -83,5 +83,6 @@ public sealed class TilesTests(ApiFactory factory)
             ON CONFLICT (code) DO NOTHING;
             """);
         await cmd.ExecuteNonQueryAsync(Ct);
+        await factory.RefreshScopesAsync(); // new sites and cables are hidden until visibility is recomputed (#22)
     }
 }

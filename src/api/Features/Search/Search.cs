@@ -1,3 +1,4 @@
+using Cmdb.Api.Auth;
 using System.Globalization;
 using FastEndpoints;
 using FluentValidation;
@@ -53,9 +54,9 @@ public sealed class SearchEndpoint(NpgsqlDataSource db) : Endpoint<SearchRequest
     private const int PerLevel = 40;
 
     /// <summary>One searchable object type: how to select a hit and which columns match at each level.</summary>
-    private sealed record Source(string Type, int Rank, string Select, string From, string Exact, string Prefix, string Contains);
+    /// <param name="Scope">Keeps the source inside the caller's scopes (#22); $11 is the scope keys.</param>
+    private sealed record Source(string Type, int Rank, string Select, string From, string Exact, string Prefix, string Contains, string Scope);
 
-    // TODO(#22): each From is where the caller's access scope is applied.
     private static readonly Source[] Sources =
     [
         new("site", 0,
@@ -64,31 +65,36 @@ public sealed class SearchEndpoint(NpgsqlDataSource db) : Endpoint<SearchRequest
             "site s",
             "s.code = $2::text OR s.id = $10::bigint",
             "s.code LIKE $4::text OR lower(s.name) LIKE $5::text",
-            "s.code ILIKE $6::text OR s.name ILIKE $6::text"),
+            "s.code ILIKE $6::text OR s.name ILIKE $6::text",
+            ScopeSql.Site("s.id", 11)),
         new("equipment", 1,
             "e.id, e.name, NULL, et.manufacturer || ' ' || et.model, e.lifecycle::text, ST_X(ST_PointOnSurface(s.geom)), ST_Y(ST_PointOnSurface(s.geom)), similarity(e.name, $1::text)",
             "equipment e JOIN equipment_type et ON et.id = e.equipment_type_id JOIN site s ON s.id = e.site_id",
             "lower(e.name) = $3::text OR e.id = $10::bigint",
             "lower(e.name) LIKE $5::text",
-            "e.name ILIKE $6::text OR e.attributes::text ILIKE $6::text"),
+            "e.name ILIKE $6::text OR e.attributes::text ILIKE $6::text",
+            ScopeSql.Site("s.id", 11)),
         new("cable", 2,
             "c.id, c.code, ct.name, ct.medium::text, c.lifecycle::text, ST_X(ST_LineInterpolatePoint(c.geom, 0.5)), ST_Y(ST_LineInterpolatePoint(c.geom, 0.5)), similarity(c.code, $1::text)",
             "cable c JOIN cable_type ct ON ct.id = c.cable_type_id",
             "c.code = $2::text OR c.id = $10::bigint",
             "c.code LIKE $4::text",
-            "c.code ILIKE $6::text"),
+            "c.code ILIKE $6::text",
+            ScopeSql.Cable("c.id", 11)),
         new("service", 3,
             "v.id, v.code, v.name, v.service_type, v.lifecycle::text, NULL::float8, NULL::float8, greatest(similarity(v.code, $1::text), similarity(v.name, $1::text))",
             "service v",
             "v.code = $2::text OR v.id = $10::bigint",
             "v.code LIKE $4::text OR lower(v.name) LIKE $5::text",
-            "v.code ILIKE $6::text OR v.name ILIKE $6::text"),
+            "v.code ILIKE $6::text OR v.name ILIKE $6::text",
+            ScopeSql.Service("v.id", 11)),
         new("circuit", 4,
             "r.id, r.code, NULL, r.layer::text, r.lifecycle::text, NULL::float8, NULL::float8, similarity(r.code, $1::text)",
             "circuit r",
             "r.code = $2::text OR r.id = $10::bigint",
             "r.code LIKE $4::text",
-            "r.code ILIKE $6::text"),
+            "r.code ILIKE $6::text",
+            ScopeSql.Circuit("r.id", 11)),
     ];
 
     // Every level is a LIMIT without ORDER BY, so Postgres stops reading as soon as it has enough candidates
@@ -98,7 +104,7 @@ public sealed class SearchEndpoint(NpgsqlDataSource db) : Endpoint<SearchRequest
     private static readonly string Sql = $"""
         WITH candidates AS (
         {string.Join("\n    UNION ALL\n", Sources.SelectMany(s => new[] { (0, s.Exact), (1, s.Prefix), (2, s.Contains) }.Select(level =>
-            $"    (SELECT '{s.Type}' AS type, {level.Item1} AS match_rank, {s.Rank} AS type_rank, {s.Select} FROM {s.From} WHERE {level.Item2} LIMIT {PerLevel})")))}
+            $"    (SELECT '{s.Type}' AS type, {level.Item1} AS match_rank, {s.Rank} AS type_rank, {s.Select} FROM {s.From} WHERE ({level.Item2}) AND {s.Scope} LIMIT {PerLevel})")))}
         ), hits AS (
             SELECT DISTINCT ON (type, id) * FROM candidates ORDER BY type, id, match_rank
         )
@@ -120,11 +126,11 @@ public sealed class SearchEndpoint(NpgsqlDataSource db) : Endpoint<SearchRequest
         {
             (nx, ny) = (x, y);
         }
-        await Send.OkAsync(await RunAsync(db, q, nx, ny, req.Limit, ct), ct);
+        await Send.OkAsync(await RunAsync(db, q, nx, ny, req.Limit, HttpContext.Scope(), ct), ct);
     }
 
     /// <summary>Also used by the MCP tool <c>search</c> (#61).</summary>
-    internal static async Task<List<SearchHit>> RunAsync(NpgsqlDataSource db, string q, double? nx, double? ny, int limit, CancellationToken ct)
+    internal static async Task<List<SearchHit>> RunAsync(NpgsqlDataSource db, string q, double? nx, double? ny, int limit, UserScope scope, CancellationToken ct)
     {
         var literal = EscapeLike(q);
 
@@ -156,6 +162,7 @@ public sealed class SearchEndpoint(NpgsqlDataSource db) : Endpoint<SearchRequest
             Value = long.TryParse(q, NumberStyles.None, CultureInfo.InvariantCulture, out var id) ? id : DBNull.Value,
             NpgsqlDbType = NpgsqlDbType.Bigint,
         });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = scope.Keys });
 
         var hits = new List<SearchHit>(limit);
         await using var reader = await cmd.ExecuteReaderAsync(ct);

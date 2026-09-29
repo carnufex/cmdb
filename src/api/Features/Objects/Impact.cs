@@ -1,3 +1,4 @@
+using Cmdb.Api.Auth;
 using System.Diagnostics;
 using Cmdb.Api.Features.Trace;
 using Cmdb.Graph;
@@ -17,7 +18,8 @@ public sealed record ImpactCircuit(ObjectRef Circuit, string Layer);
 /// <param name="Circuits">All affected circuits.</param>
 /// <param name="Direct">Circuits passing the object itself; the rest ride on those.</param>
 /// <param name="Services">Affected services by code, each with the path that reaches it.</param>
-public sealed record Impact(int Circuits, int Direct, IReadOnlyList<ImpactedService> Services, double ElapsedMs);
+/// <param name="HiddenServices">Affected services outside the caller's scope (#22): counted, not shown.</param>
+public sealed record Impact(int Circuits, int Direct, IReadOnlyList<ImpactedService> Services, double ElapsedMs, int HiddenServices = 0);
 
 /// <summary>
 /// Impact of a cable (a span between two sites or splice points), equipment or a site (#10): every circuit whose path
@@ -25,7 +27,7 @@ public sealed record Impact(int Circuits, int Direct, IReadOnlyList<ImpactedServ
 /// path of circuits that reaches it. The walk is in memory (ADR-0002); only names come from the database.
 /// Budget: 200 ms for a cable span (docs/plan.md).
 /// </summary>
-public sealed class ImpactEndpoint(GraphHolder holder, NpgsqlDataSource db) : Endpoint<ImpactRequest, Impact>
+public sealed class ImpactEndpoint(GraphHolder holder, NpgsqlDataSource db, ScopeMasks masks) : Endpoint<ImpactRequest, Impact>
 {
     public override void Configure() => Get("/cables/{id}/impact", "/sites/{id}/impact", "/equipment/{id}/impact");
 
@@ -40,22 +42,27 @@ public sealed class ImpactEndpoint(GraphHolder holder, NpgsqlDataSource db) : En
         var type = path.Contains("/sites/", StringComparison.Ordinal) ? "site"
             : path.Contains("/equipment/", StringComparison.Ordinal) ? "equipment"
             : "cable";
-        await Send.OkAsync(await RunAsync(graph, db, type, req.Id, ct), ct);
+        var mask = await masks.GetAsync(graph, HttpContext.Scope(), ct);
+        await Send.OkAsync(await RunAsync(graph, mask, db, type, req.Id, ct), ct);
     }
 
     /// <summary>
     /// Impact of a cable, equipment or site. Also used by the MCP tool <c>impact</c>. An object the graph does not know
     /// (a site without equipment, equipment added since the graph was loaded) affects nothing.
     /// </summary>
-    internal static async Task<Impact> RunAsync(Cmdb.Graph.Graph g, NpgsqlDataSource db, string type, long id, CancellationToken ct)
+    /// <remarks>
+    /// Access scopes (#22): an object outside the scope affects nothing as far as the caller can tell. Counts cover
+    /// visible circuits only; services outside the scope are counted in <see cref="Impact.HiddenServices"/>, and
+    /// circuits outside it on a visible service's path are placeholders.
+    /// </remarks>
+    internal static async Task<Impact> RunAsync(Cmdb.Graph.Graph g, GraphMask mask, NpgsqlDataSource db, string type, long id, CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
-        // TODO(#22): only services within the caller's scope are listed; the rest are counted.
         ImpactResult? result = type switch
         {
-            "site" when g.TryGetSite(id, out var site) => GraphImpact.OfSite(g, site),
-            "equipment" when g.TryGetEquipment(id, out var equipment) => GraphImpact.OfEquipment(g, equipment),
-            "cable" when g.TryGetCable(id, out var cable) => GraphImpact.OfCable(g, cable),
+            "site" when g.TryGetSite(id, out var site) && mask.Sites[site] => GraphImpact.OfSite(g, site),
+            "equipment" when g.TryGetEquipment(id, out var equipment) && mask.Sites[g.SiteIndexOfEquipment(equipment)] => GraphImpact.OfEquipment(g, equipment),
+            "cable" when g.TryGetCable(id, out var cable) && mask.Cables[cable] => GraphImpact.OfCable(g, cable),
             _ => null,
         };
         if (result is null)
@@ -63,24 +70,25 @@ public sealed class ImpactEndpoint(GraphHolder holder, NpgsqlDataSource db) : En
             return new Impact(0, 0, [], Math.Round(sw.Elapsed.TotalMilliseconds, 2));
         }
 
-        var paths = new List<int>[result.Services.Length];
+        var shown = Enumerable.Range(0, result.Services.Length).Where(i => mask.ServiceVisible(result.Services[i])).ToList();
+        var paths = shown.ToDictionary(i => i, result.PathOf);
         var pathCircuits = new HashSet<long>();
-        for (var i = 0; i < paths.Length; i++)
+        foreach (var c in paths.Values.SelectMany(p => p).Where(mask.CircuitVisible))
         {
-            paths[i] = result.PathOf(i);
-            foreach (var c in paths[i])
-            {
-                pathCircuits.Add(g.CircuitId(c));
-            }
+            pathCircuits.Add(g.CircuitId(c));
         }
-        var names = await TraceNames.LoadAsync(db, [], [.. pathCircuits], [.. result.Services.Select(g.ServiceId)], ct);
+        var names = await TraceNames.LoadAsync(db, [], [.. pathCircuits], [.. shown.Select(i => g.ServiceId(result.Services[i]))], ct);
 
-        var services = result.Services
-            .Select((s, i) => new ImpactedService(
-                names.Service(g.ServiceId(s)),
-                [.. paths[i].Select(c => new ImpactCircuit(names.Circuit(g.CircuitId(c)), TraceEndpoint.Layer(g.LayerOf(c))))]))
+        var services = shown
+            .Select(i => new ImpactedService(
+                names.Service(g.ServiceId(result.Services[i])),
+                [.. paths[i].Select(c => new ImpactCircuit(
+                    mask.CircuitVisible(c) ? names.Circuit(g.CircuitId(c)) : ObjectRef.Hidden("circuit"),
+                    TraceEndpoint.Layer(g.LayerOf(c))))]))
             .OrderBy(s => s.Service.Code, StringComparer.Ordinal)
             .ToList();
-        return new Impact(result.Circuits.Length, result.Direct, services, Math.Round(sw.Elapsed.TotalMilliseconds, 2));
+        var circuits = result.Circuits.Count(mask.CircuitVisible);
+        var direct = result.Circuits.Take(result.Direct).Count(mask.CircuitVisible);
+        return new Impact(circuits, direct, services, Math.Round(sw.Elapsed.TotalMilliseconds, 2), result.Services.Length - shown.Count);
     }
 }

@@ -1,3 +1,4 @@
+using Cmdb.Api.Auth;
 using System.Diagnostics;
 using Cmdb.Api.Features.Objects;
 using Cmdb.Graph;
@@ -43,6 +44,7 @@ public sealed record RouteCable(long Id, double[][] Coordinates);
 /// <param name="Sites">Sites along the physical route in order, for the map.</param>
 /// <param name="Cables">Cables along the physical route in order, for the map.</param>
 /// <param name="Services">For a terminal: services whose circuits pass it, directly or through circuits above.</param>
+/// <param name="Hidden">Circuits and services involved but outside the caller's scope (#22): counted, not shown.</param>
 public sealed record TraceResult(
     ObjectRef? Service,
     TracePath? Physical,
@@ -51,7 +53,8 @@ public sealed record TraceResult(
     IReadOnlyList<ObjectRef> Cables,
     IReadOnlyList<ObjectRef> Services,
     double ElapsedMs,
-    TraceRoute? Route = null);
+    TraceRoute? Route = null,
+    int Hidden = 0);
 
 public sealed class TraceValidator : Validator<TraceRequest>
 {
@@ -65,7 +68,7 @@ public sealed class TraceValidator : Validator<TraceRequest>
 /// both ends, or a service or circuit down through the layers it rides on. The walk is in memory (ADR-0002); only the
 /// names of the few terminals involved come from the database.
 /// </summary>
-public sealed class TraceEndpoint(GraphHolder holder, NpgsqlDataSource db) : Endpoint<TraceRequest, TraceResult>
+public sealed class TraceEndpoint(GraphHolder holder, NpgsqlDataSource db, ScopeMasks masks) : Endpoint<TraceRequest, TraceResult>
 {
     public override void Configure() => Get("/trace");
 
@@ -76,7 +79,8 @@ public sealed class TraceEndpoint(GraphHolder holder, NpgsqlDataSource db) : End
             await Send.ResultAsync(TypedResults.Problem("The network graph is still loading; try again shortly.", statusCode: StatusCodes.Status503ServiceUnavailable));
             return;
         }
-        var result = await RunAsync(graph, db, req.Terminal, req.Service, req.Circuit, ct);
+        var mask = await masks.GetAsync(graph, HttpContext.Scope(), ct);
+        var result = await RunAsync(graph, mask, db, req.Terminal, req.Service, req.Circuit, ct);
         if (result is not null && req.Geometry)
         {
             result = result with { Route = await RouteAsync(db, result.Sites, result.Cables, ct) };
@@ -90,38 +94,54 @@ public sealed class TraceEndpoint(GraphHolder holder, NpgsqlDataSource db) : End
     }
 
     /// <summary>Also used by the MCP tool <c>trace</c>. Null when the start does not exist.</summary>
-    internal static async Task<TraceResult?> RunAsync(Cmdb.Graph.Graph g, NpgsqlDataSource db, long? terminal, long? service, long? circuit, CancellationToken ct)
+    /// <remarks>
+    /// Access scopes (#22): a start outside the scope does not exist; the physical walk stops at the scope's edge
+    /// with a placeholder hop; circuits and services outside it are counted in <see cref="TraceResult.Hidden"/>;
+    /// terminals outside it on a visible circuit are placeholders.
+    /// </remarks>
+    internal static async Task<TraceResult?> RunAsync(Cmdb.Graph.Graph g, GraphMask mask, NpgsqlDataSource db, long? terminal, long? service, long? circuit, CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
-        // TODO(#22): hops outside the caller's scope become placeholders and the walk stops at the boundary.
         PhysicalPath? physical = null;
         List<CircuitStep> steps = [];
         List<int> services = [];
+        var hidden = 0;
+        bool Visible(int node) => mask.NodeVisible(g, node);
         if (terminal is { } t)
         {
-            if (!g.TryGetNode(t, out var node))
+            if (!g.TryGetNode(t, out var node) || !Visible(node))
             {
                 return null;
             }
-            physical = GraphTrace.Physical(g, node);
+            physical = GraphTrace.Physical(g, node, Visible);
             foreach (var c in g.CircuitsThrough(node))
             {
-                steps.Add(new CircuitStep(c, 0, -1));
+                if (mask.CircuitVisible(c))
+                {
+                    steps.Add(new CircuitStep(c, 0, -1));
+                }
+                else
+                {
+                    hidden++;
+                }
             }
-            services = GraphTrace.ServicesThrough(g, node);
+            var through = GraphTrace.ServicesThrough(g, node);
+            services = [.. through.Where(mask.ServiceVisible)];
+            hidden += through.Count - services.Count;
         }
         else if (service is { } s)
         {
-            if (!g.TryGetService(s, out var index))
+            if (!g.TryGetService(s, out var index) || !mask.ServiceVisible(index))
             {
                 return null;
             }
-            steps = GraphTrace.Service(g, index);
+            steps = GraphTrace.Service(g, index, mask.CircuitVisible);
+            hidden = g.CircuitsOf(index).ToArray().Count(c => !mask.CircuitVisible(c));
             services = [index];
         }
-        else if (circuit is { } c && g.TryGetCircuit(c, out var index))
+        else if (circuit is { } c && g.TryGetCircuit(c, out var index) && mask.CircuitVisible(index))
         {
-            steps = GraphTrace.Circuit(g, index);
+            steps = GraphTrace.Circuit(g, index, mask.CircuitVisible);
         }
         else
         {
@@ -136,21 +156,37 @@ public sealed class TraceEndpoint(GraphHolder holder, NpgsqlDataSource db) : End
             {
                 terminalIds.Add(g.TerminalId(n));
             }
+            // The walk only ever includes visible terminals; circuit hops below may not be.
         }
         foreach (var step in steps)
         {
             foreach (var n in g.HopsOf(step.Circuit))
             {
-                terminalIds.Add(g.TerminalId(n));
+                if (Visible(n))
+                {
+                    terminalIds.Add(g.TerminalId(n));
+                }
             }
         }
         var names = await TraceNames.LoadAsync(db, [.. terminalIds], [.. steps.Select(x => g.CircuitId(x.Circuit))], [.. services.Select(g.ServiceId)], ct);
 
-        TracePath? path = physical is null ? null : new TracePath(
-            [.. physical.Nodes.Select((n, i) => names.Hop(g.TerminalId(n), i == 0 ? null : physical.EdgesBefore[i]))],
-            physical.StartIndex,
-            physical.Complete,
-            [End(physical.FirstEnd), End(physical.LastEnd)]);
+        TracePath? path = null;
+        if (physical is not null)
+        {
+            // Where the walk met the scope's edge, one neutral placeholder says there is more.
+            var hops = physical.Nodes.Select((n, i) => names.Hop(g.TerminalId(n), i == 0 ? null : physical.EdgesBefore[i])).ToList();
+            var startIndex = physical.StartIndex;
+            if (physical.FirstEnd == TraceEnd.Boundary)
+            {
+                hops.Insert(0, TraceNames.Placeholder(null));
+                startIndex++;
+            }
+            if (physical.LastEnd == TraceEnd.Boundary)
+            {
+                hops.Add(TraceNames.Placeholder(null));
+            }
+            path = new TracePath(hops, startIndex, physical.Complete, [End(physical.FirstEnd), End(physical.LastEnd)]);
+        }
 
         var circuits = steps.Select(step =>
         {
@@ -160,7 +196,11 @@ public sealed class TraceEndpoint(GraphHolder holder, NpgsqlDataSource db) : End
                 Layer(g.LayerOf(step.Circuit)),
                 step.Depth,
                 step.Parent < 0 ? null : g.CircuitId(step.Parent),
-                [.. hops.Select((n, i) => names.Hop(g.TerminalId(n), i == 0 ? null : EdgeBetween(g, hops[i - 1], n)))]);
+                [.. hops.Select((n, i) =>
+                {
+                    var edge = i == 0 ? null : EdgeBetween(g, hops[i - 1], n);
+                    return Visible(n) ? names.Hop(g.TerminalId(n), edge) : TraceNames.Placeholder(edge);
+                })]);
         }).ToList();
 
         // The route on the map: the physical path, or the physical circuits in the order they were reached.
@@ -175,7 +215,8 @@ public sealed class TraceEndpoint(GraphHolder holder, NpgsqlDataSource db) : End
             sites,
             cables,
             terminal is not null ? [.. services.Select(i => names.Service(g.ServiceId(i)))] : [],
-            Math.Round(sw.Elapsed.TotalMilliseconds, 2));
+            Math.Round(sw.Elapsed.TotalMilliseconds, 2),
+            Hidden: hidden);
     }
 
     /// <summary>How two consecutive hops connect, when they are adjacent in the graph (physical circuits).</summary>
@@ -257,6 +298,7 @@ public sealed class TraceEndpoint(GraphHolder holder, NpgsqlDataSource db) : End
         TraceEnd.Endpoint => "endpoint",
         TraceEnd.Branch => "branch",
         TraceEnd.Loop => "loop",
+        TraceEnd.Boundary => "boundary",
         _ => "limit",
     };
 
@@ -334,6 +376,10 @@ internal sealed class TraceNames
         }
         return names;
     }
+
+    /// <summary>A terminal outside the caller's scope (#22): no id, no names, only that the path goes on.</summary>
+    public static TraceHop Placeholder(EdgeKind? edge) =>
+        new(0, "hidden", edge is { } e ? TraceEndpoint.Edge(e) : null, "Utanför ditt omfång", null, null, null, null);
 
     public TraceHop Hop(long terminal, EdgeKind? edge)
     {
