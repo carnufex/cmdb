@@ -83,7 +83,7 @@ public sealed class TraceEndpoint(GraphHolder holder, RequestDb db, ScopeMasks m
         var result = await RunAsync(graph, mask, db, req.Terminal, req.Service, req.Circuit, ct);
         if (result is not null && req.Geometry)
         {
-            result = result with { Route = await RouteAsync(db, result.Sites, result.Cables, ct) };
+            result = result with { Route = await RouteAsync(db, result.Sites, result.Cables, HttpContext.Scope(), ct) };
         }
         if (result is null)
         {
@@ -233,8 +233,12 @@ public sealed class TraceEndpoint(GraphHolder holder, RequestDb db, ScopeMasks m
         return null;
     }
 
-    private static async Task<TraceRoute> RouteAsync(NpgsqlDataSource db, IReadOnlyList<ObjectRef> sites, IReadOnlyList<ObjectRef> cables, CancellationToken ct)
+    private static async Task<TraceRoute> RouteAsync(NpgsqlDataSource db, IReadOnlyList<ObjectRef> sites, IReadOnlyList<ObjectRef> cables, UserScope scope, CancellationToken ct)
     {
+        if (scope.HidesCoordinates)
+        {
+            return new TraceRoute([], [], []);
+        }
         await using var conn = await db.OpenConnectionAsync(ct);
         await using var batch = new NpgsqlBatch(conn)
         {
@@ -244,12 +248,13 @@ public sealed class TraceEndpoint(GraphHolder holder, RequestDb db, ScopeMasks m
                 {
                     Parameters = { new() { Value = sites.Select(s => s.Id).ToArray() } },
                 },
-                new("""
-                    SELECT c.id, ARRAY(SELECT ARRAY[round(ST_X(p.geom)), round(ST_Y(p.geom))] FROM ST_DumpPoints(ST_Simplify(c.geom, 10)) p ORDER BY p.path)
+                new($"""
+                    SELECT c.id, ARRAY(SELECT ARRAY[round(ST_X(p.geom)), round(ST_Y(p.geom))]
+                                       FROM ST_DumpPoints(ST_Simplify({ScopeSql.CableGeometry("c", 2, scope)}, 10)) p ORDER BY p.path)
                     FROM cable c WHERE c.id = ANY($1)
                     """)
                 {
-                    Parameters = { new() { Value = cables.Select(c => c.Id).ToArray() } },
+                    Parameters = { new() { Value = cables.Select(c => c.Id).ToArray() }, scope.Parameter() },
                 },
             },
         };
@@ -264,7 +269,11 @@ public sealed class TraceEndpoint(GraphHolder holder, RequestDb db, ScopeMasks m
             await reader.NextResultAsync(ct);
             while (await reader.ReadAsync(ct))
             {
-                var coordinates = reader.GetFieldValue<double[,]>(1);
+                // A cable cut away entirely at a clipping scope's edge has no points.
+                if (reader.GetValue(1) is not double[,] coordinates || coordinates.Length == 0)
+                {
+                    continue;
+                }
                 lines[reader.GetInt64(0)] = new RouteCable(
                     reader.GetInt64(0),
                     [.. Enumerable.Range(0, coordinates.GetLength(0)).Select(i => new[] { coordinates[i, 0], coordinates[i, 1] })]);

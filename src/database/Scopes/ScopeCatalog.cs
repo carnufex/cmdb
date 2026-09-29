@@ -108,18 +108,19 @@ public static class ScopeVisibility
          AND (cardinality(a.site_types) = 0 OR s.site_type = ANY(a.site_types))
         WHERE a.valid_to IS NULL OR a.valid_to > now();
 
-        -- A cable is shown when either end is (whole) or both are (clip).
+        -- A cable is shown when either end is. Clipping scopes also show a cable passing through the area without an
+        -- end in it; the API cuts its geometry at the edge.
         INSERT INTO scope_cable (scope_key, cable_id)
         SELECT a.key, c.id
         FROM access_scope a JOIN cable c ON true
         LEFT JOIN scope_site sa ON sa.scope_key = a.key AND sa.site_id = c.a_site_id
         LEFT JOIN scope_site sb ON sb.scope_key = a.key AND sb.site_id = c.b_site_id
         WHERE (a.valid_to IS NULL OR a.valid_to > now())
-          AND CASE a.crossing_mode WHEN 'clip' THEN sa.site_id IS NOT NULL AND sb.site_id IS NOT NULL
-                                   ELSE sa.site_id IS NOT NULL OR sb.site_id IS NOT NULL END;
+          AND (sa.site_id IS NOT NULL OR sb.site_id IS NOT NULL
+               OR (a.crossing_mode = 'clip' AND a.area IS NOT NULL AND ST_Intersects(a.area, c.geom)));
 
-        -- A circuit follows the sites at its two ends, by the same rule. An end is a port (its equipment's site) or a
-        -- conductor end (the site at that side of the cable).
+        -- A circuit is shown when the site at either end is. An end is a port (its equipment's site) or a conductor end
+        -- (the site at that side of the cable).
         WITH ends AS (
             SELECT c.id,
                    coalesce(ea.site_id, CASE cea.side WHEN 'A' THEN ka.a_site_id ELSE ka.b_site_id END) AS a_site,
@@ -138,8 +139,7 @@ public static class ScopeVisibility
         LEFT JOIN scope_site sa ON sa.scope_key = a.key AND sa.site_id = c.a_site
         LEFT JOIN scope_site sb ON sb.scope_key = a.key AND sb.site_id = c.b_site
         WHERE (a.valid_to IS NULL OR a.valid_to > now())
-          AND CASE a.crossing_mode WHEN 'clip' THEN sa.site_id IS NOT NULL AND sb.site_id IS NOT NULL
-                                   ELSE sa.site_id IS NOT NULL OR sb.site_id IS NOT NULL END;
+          AND (sa.site_id IS NOT NULL OR sb.site_id IS NOT NULL);
 
         -- A service is shown when any circuit carrying it is.
         INSERT INTO scope_service (scope_key, service_id)

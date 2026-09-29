@@ -8,7 +8,7 @@ namespace Cmdb.Api.Features.Sites;
 
 public sealed record SiteGraphRequest(long Id);
 
-public sealed record SiteGraphNode(long Id, string Code, string Name, string SiteType, string Lifecycle, double X, double Y);
+public sealed record SiteGraphNode(long Id, string Code, string Name, string SiteType, string Lifecycle, double? X, double? Y);
 
 /// <param name="Id">Stable across expansions: "cable:{id}" for a cable, "{layer}:{lower site}-{higher site}" for circuits.</param>
 /// <param name="Layer">physical (a cable), transmission or logical (circuits between the two sites).</param>
@@ -120,7 +120,8 @@ public sealed class SiteGraphEndpoint(GraphHolder holder, RequestDb db, ScopeMas
             while (await reader.ReadAsync(ct))
             {
                 nodes[reader.GetInt64(0)] = new SiteGraphNode(reader.GetInt64(0), reader.GetString(1), reader.GetString(2),
-                    reader.GetString(3), reader.GetString(4), reader.GetDouble(5), reader.GetDouble(6));
+                    reader.GetString(3), reader.GetString(4),
+                    scope.HidesCoordinates ? null : reader.GetDouble(5), scope.HidesCoordinates ? null : reader.GetDouble(6));
             }
         }
         if (!nodes.TryGetValue(siteId, out var self))

@@ -43,8 +43,9 @@ export interface SiteQueryResult {
     name: string;
     siteType: string;
     lifecycle: Lifecycle;
-    x: number;
-    y: number;
+    /** Null when the caller's scope hides positions (#22). */
+    x: number | null;
+    y: number | null;
     matching: number | null;
   }[];
   points: [number, number, number][];

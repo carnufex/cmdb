@@ -5,8 +5,9 @@ export interface SiteGraphNode {
   name: string;
   siteType: string;
   lifecycle: string;
-  x: number;
-  y: number;
+  /** Null when the caller's scope hides positions (#22). */
+  x: number | null;
+  y: number | null;
 }
 
 export interface SiteGraphEdge {

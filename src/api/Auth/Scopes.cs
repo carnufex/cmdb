@@ -15,7 +15,11 @@ namespace Cmdb.Api.Auth;
 /// A granted scope covers the whole network (no area, all site types): queries skip the scope filter entirely, which
 /// Postgres folds away at planning because the keys parameter is null.
 /// </param>
-public sealed record UserScope(string[] Keys, IReadOnlySet<string> HiddenAttributes, bool Unrestricted = false)
+/// <param name="Clips">
+/// A granted scope clips cables at its edge (<c>crossing_mode = 'clip'</c>): geometry outside the scope's area is cut
+/// away in tiles and trace routes, unless another granted scope shows the cable whole.
+/// </param>
+public sealed record UserScope(string[] Keys, IReadOnlySet<string> HiddenAttributes, bool Unrestricted = false, bool Clips = false)
 {
     public static UserScope None { get; } = new([], new HashSet<string>());
 
@@ -27,6 +31,14 @@ public sealed record UserScope(string[] Keys, IReadOnlySet<string> HiddenAttribu
         Value = Unrestricted ? DBNull.Value : Keys,
         NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Array | NpgsqlTypes.NpgsqlDbType.Text,
     };
+
+    /// <summary>
+    /// Positions are hidden ("coordinates" among the hidden attributes): no map tiles, no x/y on sites, search hits,
+    /// query results or the neighbourhood graph, no trace route, and no ordering by distance.
+    /// </summary>
+    public bool HidesCoordinates => HiddenAttributes.Contains(HiddenCoordinates);
+
+    public const string HiddenCoordinates = "coordinates";
 
     /// <summary>Identifies the combination, for caching masks.</summary>
     public string Signature => string.Join(',', Keys);
@@ -46,7 +58,7 @@ public sealed record UserScope(string[] Keys, IReadOnlySet<string> HiddenAttribu
     }
 }
 
-public sealed record ScopeDefinition(string Key, string Name, string[] Groups, string[] HiddenAttributes, DateTimeOffset? ValidTo, bool Unrestricted = false);
+public sealed record ScopeDefinition(string Key, string Name, string[] Groups, string[] HiddenAttributes, DateTimeOffset? ValidTo, bool Unrestricted = false, bool Clips = false);
 
 /// <summary>The scope definitions, reloaded after every refresh of what they show.</summary>
 public sealed class ScopeRegistry(SystemDb system)
@@ -63,12 +75,17 @@ public sealed class ScopeRegistry(SystemDb system)
     {
         var scopes = new List<ScopeDefinition>();
         await using var cmd = system.Source.CreateCommand(
-            "SELECT key, name, groups, hidden_attributes, valid_to, area IS NULL AND cardinality(site_types) = 0 FROM access_scope ORDER BY key");
+            """
+            SELECT key, name, groups, hidden_attributes, valid_to, area IS NULL AND cardinality(site_types) = 0,
+                   area IS NOT NULL AND crossing_mode = 'clip'
+            FROM access_scope ORDER BY key
+            """);
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
         {
             scopes.Add(new ScopeDefinition(reader.GetString(0), reader.GetString(1), reader.GetFieldValue<string[]>(2),
-                reader.GetFieldValue<string[]>(3), reader.IsDBNull(4) ? null : reader.GetFieldValue<DateTimeOffset>(4), reader.GetBoolean(5)));
+                reader.GetFieldValue<string[]>(3), reader.IsDBNull(4) ? null : reader.GetFieldValue<DateTimeOffset>(4), reader.GetBoolean(5),
+                reader.GetBoolean(6)));
         }
         _scopes = scopes;
         Interlocked.Increment(ref _version);
@@ -83,7 +100,8 @@ public sealed class ScopeRegistry(SystemDb system)
             ? UserScope.None
             : new UserScope([.. granted.Select(s => s.Key).Order(StringComparer.Ordinal)],
                 granted.SelectMany(s => s.HiddenAttributes).ToHashSet(StringComparer.Ordinal),
-                granted.Any(s => s.Unrestricted));
+                granted.Any(s => s.Unrestricted),
+                !granted.Any(s => s.Unrestricted) && granted.Any(s => s.Clips));
     }
 }
 
@@ -284,4 +302,17 @@ public static class ScopeSql
 
     public static string Service(string idColumn, int param) =>
         $"(${param}::text[] IS NULL OR EXISTS (SELECT 1 FROM scope_service z WHERE z.scope_key = ANY(${param}) AND z.service_id = {idColumn}))";
+
+    /// <summary>
+    /// A cable's geometry as the caller may see it: whole, or cut to the areas of the clipping scopes that show it when
+    /// no scope shows it whole (<see cref="UserScope.Clips"/>). <paramref name="alias"/> is the cable row.
+    /// </summary>
+    public static string CableGeometry(string alias, int param, UserScope scope) => !scope.Clips
+        ? $"{alias}.geom"
+        : $"""
+            coalesce((SELECT CASE WHEN bool_or(a.area IS NULL OR a.crossing_mode = 'whole') THEN {alias}.geom
+                                  ELSE ST_Intersection({alias}.geom, ST_Union(a.area)) END
+                      FROM scope_cable z JOIN access_scope a ON a.key = z.scope_key
+                      WHERE z.scope_key = ANY(${param}) AND z.cable_id = {alias}.id), {alias}.geom)
+            """;
 }

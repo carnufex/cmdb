@@ -24,8 +24,9 @@ export interface SiteDetail {
   name: string;
   siteType: string;
   lifecycle: Lifecycle;
-  x: number;
-  y: number;
+  /** Null when the caller's scope hides positions (#22). */
+  x: number | null;
+  y: number | null;
   attributes: Record<string, unknown>;
   locations: {
     id: number;
