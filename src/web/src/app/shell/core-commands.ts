@@ -45,6 +45,19 @@ export function registerCoreCommands(): void {
       },
     },
     {
+      id: 'tools.tree',
+      label: 'Visa innehållsträd',
+      hint: 'Verktyg',
+      keywords: ['träd', 'rack', 'portar', 'kort'],
+      contextual: true,
+      when: (c) => c.top?.type === 'site' || c.top?.type === 'equipment',
+      run: () => {
+        if (tools.open() !== 'tree') {
+          tools.toggle('tree');
+        }
+      },
+    },
+    {
       id: 'tools.perf',
       label: 'Prestandamätning',
       hint: 'Verktyg',
