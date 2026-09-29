@@ -57,7 +57,8 @@ public static class McpSetup
 
         Start with `search` for names and codes, `find_sites` for structured questions (sites with equipment of a model,
         attribute values, services passing through), `get_object` for details, `impact` for what a cable or site cut
-        affects and `neighbourhood` for nearby sites. `describe_catalog` lists equipment models, categories and attributes.
+        affects, `trace` to follow a service down its layers or a port along the fibre, and `neighbourhood` for nearby
+        sites. `describe_catalog` lists equipment models, categories and attributes.
         The tools are read-only; changes will be proposed as plans that a human applies.
         """;
 }

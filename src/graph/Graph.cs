@@ -49,6 +49,14 @@ public sealed partial class Graph
     internal int[] CircuitServices { get; init; } = null!;
     internal long[] ServiceIds { get; init; } = null!;
 
+    // Circuits carrying service s: ServiceCircuitList[ServiceCircuitStart[s]..] (#9).
+    internal int[] ServiceCircuitStart { get; init; } = null!;
+    internal int[] ServiceCircuitList { get; init; } = null!;
+
+    // Circuits that circuit c rides on: Carriers[CarrierStart[c]..] (#9).
+    internal int[] CarrierStart { get; init; } = null!;
+    internal int[] Carriers { get; init; } = null!;
+
     /// <summary>The data version the graph was built from (see <see cref="GraphLoader.DataVersionAsync"/>).</summary>
     public required string Version { get; init; }
 
@@ -66,6 +74,44 @@ public sealed partial class Graph
     }
 
     public long TerminalId(int node) => TerminalIds[node];
+
+    public bool TryGetCircuit(long circuitId, out int circuit)
+    {
+        circuit = Array.BinarySearch(CircuitIds, circuitId);
+        return circuit >= 0;
+    }
+
+    public bool TryGetService(long serviceId, out int service)
+    {
+        service = Array.BinarySearch(ServiceIds, serviceId);
+        return service >= 0;
+    }
+
+    public long CircuitId(int circuit) => CircuitIds[circuit];
+
+    public CircuitLayer LayerOf(int circuit) => CircuitLayers[circuit];
+
+    public long ServiceId(int service) => ServiceIds[service];
+
+    /// <summary>The circuit's path, in order.</summary>
+    public ReadOnlySpan<int> HopsOf(int circuit) => Slice(HopNodes, HopStart, circuit);
+
+    /// <summary>Circuits whose path passes the node.</summary>
+    public ReadOnlySpan<int> CircuitsThrough(int node) => Slice(NodeCircuits, NodeCircuitStart, node);
+
+    /// <summary>Circuits riding on this one (upwards).</summary>
+    public ReadOnlySpan<int> DependentsOf(int circuit) => Slice(Dependents, DependentStart, circuit);
+
+    /// <summary>Circuits this one rides on (downwards).</summary>
+    public ReadOnlySpan<int> CarriersOf(int circuit) => Slice(Carriers, CarrierStart, circuit);
+
+    /// <summary>Services carried by the circuit, as service indexes.</summary>
+    public ReadOnlySpan<int> ServicesOf(int circuit) => Slice(CircuitServices, CircuitServiceStart, circuit);
+
+    /// <summary>Circuits carrying the service.</summary>
+    public ReadOnlySpan<int> CircuitsOf(int service) => Slice(ServiceCircuitList, ServiceCircuitStart, service);
+
+    private static ReadOnlySpan<int> Slice(int[] values, int[] start, int key) => values.AsSpan(start[key], start[key + 1] - start[key]);
 
     public TerminalKind KindOf(int node) => TerminalKinds[node];
 
@@ -90,5 +136,6 @@ public sealed partial class Graph
         + (ConductorIds.LongLength * 8) + (ConductorCables.LongLength * 4) + (CableIds.LongLength * 8) + CableLifecycles.LongLength
         + (CircuitIds.LongLength * 8) + CircuitLayers.LongLength + (HopStart.LongLength * 4) + (HopNodes.LongLength * 4)
         + (NodeCircuitStart.LongLength * 4) + (NodeCircuits.LongLength * 4) + (DependentStart.LongLength * 4) + (Dependents.LongLength * 4)
-        + (CircuitServiceStart.LongLength * 4) + (CircuitServices.LongLength * 4) + (ServiceIds.LongLength * 8);
+        + (CircuitServiceStart.LongLength * 4) + (CircuitServices.LongLength * 4) + (ServiceIds.LongLength * 8)
+        + (ServiceCircuitStart.LongLength * 4) + (ServiceCircuitList.LongLength * 4) + (CarrierStart.LongLength * 4) + (Carriers.LongLength * 4);
 }

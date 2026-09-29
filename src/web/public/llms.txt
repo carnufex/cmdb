@@ -16,7 +16,7 @@ a person applies.
   `claude mcp add --transport http cmdb https://cmdb.rosenvall.se/mcp --client-id cmdb-mcp --callback-port 33418`
 - Unattended agents use a service account: `client_credentials` on client `cmdb-agents` with the account's username and
   app password, then `Authorization: Bearer <token>`.
-- Tools (read-only): `search`, `get_object`, `find_sites`, `impact`, `neighbourhood`, `describe_catalog`.
+- Tools (read-only): `search`, `get_object`, `find_sites`, `impact`, `trace`, `neighbourhood`, `describe_catalog`.
 - Resources: `cmdb://docs/domanmodell`, `cmdb://docs/plan`, `cmdb://docs/arkitektur`.
 - Prompts: `cable_cut_impact`, `find_sites_by_equipment`.
 
@@ -41,6 +41,7 @@ a person applies.
 
 - "Which radio sites have a 3500 MHz radio?" → `find_sites` with category radio and attribute bandMHz = 3500
 - "What happens if cable K-000100 is cut?" → `impact` with reference K-000100
+- "Which fibres does service TJ-0000042 ride on?" → `search`, then `trace` with reference service:<id>
 - "What is around RAD-000007?" → `get_object`, then `neighbourhood`
 
 Source and design decisions: https://github.com/carnufex/cmdb (docs/agenter.md, docs/adr/0011-agentic-first-mcp.md)
