@@ -11,16 +11,18 @@ import {
 import { CommandRegistry } from '../shell/commands';
 import { PanelStack } from '../shell/panels';
 import { EditHeaderComponent } from './edit-header';
+import { FrontPanelComponent } from './front-panel';
+import { PanelPort, portRange, portStatus, portStatusLabels } from './front-panel-model';
 import { ImpactListComponent } from './impact-list';
 import { apiPath, EquipmentDetail, Impact } from './models';
 import { ObjectLinkComponent } from './object-link';
-import { traceId } from './trace-model';
+import { traceId, TraceResult } from './trace-model';
 
 type Port = EquipmentDetail['ports'][number];
 
 @Component({
   selector: 'cmdb-equipment-panel',
-  imports: [ObjectLinkComponent, EditHeaderComponent, ImpactListComponent],
+  imports: [ObjectLinkComponent, EditHeaderComponent, ImpactListComponent, FrontPanelComponent],
   template: `
     @if (equipment.value(); as e) {
       <header class="header">
@@ -45,31 +47,20 @@ type Port = EquipmentDetail['ports'][number];
       @if (e.ports.length) {
         <section>
           <h3>Frontpanel</h3>
-          <div
-            class="panel"
-            role="grid"
-            aria-label="Frontpanel"
-            [style.grid-template-columns]="'repeat(' + e.panel.columns + ', minmax(0, 1fr))'"
-          >
-            @for (p of e.ports; track p.terminalId) {
-              <button
-                type="button"
-                class="port"
-                role="gridcell"
-                [class.connected]="p.connections.length > 0"
-                [class.selected]="selected()?.terminalId === p.terminalId"
-                [style.grid-row]="p.row + 1"
-                [style.grid-column]="p.column + 1"
-                [title]="
-                  p.name + (p.connections.length ? ' — ' + p.connections[0].peer.label : ' — ledig')
-                "
-                (click)="selected.set(p)"
-              ></button>
-            }
-          </div>
-          <p class="legend">
-            <span class="swatch connected"></span> Kopplad <span class="swatch"></span> Ledig
-          </p>
+          <cmdb-front-panel
+            [ports]="e.ports"
+            [rows]="e.panel.rows"
+            [columns]="e.panel.columns"
+            [selectedId]="selected()?.terminalId ?? null"
+            [marked]="marked()"
+            (choosePort)="choose($event.port, $event.range, e.ports)"
+          />
+          @if (marked().size > 1) {
+            <p class="marked">
+              {{ marked().size }} portar markerade
+              <button type="button" class="action" (click)="marked.set(emptySet)">Rensa</button>
+            </p>
+          }
         </section>
       }
 
@@ -86,6 +77,8 @@ type Port = EquipmentDetail['ports'][number];
             </p>
           }
           <dl class="facts">
+            <dt>Status</dt>
+            <dd>{{ statusLabels[status(p)] }}</dd>
             <dt>Typ</dt>
             <dd>{{ p.type }}{{ p.group ? ' · ' + p.group : '' }}</dd>
             <dt>Kretsar</dt>
@@ -100,6 +93,16 @@ type Port = EquipmentDetail['ports'][number];
             } @empty {
               <dt>Koppling</dt>
               <dd>Ledig</dd>
+            }
+            @if (portTrace.value(); as t) {
+              <dt>Tjänster</dt>
+              <dd>
+                @for (sv of t.services; track sv.id) {
+                  <div><cmdb-link [ref]="sv" [showName]="true" /></div>
+                } @empty {
+                  <span class="muted">Inga</span>
+                }
+              </dd>
             }
           </dl>
         </section>
@@ -179,49 +182,12 @@ type Port = EquipmentDetail['ports'][number];
   `,
   styleUrl: './panel.scss',
   styles: `
-    .panel {
-      display: grid;
-      gap: 3px;
-      padding: var(--space-2);
-      background: var(--surface-2);
-      border: var(--line);
-      border-radius: var(--radius-sm);
-    }
-    .port {
-      aspect-ratio: 1;
-      min-width: 0;
-      padding: 0;
-      border: 1px solid var(--border-strong);
-      border-radius: 2px;
-      background: var(--surface-1);
-      cursor: pointer;
-      &.connected {
-        background: var(--status-in-service);
-        border-color: transparent;
-      }
-      &.selected {
-        outline: 2px solid var(--focus);
-        outline-offset: 1px;
-      }
-    }
-    .legend {
+    .marked {
       display: flex;
       align-items: center;
       gap: var(--space-2);
       margin: var(--space-2) 0 0;
-      font-size: var(--text-xs);
-      color: var(--text-muted);
-    }
-    .swatch {
-      width: 10px;
-      height: 10px;
-      border: 1px solid var(--border-strong);
-      border-radius: 2px;
-      background: var(--surface-1);
-      &.connected {
-        background: var(--status-in-service);
-        border-color: transparent;
-      }
+      font-size: var(--text-sm);
     }
     tr.active td {
       background: var(--surface-2);
@@ -248,6 +214,17 @@ export class EquipmentPanelComponent {
     this.equipment.value() ? `${this.url()}/impact` : undefined,
   );
   protected readonly selected = signal<Port | null>(null);
+  /** Ports marked with Shift-click, for mass operations to come (#26). */
+  protected readonly marked = signal<ReadonlySet<number>>(new Set());
+  protected readonly emptySet: ReadonlySet<number> = new Set();
+  private anchor: number | null = null;
+  protected readonly statusLabels = portStatusLabels;
+  protected readonly status = portStatus;
+  /** Services through the selected port, from the graph. */
+  protected readonly portTrace = httpResource<TraceResult>(() => {
+    const p = this.selected();
+    return p?.connections.length ? `/api/trace?terminal=${p.terminalId}` : undefined;
+  });
   protected readonly connectionLabels: Record<string, string> = {
     patch: 'Patch',
     splice: 'Skarv',
@@ -259,6 +236,16 @@ export class EquipmentPanelComponent {
       ([k, v]) => [k, String(v)] as const,
     ),
   );
+
+  protected choose(port: PanelPort, range: boolean, ports: readonly PanelPort[]): void {
+    if (range && this.anchor !== null) {
+      this.marked.set(portRange(ports, this.anchor, port.terminalId));
+    } else {
+      this.anchor = port.terminalId;
+      this.marked.set(new Set([port.terminalId]));
+    }
+    this.selected.set(port);
+  }
 
   protected trace(terminalId: number): void {
     this.panels.open({ type: 'trace', id: traceId({ by: 'terminal', id: terminalId }) });
@@ -275,6 +262,8 @@ export class EquipmentPanelComponent {
     effect(() => {
       this.id();
       this.selected.set(null);
+      this.marked.set(new Set());
+      this.anchor = null;
     });
     // While a connected port is selected, the command palette can trace from it (#21).
     effect((onCleanup) => {
