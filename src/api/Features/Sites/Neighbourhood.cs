@@ -60,7 +60,7 @@ public sealed class NeighbourhoodEndpoint(NpgsqlDataSource db) : Endpoint<Neighb
         cmd.Parameters.Add(new NpgsqlParameter { Value = id });
         cmd.Parameters.Add(new NpgsqlParameter { Value = hops });
         cmd.Parameters.Add(new NpgsqlParameter { Value = limit });
-        cmd.Parameters.Add(new NpgsqlParameter { Value = scope.Keys });
+        cmd.Parameters.Add(scope.Parameter());
         var neighbours = new List<Neighbour>();
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))

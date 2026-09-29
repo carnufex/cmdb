@@ -11,11 +11,22 @@ namespace Cmdb.Api.Auth;
 /// The scopes a request may see (ADR-0007, #22): the union of the valid scopes granted to the caller's groups.
 /// Empty means nothing is visible; every read path filters by <see cref="Keys"/>.
 /// </summary>
-public sealed record UserScope(string[] Keys, IReadOnlySet<string> HiddenAttributes)
+/// <param name="Unrestricted">
+/// A granted scope covers the whole network (no area, all site types): queries skip the scope filter entirely, which
+/// Postgres folds away at planning because the keys parameter is null.
+/// </param>
+public sealed record UserScope(string[] Keys, IReadOnlySet<string> HiddenAttributes, bool Unrestricted = false)
 {
     public static UserScope None { get; } = new([], new HashSet<string>());
 
     public bool IsEmpty => Keys.Length == 0;
+
+    /// <summary>The scope keys as a query parameter: null when unrestricted, so the filter folds to true.</summary>
+    public NpgsqlParameter Parameter() => new()
+    {
+        Value = Unrestricted ? DBNull.Value : Keys,
+        NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Array | NpgsqlTypes.NpgsqlDbType.Text,
+    };
 
     /// <summary>Identifies the combination, for caching masks.</summary>
     public string Signature => string.Join(',', Keys);
@@ -35,7 +46,7 @@ public sealed record UserScope(string[] Keys, IReadOnlySet<string> HiddenAttribu
     }
 }
 
-public sealed record ScopeDefinition(string Key, string Name, string[] Groups, string[] HiddenAttributes, DateTimeOffset? ValidTo);
+public sealed record ScopeDefinition(string Key, string Name, string[] Groups, string[] HiddenAttributes, DateTimeOffset? ValidTo, bool Unrestricted = false);
 
 /// <summary>The scope definitions, reloaded after every refresh of what they show.</summary>
 public sealed class ScopeRegistry(NpgsqlDataSource db)
@@ -51,12 +62,13 @@ public sealed class ScopeRegistry(NpgsqlDataSource db)
     public async Task LoadAsync(CancellationToken ct)
     {
         var scopes = new List<ScopeDefinition>();
-        await using var cmd = db.CreateCommand("SELECT key, name, groups, hidden_attributes, valid_to FROM access_scope ORDER BY key");
+        await using var cmd = db.CreateCommand(
+            "SELECT key, name, groups, hidden_attributes, valid_to, area IS NULL AND cardinality(site_types) = 0 FROM access_scope ORDER BY key");
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
         {
             scopes.Add(new ScopeDefinition(reader.GetString(0), reader.GetString(1), reader.GetFieldValue<string[]>(2),
-                reader.GetFieldValue<string[]>(3), reader.IsDBNull(4) ? null : reader.GetFieldValue<DateTimeOffset>(4)));
+                reader.GetFieldValue<string[]>(3), reader.IsDBNull(4) ? null : reader.GetFieldValue<DateTimeOffset>(4), reader.GetBoolean(5)));
         }
         _scopes = scopes;
         Interlocked.Increment(ref _version);
@@ -70,7 +82,8 @@ public sealed class ScopeRegistry(NpgsqlDataSource db)
         return granted.Count == 0
             ? UserScope.None
             : new UserScope([.. granted.Select(s => s.Key).Order(StringComparer.Ordinal)],
-                granted.SelectMany(s => s.HiddenAttributes).ToHashSet(StringComparer.Ordinal));
+                granted.SelectMany(s => s.HiddenAttributes).ToHashSet(StringComparer.Ordinal),
+                granted.Any(s => s.Unrestricted));
     }
 }
 
@@ -170,11 +183,22 @@ public sealed class ScopeMasks(NpgsqlDataSource db, ScopeRegistry registry)
             }
             if (!_cache.TryGetValue(scope.Signature, out var mask) || mask.IsFaulted)
             {
-                mask = BuildAsync(g, scope.Keys, ct);
+                mask = scope.Unrestricted ? Task.FromResult(Everything(g)) : BuildAsync(g, scope.Keys, ct);
                 _cache[scope.Signature] = mask;
             }
             return mask;
         }
+    }
+
+    private static GraphMask Everything(Cmdb.Graph.Graph g)
+    {
+        static bool[] All(int n)
+        {
+            var a = new bool[n];
+            Array.Fill(a, true);
+            return a;
+        }
+        return new GraphMask { Sites = All(g.SiteCount), Cables = All(g.CableCount), Circuits = All(g.CircuitCount), Services = All(g.ServiceCount) };
     }
 
     private async Task<GraphMask> BuildAsync(Cmdb.Graph.Graph g, string[] keys, CancellationToken ct)
@@ -243,18 +267,21 @@ public static class ScopeHttpExtensions
     public static UserScope Scope(this HttpContext context) => context.RequestServices.GetRequiredService<UserScope>();
 }
 
-/// <summary>SQL fragments that keep a query inside the caller's scopes. <c>$n</c> is the text[] of scope keys.</summary>
+/// <summary>
+/// SQL fragments that keep a query inside the caller's scopes. <c>$n</c> is <see cref="UserScope.Parameter"/>: the
+/// text[] of scope keys, or null for an unrestricted caller, which Postgres folds to true when planning.
+/// </summary>
 public static class ScopeSql
 {
     public static string Site(string idColumn, int param) =>
-        $"EXISTS (SELECT 1 FROM scope_site z WHERE z.scope_key = ANY(${param}) AND z.site_id = {idColumn})";
+        $"(${param}::text[] IS NULL OR EXISTS (SELECT 1 FROM scope_site z WHERE z.scope_key = ANY(${param}) AND z.site_id = {idColumn}))";
 
     public static string Cable(string idColumn, int param) =>
-        $"EXISTS (SELECT 1 FROM scope_cable z WHERE z.scope_key = ANY(${param}) AND z.cable_id = {idColumn})";
+        $"(${param}::text[] IS NULL OR EXISTS (SELECT 1 FROM scope_cable z WHERE z.scope_key = ANY(${param}) AND z.cable_id = {idColumn}))";
 
     public static string Circuit(string idColumn, int param) =>
-        $"EXISTS (SELECT 1 FROM scope_circuit z WHERE z.scope_key = ANY(${param}) AND z.circuit_id = {idColumn})";
+        $"(${param}::text[] IS NULL OR EXISTS (SELECT 1 FROM scope_circuit z WHERE z.scope_key = ANY(${param}) AND z.circuit_id = {idColumn}))";
 
     public static string Service(string idColumn, int param) =>
-        $"EXISTS (SELECT 1 FROM scope_service z WHERE z.scope_key = ANY(${param}) AND z.service_id = {idColumn})";
+        $"(${param}::text[] IS NULL OR EXISTS (SELECT 1 FROM scope_service z WHERE z.scope_key = ANY(${param}) AND z.service_id = {idColumn}))";
 }

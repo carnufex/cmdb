@@ -55,7 +55,7 @@ public sealed class GetSiteEndpoint(NpgsqlDataSource db) : Endpoint<SiteRequest,
                 new($"""
                     SELECT id, code, name, site_type, lifecycle::text, ST_X(ST_PointOnSurface(geom)), ST_Y(ST_PointOnSurface(geom)), attributes::text
                     FROM site WHERE id = $1 AND {ScopeSql.Site("site.id", 2)}
-                    """) { Parameters = { new() { Value = id }, new() { Value = scope.Keys } } },
+                    """) { Parameters = { new() { Value = id }, scope.Parameter() } },
                 new("SELECT id, parent_id, kind, name FROM location WHERE site_id = $1 ORDER BY parent_id NULLS FIRST, name") { Parameters = { new() { Value = id } } },
                 new("""
                     SELECT e.id, e.location_id, e.name, et.model, et.category, e.lifecycle::text,
@@ -73,7 +73,7 @@ public sealed class GetSiteEndpoint(NpgsqlDataSource db) : Endpoint<SiteRequest,
                     JOIN site o ON o.id = CASE WHEN c.a_site_id = $1 THEN c.b_site_id ELSE c.a_site_id END
                     WHERE (c.a_site_id = $1 OR c.b_site_id = $1) AND {ScopeSql.Cable("c.id", 2)}
                     ORDER BY ct.conductor_count DESC, c.code
-                    """) { Parameters = { new() { Value = id }, new() { Value = scope.Keys } } },
+                    """) { Parameters = { new() { Value = id }, scope.Parameter() } },
             },
         };
         await using var reader = await batch.ExecuteReaderAsync(ct);

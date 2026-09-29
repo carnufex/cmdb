@@ -46,13 +46,13 @@ public sealed class GetServiceEndpoint(NpgsqlDataSource db) : Endpoint<ServiceRe
             {
                 new($"SELECT id, code, name, service_type, lifecycle::text, attributes::text FROM service WHERE id = $1 AND {ScopeSql.Service("service.id", 2)}")
                 {
-                    Parameters = { new() { Value = id }, new() { Value = scope.Keys } },
+                    Parameters = { new() { Value = id }, scope.Parameter() },
                 },
                 new($"""
                     SELECT r.id, r.code, r.layer::text, r.lifecycle::text, r.a_terminal_id, r.b_terminal_id
                     FROM service_circuit sc JOIN circuit r ON r.id = sc.circuit_id
                     WHERE sc.service_id = $1 AND {ScopeSql.Circuit("r.id", 2)} ORDER BY r.code
-                    """) { Parameters = { new() { Value = id }, new() { Value = scope.Keys } } },
+                    """) { Parameters = { new() { Value = id }, scope.Parameter() } },
             },
         };
 

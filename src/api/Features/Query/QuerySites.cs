@@ -160,7 +160,7 @@ public sealed class QuerySitesEndpoint(NpgsqlDataSource db, TypeCatalog catalog)
         }
 
         // Only sites in the caller's scopes (#22), and only services in them count as passing a site.
-        var scopeKeys = P(scope.Keys);
+        var scopeKeys = P(scope.Unrestricted ? DBNull.Value : scope.Keys, NpgsqlDbType.Array | NpgsqlDbType.Text);
         var where = new List<string> { ScopeSql.Site("s.id", int.Parse(scopeKeys[1..], CultureInfo.InvariantCulture)) };
         if (req.SiteTypes is { Count: > 0 })
         {

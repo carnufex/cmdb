@@ -59,7 +59,7 @@ public sealed class SummaryEndpoint(NpgsqlDataSource db) : Endpoint<SummaryReque
         }
         await using var cmd = db.CreateCommand(sql);
         cmd.Parameters.Add(new NpgsqlParameter { Value = req.Id });
-        cmd.Parameters.Add(new NpgsqlParameter { Value = HttpContext.Scope().Keys });
+        cmd.Parameters.Add(HttpContext.Scope().Parameter());
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         if (!await reader.ReadAsync(ct))
         {
