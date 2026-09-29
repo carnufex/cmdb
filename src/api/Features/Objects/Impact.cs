@@ -27,7 +27,7 @@ public sealed record Impact(int Circuits, int Direct, IReadOnlyList<ImpactedServ
 /// path of circuits that reaches it. The walk is in memory (ADR-0002); only names come from the database.
 /// Budget: 200 ms for a cable span (docs/plan.md).
 /// </summary>
-public sealed class ImpactEndpoint(GraphHolder holder, NpgsqlDataSource db, ScopeMasks masks) : Endpoint<ImpactRequest, Impact>
+public sealed class ImpactEndpoint(GraphHolder holder, RequestDb db, ScopeMasks masks) : Endpoint<ImpactRequest, Impact>
 {
     public override void Configure() => Get("/cables/{id}/impact", "/sites/{id}/impact", "/equipment/{id}/impact");
 

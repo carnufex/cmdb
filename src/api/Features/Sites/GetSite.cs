@@ -27,7 +27,7 @@ public sealed record SiteDetail(
     IReadOnlyList<SiteCable> Cables);
 
 /// <summary>A site with what is on it and what it connects to. Cards are counted under their chassis.</summary>
-public sealed class GetSiteEndpoint(NpgsqlDataSource db) : Endpoint<SiteRequest, SiteDetail>
+public sealed class GetSiteEndpoint(RequestDb db) : Endpoint<SiteRequest, SiteDetail>
 {
     public override void Configure() => Get("/sites/{id}");
 

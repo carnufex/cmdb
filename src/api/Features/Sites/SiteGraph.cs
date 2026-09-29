@@ -22,7 +22,7 @@ public sealed record SiteGraph(SiteGraphNode Site, IReadOnlyList<SiteGraphNode> 
 /// One level of the neighbourhood graph (#20): the sites next to a site by cable, and by transmission and logical
 /// circuits ending at it (aggregated per site and layer). The lens expands one level at a time by asking again.
 /// </summary>
-public sealed class SiteGraphEndpoint(GraphHolder holder, NpgsqlDataSource db, ScopeMasks masks) : Endpoint<SiteGraphRequest, SiteGraph>
+public sealed class SiteGraphEndpoint(GraphHolder holder, RequestDb db, ScopeMasks masks) : Endpoint<SiteGraphRequest, SiteGraph>
 {
     public const int Max = 500;
 

@@ -10,7 +10,7 @@ public sealed record TileRequest(int Z, int X, int Y);
 /// Vector tiles (MVT) of sites and cables in SWEREF 99 TM. The grid is one square z0 tile over
 /// <see cref="TileGrid.Bounds"/>; the web map uses the same grid (map-grid.ts).
 /// </summary>
-public sealed class TilesEndpoint(NpgsqlDataSource db) : Endpoint<TileRequest>
+public sealed class TilesEndpoint(RequestDb db) : Endpoint<TileRequest>
 {
     public override void Configure() => Get("/tiles/{z}/{x}/{y}");
 

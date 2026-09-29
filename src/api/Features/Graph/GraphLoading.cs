@@ -17,7 +17,7 @@ namespace Cmdb.Api.Features.Graph;
 /// </para>
 /// </summary>
 public sealed partial class GraphLoadingService(
-    NpgsqlDataSource db, IGraphChangeFeed feed, GraphHolder holder, Cmdb.Api.Auth.ScopeRefreshService scopes, IConfiguration config,
+    Cmdb.Api.Auth.SystemDb system, IGraphChangeFeed feed, GraphHolder holder, Cmdb.Api.Auth.ScopeRefreshService scopes, IConfiguration config,
     ILogger<GraphLoadingService> logger) : BackgroundService
 {
     private DateTimeOffset _snapshotWritten = DateTimeOffset.MinValue;
@@ -80,7 +80,7 @@ public sealed partial class GraphLoadingService(
     {
         var before = GC.GetTotalMemory(forceFullCollection: true);
         var sw = Stopwatch.StartNew();
-        var graph = await GraphLoader.LoadAsync(db, ct);
+        var graph = await GraphLoader.LoadAsync(system.Source, ct);
         var duration = sw.Elapsed;
         var bytes = GC.GetTotalMemory(forceFullCollection: true) - before;
         holder.Set(graph, new GraphLoadInfo(source, duration, bytes, DateTimeOffset.UtcNow));

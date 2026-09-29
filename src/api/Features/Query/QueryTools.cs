@@ -13,7 +13,7 @@ public sealed record AgentSite(string Ref, string Code, string Name, string Site
 public sealed record FindSitesResult(long Total, IReadOnlyList<AgentSite> Sites, bool Truncated, double ElapsedMs);
 
 [McpServerToolType]
-public sealed class QueryTools(NpgsqlDataSource db, TypeCatalog catalog, AgentLinks links, IHttpContextAccessor http)
+public sealed class QueryTools(RequestDb db, TypeCatalog catalog, AgentLinks links, IHttpContextAccessor http)
 {
     public const int MaxLimit = 50;
 

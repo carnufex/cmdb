@@ -20,7 +20,7 @@ public sealed record ServiceDetail(
     IReadOnlyList<ServiceCircuit> Circuits);
 
 /// <summary>A service and the circuits carrying it, with where each one starts and ends.</summary>
-public sealed class GetServiceEndpoint(NpgsqlDataSource db) : Endpoint<ServiceRequest, ServiceDetail>
+public sealed class GetServiceEndpoint(RequestDb db) : Endpoint<ServiceRequest, ServiceDetail>
 {
     public override void Configure() => Get("/services/{id}");
 

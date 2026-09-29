@@ -75,7 +75,8 @@ internal static class Cli
         var load = Stopwatch.StartNew();
         // Finishing a large COPY (FK checks, index maintenance) takes minutes on network storage,
         // far past Npgsql's 30 s default, and the binary importer inherits the connection's timeout.
-        var bulk = new NpgsqlConnectionStringBuilder(connection) { CommandTimeout = 0 };
+        // The generator is system work and sees everything under row-level security (#22).
+        var bulk = new NpgsqlConnectionStringBuilder(connection) { CommandTimeout = 0, Options = "-c cmdb.scopes=*" };
         await using var db = CmdbDatabase.CreateDataSource(bulk.ConnectionString);
         await Loader.LoadAsync(db, network, reset, Console.Out);
         Console.WriteLine($"Loaded in {load.Elapsed.TotalSeconds:0.0} s, total {total.Elapsed.TotalSeconds:0.0} s");

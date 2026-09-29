@@ -11,7 +11,7 @@ public sealed record ObjectSummary(string Type, long Id, string Code, string? Na
 
 public sealed record SummaryFact(string Label, string Value);
 
-public sealed class SummaryEndpoint(NpgsqlDataSource db) : Endpoint<SummaryRequest, ObjectSummary>
+public sealed class SummaryEndpoint(RequestDb db) : Endpoint<SummaryRequest, ObjectSummary>
 {
     private static readonly Dictionary<string, string> Queries = new(StringComparer.Ordinal)
     {

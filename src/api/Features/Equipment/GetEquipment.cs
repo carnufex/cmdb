@@ -34,7 +34,7 @@ public sealed record EquipmentDetail(
     IReadOnlyList<EquipmentPort> Ports);
 
 /// <summary>Equipment with its ports and what each port is connected to; the front panel is drawn from this.</summary>
-public sealed class GetEquipmentEndpoint(NpgsqlDataSource db) : Endpoint<EquipmentRequest, EquipmentDetail>
+public sealed class GetEquipmentEndpoint(RequestDb db) : Endpoint<EquipmentRequest, EquipmentDetail>
 {
     public override void Configure() => Get("/equipment/{id}");
 

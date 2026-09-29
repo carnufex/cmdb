@@ -1,3 +1,4 @@
+using Cmdb.Api.Auth;
 using System.Text.Json;
 using Cmdb.Catalog;
 using FastEndpoints;
@@ -22,7 +23,7 @@ public sealed record QueryFields(
     IReadOnlyList<CategoryField> Categories,
     IReadOnlyList<TypeField> Types);
 
-public sealed class QueryFieldsEndpoint(NpgsqlDataSource db, TypeCatalog catalog) : EndpointWithoutRequest<QueryFields>
+public sealed class QueryFieldsEndpoint(RequestDb db, TypeCatalog catalog) : EndpointWithoutRequest<QueryFields>
 {
     public static readonly string[] Lifecycles = ["planned", "under_construction", "in_service", "decommissioning", "removed"];
 

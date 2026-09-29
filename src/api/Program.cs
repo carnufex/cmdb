@@ -30,8 +30,15 @@ var builder = WebApplication.CreateBuilder(args);
 
 var connectionString = builder.Configuration.GetConnectionString("Cmdb")
     ?? throw new InvalidOperationException("ConnectionStrings:Cmdb is not configured.");
-builder.Services.AddSingleton(_ => CmdbDatabase.CreateDataSource(connectionString));
-builder.Services.AddDbContext<CmdbDbContext>((sp, o) => o.UseCmdb(sp.GetRequiredService<NpgsqlDataSource>()));
+// Row-level security (#22): requests get a pool carrying their scopes, system work one that sees everything, and a
+// plain NpgsqlDataSource sees nothing, so a forgotten choice fails closed.
+var dataSources = new Cmdb.Api.Auth.ScopedDataSources(connectionString);
+builder.Services.AddSingleton(dataSources);
+builder.Services.AddSingleton(new Cmdb.Api.Auth.SystemDb(dataSources.System));
+builder.Services.AddSingleton(dataSources.Deny);
+builder.Services.AddScoped(sp => new Cmdb.Api.Auth.RequestDb(
+    sp.GetRequiredService<Cmdb.Api.Auth.ScopedDataSources>().For(sp.GetRequiredService<Cmdb.Api.Auth.UserScope>())));
+builder.Services.AddDbContext<CmdbDbContext>((sp, o) => o.UseCmdb(sp.GetRequiredService<Cmdb.Api.Auth.RequestDb>().Source));
 builder.Services.AddSingleton(TypeCatalog.Embedded);
 builder.Services.AddCmdbAuthentication(builder.Configuration);
 builder.Services.AddFastEndpoints();
@@ -46,7 +53,7 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<Cmdb.Api.Auth.Scop
 builder.Services.AddScoped(sp => sp.GetRequiredService<IHttpContextAccessor>().HttpContext?.User is { Identity.IsAuthenticated: true } user
     ? sp.GetRequiredService<Cmdb.Api.Auth.ScopeRegistry>().For(user)
     : Cmdb.Api.Auth.UserScope.None);
-builder.Services.AddSingleton<Cmdb.Graph.IGraphChangeFeed, Cmdb.Graph.PostgresGraphChangeFeed>();
+builder.Services.AddSingleton<Cmdb.Graph.IGraphChangeFeed>(sp => new Cmdb.Graph.PostgresGraphChangeFeed(sp.GetRequiredService<Cmdb.Api.Auth.SystemDb>().Source));
 builder.Services.AddHostedService<Cmdb.Api.Features.Graph.GraphLoadingService>();
 builder.Services.AddHostedService<Cmdb.Api.Features.Graph.GraphChangePruning>();
 builder.Services.AddCmdbOpenApi();
@@ -57,7 +64,7 @@ var app = builder.Build();
 var migrateOnly = args.Contains("--migrate");
 if (migrateOnly || app.Configuration.GetValue<bool>("Database:MigrateOnStartup"))
 {
-    var applied = await CmdbDatabase.MigrateAsync(app.Services.GetRequiredService<NpgsqlDataSource>());
+    var applied = await CmdbDatabase.MigrateAsync(app.Services.GetRequiredService<Cmdb.Api.Auth.SystemDb>().Source);
     StartupLog.MigrationsApplied(app.Logger, applied.Count, applied);
     // The type catalog is versioned data and ships with the schema.
     await using var scope = app.Services.CreateAsyncScope();
@@ -65,7 +72,7 @@ if (migrateOnly || app.Configuration.GetValue<bool>("Database:MigrateOnStartup")
     StartupLog.CatalogSynced(app.Logger, synced);
     // Access scopes (#22) are synthetic demo data too; what they show is materialised after the sync.
     await Cmdb.Database.Scopes.ScopeCatalog.SyncAsync(scope.ServiceProvider.GetRequiredService<CmdbDbContext>());
-    await Cmdb.Database.Scopes.ScopeVisibility.RefreshAsync(app.Services.GetRequiredService<NpgsqlDataSource>());
+    await Cmdb.Database.Scopes.ScopeVisibility.RefreshAsync(app.Services.GetRequiredService<Cmdb.Api.Auth.SystemDb>().Source);
     if (migrateOnly)
     {
         return 0;

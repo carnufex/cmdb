@@ -148,6 +148,23 @@ public sealed class ScopeTests(ApiFactory factory)
         scoped.Circuits.ShouldBeLessThanOrEqualTo(all.Circuits);
     }
 
+    [Fact]
+    public async Task Every_request_pool_carries_its_scopes_for_row_level_security()
+    {
+        await using var pools = new Cmdb.Api.Auth.ScopedDataSources(factory.ConnectionString);
+        async Task<string> Setting(Npgsql.NpgsqlDataSource db)
+        {
+            await using var cmd = db.CreateCommand("SELECT current_setting('cmdb.scopes', true)");
+            return (string)(await cmd.ExecuteScalarAsync(Ct))!;
+        }
+
+        (await Setting(pools.For(Cmdb.Api.Auth.UserScope.None))).ShouldBe("none");
+        (await Setting(pools.Deny)).ShouldBe("none");
+        (await Setting(pools.System)).ShouldBe("*");
+        (await Setting(pools.For(new(["projekt-a", "region-nord"], new HashSet<string>())))).ShouldBe("projekt-a,region-nord");
+        (await Setting(pools.For(new(["hela-natet"], new HashSet<string>(), Unrestricted: true)))).ShouldBe("*");
+    }
+
     private static async Task<SiteQueryResult> Query(HttpClient client)
     {
         var response = await client.PostAsJsonAsync("/api/query/sites", new { limit = 50 }, Ct);
