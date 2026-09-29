@@ -103,6 +103,36 @@
   position: relative;
 }
 
+// Map or neighbourhood graph (#20); top right so it never sits under a tool or the map legend.
+.lens-switch {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  z-index: 5;
+  display: flex;
+  padding: 2px;
+  background: color-mix(in srgb, var(--surface-1) 94%, transparent);
+  border: var(--line);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+
+  a {
+    padding: 2px var(--space-3);
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    text-decoration: none;
+
+    &:hover {
+      color: var(--text);
+    }
+
+    &.active {
+      background: var(--surface-2);
+      color: var(--text);
+    }
+  }
+}
+
 .panels {
   display: flex;
   flex-direction: column;
