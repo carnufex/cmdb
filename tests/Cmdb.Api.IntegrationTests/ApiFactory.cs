@@ -43,6 +43,16 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     }
 
     /// <summary>Creates an empty database with PostGIS available but no migrations applied.</summary>
+    /// <summary>
+    /// Reloads the graph from the database. Until the change stream (#11) the graph does not follow writes, so tests
+    /// that insert topology call this before tracing or impact.
+    /// </summary>
+    public async Task ReloadGraphAsync()
+    {
+        var graph = await Cmdb.Graph.GraphLoader.LoadAsync(Db);
+        Services.GetRequiredService<Cmdb.Graph.GraphHolder>().Set(graph, new Cmdb.Graph.GraphLoadInfo("database", TimeSpan.Zero, 0, DateTimeOffset.UtcNow));
+    }
+
     public async Task<NpgsqlDataSource> NewDatabaseAsync()
     {
         var name = $"t{Interlocked.Increment(ref _databases)}";

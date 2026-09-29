@@ -151,7 +151,7 @@ public static class GraphBuilder
             ServiceCircuitList = serviceCircuitList,
             CarrierStart = carrierStart,
             Carriers = carrierList,
-        };
+        }.IndexOwners();
     }
 
     /// <summary>Both directions of every edge, grouped per node with counting sort and sorted by target.</summary>
@@ -206,7 +206,7 @@ public static class GraphBuilder
     }
 
     /// <summary>Groups values by key keeping input order (hops stay in sequence).</summary>
-    private static (int[] Start, int[] Values) GroupStable(int keys, int[] key, int[] value)
+    internal static (int[] Start, int[] Values) GroupStable(int keys, int[] key, int[] value)
     {
         var start = new int[keys + 1];
         foreach (var k in key)

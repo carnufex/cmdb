@@ -1,7 +1,9 @@
 using Cmdb.Catalog;
 using Cmdb.DataGen;
+using Cmdb.Graph;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 
 namespace Cmdb.Api.IntegrationTests;
@@ -40,6 +42,7 @@ public static class NetworkFixture
             Database = new NpgsqlConnectionStringBuilder(db.ConnectionString).Database,
         }.ConnectionString;
         var api = factory.WithWebHostBuilder(b => b.UseSetting("ConnectionStrings:Cmdb", connectionString));
+        await api.Services.GetRequiredService<GraphHolder>().Ready.WaitAsync(TimeSpan.FromSeconds(60));
         return (db, api);
     }
 }

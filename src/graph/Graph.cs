@@ -57,6 +57,14 @@ public sealed partial class Graph
     internal int[] CarrierStart { get; init; } = null!;
     internal int[] Carriers { get; init; } = null!;
 
+    // Derived at load, not stored in the snapshot (#10): ports per equipment, conductor ends per cable, equipment per site.
+    internal int[] EquipmentPortStart { get; private set; } = null!;
+    internal int[] EquipmentPorts { get; private set; } = null!;
+    internal int[] CableEndStart { get; private set; } = null!;
+    internal int[] CableEnds { get; private set; } = null!;
+    internal int[] SiteEquipmentStart { get; private set; } = null!;
+    internal int[] SiteEquipment { get; private set; } = null!;
+
     /// <summary>The data version the graph was built from (see <see cref="GraphLoader.DataVersionAsync"/>).</summary>
     public required string Version { get; init; }
 
@@ -85,6 +93,65 @@ public sealed partial class Graph
     {
         service = Array.BinarySearch(ServiceIds, serviceId);
         return service >= 0;
+    }
+
+    public bool TryGetEquipment(long equipmentId, out int equipment)
+    {
+        equipment = Array.BinarySearch(EquipmentIds, equipmentId);
+        return equipment >= 0;
+    }
+
+    public bool TryGetCable(long cableId, out int cable)
+    {
+        cable = Array.BinarySearch(CableIds, cableId);
+        return cable >= 0;
+    }
+
+    /// <summary>Only sites with equipment are in the graph.</summary>
+    public bool TryGetSite(long siteId, out int site)
+    {
+        site = Array.BinarySearch(SiteIds, siteId);
+        return site >= 0;
+    }
+
+    /// <summary>The equipment's ports, as nodes.</summary>
+    public ReadOnlySpan<int> PortsOf(int equipment) => Slice(EquipmentPorts, EquipmentPortStart, equipment);
+
+    /// <summary>The conductor ends of the cable, as nodes.</summary>
+    public ReadOnlySpan<int> EndsOf(int cable) => Slice(CableEnds, CableEndStart, cable);
+
+    /// <summary>The equipment at the site, as equipment indexes.</summary>
+    public ReadOnlySpan<int> EquipmentAt(int site) => Slice(SiteEquipment, SiteEquipmentStart, site);
+
+    /// <summary>Builds the derived ownership indexes; called once by the builder and the snapshot reader.</summary>
+    internal Graph IndexOwners()
+    {
+        var ports = new List<int>();
+        var portOwners = new List<int>();
+        var ends = new List<int>();
+        var endCables = new List<int>();
+        for (var node = 0; node < TerminalIds.Length; node++)
+        {
+            if (TerminalKinds[node] == TerminalKind.Port)
+            {
+                ports.Add(node);
+                portOwners.Add(TerminalOwners[node]);
+            }
+            else
+            {
+                ends.Add(node);
+                endCables.Add(ConductorCables[TerminalOwners[node]]);
+            }
+        }
+        (EquipmentPortStart, EquipmentPorts) = GraphBuilder.GroupStable(EquipmentIds.Length, [.. portOwners], [.. ports]);
+        (CableEndStart, CableEnds) = GraphBuilder.GroupStable(CableIds.Length, [.. endCables], [.. ends]);
+        var equipment = new int[EquipmentIds.Length];
+        for (var e = 0; e < equipment.Length; e++)
+        {
+            equipment[e] = e;
+        }
+        (SiteEquipmentStart, SiteEquipment) = GraphBuilder.GroupStable(SiteIds.Length, EquipmentSites, equipment);
+        return this;
     }
 
     public long CircuitId(int circuit) => CircuitIds[circuit];
@@ -137,5 +204,7 @@ public sealed partial class Graph
         + (CircuitIds.LongLength * 8) + CircuitLayers.LongLength + (HopStart.LongLength * 4) + (HopNodes.LongLength * 4)
         + (NodeCircuitStart.LongLength * 4) + (NodeCircuits.LongLength * 4) + (DependentStart.LongLength * 4) + (Dependents.LongLength * 4)
         + (CircuitServiceStart.LongLength * 4) + (CircuitServices.LongLength * 4) + (ServiceIds.LongLength * 8)
-        + (ServiceCircuitStart.LongLength * 4) + (ServiceCircuitList.LongLength * 4) + (CarrierStart.LongLength * 4) + (Carriers.LongLength * 4);
+        + (ServiceCircuitStart.LongLength * 4) + (ServiceCircuitList.LongLength * 4) + (CarrierStart.LongLength * 4) + (Carriers.LongLength * 4)
+        + ((EquipmentPortStart.LongLength + EquipmentPorts.LongLength + CableEndStart.LongLength + CableEnds.LongLength
+            + SiteEquipmentStart.LongLength + SiteEquipment.LongLength) * 4);
 }
