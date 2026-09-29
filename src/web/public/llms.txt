@@ -1,0 +1,46 @@
+# CMDB (syntetisk data)
+
+> CMDB for a nationwide telecom network: sites, cables, equipment, ports, circuits and services, with planning built in.
+> ALL DATA IS SYNTHETIC. The network, the organisation and every name are made up.
+
+Agents are first-class users here. Everything a person can see in the web UI, an agent can read over MCP or REST, with
+the same sign-in and the same access rules. Agents never write to production; changes will be proposed as plans that
+a person applies.
+
+## MCP (preferred)
+
+- Endpoint: https://cmdb.rosenvall.se/mcp (Streamable HTTP)
+- Sign-in: OAuth 2.1 with PKCE against Authentik. Discovery: https://cmdb.rosenvall.se/.well-known/oauth-protected-resource/mcp
+- There is no dynamic client registration. Use the pre-registered public client `cmdb-mcp` with the loopback callback
+  http://localhost:33418/callback, e.g. in Claude Code:
+  `claude mcp add --transport http cmdb https://cmdb.rosenvall.se/mcp --client-id cmdb-mcp --callback-port 33418`
+- Unattended agents use a service account: `client_credentials` on client `cmdb-agents` with the account's username and
+  app password, then `Authorization: Bearer <token>`.
+- Tools (read-only): `search`, `get_object`, `find_sites`, `impact`, `neighbourhood`, `describe_catalog`.
+- Resources: `cmdb://docs/domanmodell`, `cmdb://docs/plan`, `cmdb://docs/arkitektur`.
+- Prompts: `cable_cut_impact`, `find_sites_by_equipment`.
+
+## REST
+
+- OpenAPI: https://cmdb.rosenvall.se/api/openapi.json
+- Same bearer token as MCP. Every answer names objects by stable reference `type:id` (e.g. `site:1268`) or code
+  (e.g. `RAD-000007`); the web UI opens any object at https://cmdb.rosenvall.se/?p=type:id.
+
+## Model in brief
+
+- Sites (hub, aggregation, radio, cabinet, splice) hold equipment in locations (building, room, rack).
+- Equipment follows a type catalog of fictional models; ports come from the model's port template.
+- Cables run between sites and hold conductors (fibres, pairs). Ports and conductor ends are terminals; connections
+  (patch, splice, internal) join terminals.
+- Circuits are ordered paths of terminals in a layer (physical, transmission, logical) and may ride on lower circuits.
+  Services are carried by circuits. Impact follows circuits upwards from a cable or site to the services.
+- Geometry is SWEREF 99 TM (EPSG:3006). Everything has a lifecycle: planned, under_construction, in_service,
+  decommissioning, removed.
+
+## Good first questions
+
+- "Which radio sites have a 3500 MHz radio?" → `find_sites` with category radio and attribute bandMHz = 3500
+- "What happens if cable K-000100 is cut?" → `impact` with reference K-000100
+- "What is around RAD-000007?" → `get_object`, then `neighbourhood`
+
+Source and design decisions: https://github.com/carnufex/cmdb (docs/agenter.md, docs/adr/0011-agentic-first-mcp.md)
