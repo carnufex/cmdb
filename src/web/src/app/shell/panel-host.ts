@@ -1,10 +1,12 @@
-import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, effect, inject } from '@angular/core';
+import { MapView } from '../map/map-view';
 import { CablePanelComponent } from '../objects/cable-panel';
 import { CircuitPanelComponent } from '../objects/circuit-panel';
 import { EquipmentPanelComponent } from '../objects/equipment-panel';
 import { ObjectType, typeLabels } from '../objects/models';
 import { ServicePanelComponent } from '../objects/service-panel';
 import { SitePanelComponent } from '../objects/site-panel';
+import { TracePanelComponent } from '../objects/trace-panel';
 import { PanelStack } from './panels';
 
 /**
@@ -19,6 +21,7 @@ import { PanelStack } from './panels';
     CablePanelComponent,
     ServicePanelComponent,
     CircuitPanelComponent,
+    TracePanelComponent,
   ],
   template: `
     @if (stack.top(); as top) {
@@ -56,6 +59,9 @@ import { PanelStack } from './panels';
           }
           @case ('circuit') {
             <cmdb-circuit-panel [id]="top.id" />
+          }
+          @case ('trace') {
+            <cmdb-trace-panel [id]="top.id" />
           }
           @default {
             <p class="unknown">Okänd objekttyp.</p>
@@ -144,8 +150,21 @@ import { PanelStack } from './panels';
 })
 export class PanelHostComponent {
   protected readonly stack = inject(PanelStack);
+  private readonly mapView = inject(MapView);
+
+  constructor() {
+    // A trace's route stays in the map while you drill into its steps, and goes when the trace leaves the stack.
+    effect(() => {
+      if (!this.stack.panels().some((p) => p.type === 'trace')) {
+        this.mapView.clearRoute();
+      }
+    });
+  }
 
   protected crumb(p: { type: string; id: string }): string {
-    return this.stack.label(p) ?? `${typeLabels[p.type as ObjectType] ?? p.type} ${p.id}`;
+    return (
+      this.stack.label(p) ??
+      (p.type === 'trace' ? 'Spårning' : `${typeLabels[p.type as ObjectType] ?? p.type} ${p.id}`)
+    );
   }
 }

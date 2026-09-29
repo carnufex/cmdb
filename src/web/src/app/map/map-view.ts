@@ -13,6 +13,14 @@ export interface Highlight {
   seq: number;
 }
 
+/** A traced route to draw (#19): site points and cable lines, with the extent to frame. */
+export interface Route {
+  sites: readonly { id: number; x: number; y: number }[];
+  cables: readonly { id: number; coordinates: readonly (readonly number[])[] }[];
+  extent: readonly number[];
+  seq: number;
+}
+
 /**
  * What the map is looking at, shared with other parts of the app: search ranks hits near the centre, and
  * anything can ask the map to go somewhere or mark a set of sites.
@@ -22,6 +30,7 @@ export class MapView {
   readonly center = signal<Point | null>(null);
   readonly focusRequest = signal<(Point & { seq: number }) | null>(null);
   readonly highlight = signal<Highlight | null>(null);
+  readonly route = signal<Route | null>(null);
 
   /**
    * Set by the map while it is shown: animates the view over the country and returns frame times in ms.
@@ -41,5 +50,15 @@ export class MapView {
 
   clearMarks(): void {
     this.highlight.set(null);
+  }
+
+  showRoute(route: Omit<Route, 'seq'>): void {
+    this.route.set({ ...route, seq: ++this.seq });
+  }
+
+  clearRoute(): void {
+    if (this.route()) {
+      this.route.set(null);
+    }
   }
 }
