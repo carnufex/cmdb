@@ -4,6 +4,7 @@ import { RouterOutlet } from '@angular/router';
 import { Auth } from './auth/auth';
 import { PanelStack } from './shell/panels';
 import { PanelHostComponent } from './shell/panel-host';
+import { registerCoreCommands } from './shell/core-commands';
 import { SearchComponent } from './shell/search';
 import { ThemeStore } from './shell/theme';
 import { Tools } from './shell/tools';
@@ -41,6 +42,7 @@ export class App {
   );
 
   constructor() {
+    registerCoreCommands();
     void this.theme.load();
   }
 }

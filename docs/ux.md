@@ -26,7 +26,7 @@ Status visas alltid med **prick och text**, aldrig bara med färg (WCAG 2.1 AA).
 - **Allt är en länk.** Varje objektreferens öppnas i en sidopanel. Panelerna staplas som en brödsmulestig och varje vy har en URL.
 - **Förhandsvisning vid hovring** med det viktigaste, så att man ofta slipper klicka.
 - **Inga modala kedjor.** Redigering sker direkt i panelen.
-- **Kommandopaletten (Ctrl+K) gör saker**, inte bara söker: "ny site från mall", "patcha 1–24", "spåra tjänst".
+- **Kommandopaletten (Ctrl+K) gör saker**, inte bara söker: "ny site från mall", "patcha 1–24", "spåra tjänst". Tom palett visar åtgärderna för det öppna objektet, text ger matchande åtgärder före objektträffar och `>` först ger bara åtgärder. Åtgärder registreras i `CommandRegistry`, och en panel kan lägga till tillfälliga åtgärder för det som är markerat, till exempel "Spåra från port bh1" (#21).
 - **Tangentbord först** för återkommande flöden.
 
 ## Massprovisionering

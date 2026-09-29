@@ -8,6 +8,7 @@ import {
   input,
   signal,
 } from '@angular/core';
+import { CommandRegistry } from '../shell/commands';
 import { PanelStack } from '../shell/panels';
 import { EditHeaderComponent } from './edit-header';
 import { ImpactListComponent } from './impact-list';
@@ -236,6 +237,7 @@ type Port = EquipmentDetail['ports'][number];
 })
 export class EquipmentPanelComponent {
   private readonly panels = inject(PanelStack);
+  private readonly commands = inject(CommandRegistry);
 
   readonly id = input.required<string>();
 
@@ -273,6 +275,22 @@ export class EquipmentPanelComponent {
     effect(() => {
       this.id();
       this.selected.set(null);
+    });
+    // While a connected port is selected, the command palette can trace from it (#21).
+    effect((onCleanup) => {
+      const port = this.selected();
+      if (port?.connections.length) {
+        onCleanup(
+          this.commands.register({
+            id: 'trace.port',
+            label: `Spåra från port ${port.name}`,
+            keywords: ['trace', 'väg', 'fysisk'],
+            contextual: true,
+            when: (c) => c.top?.type === 'equipment',
+            run: () => this.trace(port.terminalId),
+          }),
+        );
+      }
     });
   }
 }
