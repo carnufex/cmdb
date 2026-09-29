@@ -1,6 +1,6 @@
 # ADR-0011: Agentic-first: MCP-server i API:t, agenter som vanliga konsumenter
 
-**Status:** Föreslagen · **Datum:** 2026-09-27
+**Status:** Accepterad · **Datum:** 2026-09-27 (accepterad 2026-09-29, #60)
 
 ## Kontext
 CMDB:n ska vara *agentic-first*: agenter (Claude, Codex, egna automationer) ska kunna läsa, fråga och föreslå ändringar lika lätt som en människa klickar i UI:t. Samtidigt gäller behörighetsmodellen (ADR-0007), spårbarheten (ADR-0006) och planerna (ADR-0005) även för agenter. En agent med för breda rättigheter är samma risk som en integration med för breda rättigheter.
