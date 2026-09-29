@@ -43,14 +43,24 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     }
 
     /// <summary>Creates an empty database with PostGIS available but no migrations applied.</summary>
-    /// <summary>
-    /// Reloads the graph from the database. Until the change stream (#11) the graph does not follow writes, so tests
-    /// that insert topology call this before tracing or impact.
-    /// </summary>
-    public async Task ReloadGraphAsync()
+    /// <summary>Waits until the graph has followed the change stream (#11) past everything committed so far.</summary>
+    public Task GraphCaughtUpAsync() => GraphCaughtUpAsync(Services, Db);
+
+    public static async Task GraphCaughtUpAsync(IServiceProvider services, NpgsqlDataSource db)
     {
-        var graph = await Cmdb.Graph.GraphLoader.LoadAsync(Db);
-        Services.GetRequiredService<Cmdb.Graph.GraphHolder>().Set(graph, new Cmdb.Graph.GraphLoadInfo("database", TimeSpan.Zero, 0, DateTimeOffset.UtcNow));
+        // xmax, not xmin: the next transaction id, above everything already committed.
+        await using var cmd = db.CreateCommand("SELECT pg_snapshot_xmax(pg_current_snapshot())::text");
+        var target = ulong.Parse((string)(await cmd.ExecuteScalarAsync())!, System.Globalization.CultureInfo.InvariantCulture);
+        var holder = services.GetRequiredService<Cmdb.Graph.GraphHolder>();
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        while ((Cmdb.Graph.PostgresGraphChangeFeed.Xid(holder.Position) ?? 0) < target)
+        {
+            if (DateTime.UtcNow > deadline)
+            {
+                throw new TimeoutException($"The graph is at {holder.Position}, not past {target}.");
+            }
+            await Task.Delay(25);
+        }
     }
 
     public async Task<NpgsqlDataSource> NewDatabaseAsync()

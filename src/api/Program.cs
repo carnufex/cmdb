@@ -37,6 +37,7 @@ builder.Services.AddCmdbAuthentication(builder.Configuration);
 builder.Services.AddFastEndpoints();
 builder.Services.AddCmdbMcp();
 builder.Services.AddSingleton<Cmdb.Graph.GraphHolder>();
+builder.Services.AddSingleton<Cmdb.Graph.IGraphChangeFeed, Cmdb.Graph.PostgresGraphChangeFeed>();
 builder.Services.AddHostedService<Cmdb.Api.Features.Graph.GraphLoadingService>();
 builder.Services.AddCmdbOpenApi();
 

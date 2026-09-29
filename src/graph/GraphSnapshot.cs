@@ -10,7 +10,7 @@ namespace Cmdb.Graph;
 public static class GraphSnapshot
 {
     private const uint Magic = 0x48505247; // "GRPH"
-    private const int Format = 2;
+    private const int Format = 3;
 
     public static void Write(Graph graph, Stream stream)
     {

@@ -37,7 +37,7 @@ public enum CircuitLayer : byte
 /// The rows a graph is built from, column by column, with external ids as stored in Postgres. Filled by the database
 /// loader, or directly from a generated network in tests and benchmarks.
 /// </summary>
-public sealed class GraphData
+public sealed partial class GraphData
 {
     public List<long> PortTerminals { get; } = [];
     public List<long> PortEquipment { get; } = [];

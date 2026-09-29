@@ -27,21 +27,6 @@ public sealed class GraphLoaderTests(ApiFactory factory)
     }
 
     [Fact]
-    public async Task The_data_version_changes_when_the_network_does()
-    {
-        await using var db = await factory.NewDatabaseAsync();
-        await Loader.LoadAsync(db, NetworkBuilder.Build(2, Scale.Small, TypeCatalog.Embedded), reset: false, TextWriter.Null, ct: Ct);
-        var before = await GraphLoader.DataVersionAsync(db, Ct);
-
-        await using (var cmd = db.CreateCommand("INSERT INTO terminal (kind) VALUES ('port')"))
-        {
-            await cmd.ExecuteNonQueryAsync(Ct);
-        }
-
-        (await GraphLoader.DataVersionAsync(db, Ct)).ShouldNotBe(before);
-    }
-
-    [Fact]
     public async Task The_api_reports_the_loaded_graph()
     {
         using var client = factory.CreateAuthenticatedClient();
@@ -49,7 +34,7 @@ public sealed class GraphLoaderTests(ApiFactory factory)
         var info = await client.GetFromJsonAsync<GraphInfoResponse>("/api/graph", Ct);
 
         info!.Ready.ShouldBeTrue();
-        info.Source.ShouldBe("database");
+        info.Source.ShouldBeOneOf("database", "reload"); // other tests write, which can trigger a reload
         info.Version.ShouldNotBeNullOrEmpty();
     }
 

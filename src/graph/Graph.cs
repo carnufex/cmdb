@@ -65,7 +65,7 @@ public sealed partial class Graph
     internal int[] SiteEquipmentStart { get; private set; } = null!;
     internal int[] SiteEquipment { get; private set; } = null!;
 
-    /// <summary>The data version the graph was built from (see <see cref="GraphLoader.DataVersionAsync"/>).</summary>
+    /// <summary>The change stream position the graph reflects (see <see cref="IGraphChangeFeed"/>).</summary>
     public required string Version { get; init; }
 
     public int NodeCount => TerminalIds.Length;
@@ -126,25 +126,30 @@ public sealed partial class Graph
     /// <summary>Builds the derived ownership indexes; called once by the builder and the snapshot reader.</summary>
     internal Graph IndexOwners()
     {
-        var ports = new List<int>();
-        var portOwners = new List<int>();
-        var ends = new List<int>();
-        var endCables = new List<int>();
-        for (var node = 0; node < TerminalIds.Length; node++)
+        var portCount = 0;
+        foreach (var kind in TerminalKinds)
+        {
+            portCount += kind == TerminalKind.Port ? 1 : 0;
+        }
+        var ports = new int[portCount];
+        var portOwners = new int[portCount];
+        var ends = new int[TerminalIds.Length - portCount];
+        var endCables = new int[ends.Length];
+        for (int node = 0, p = 0, c = 0; node < TerminalIds.Length; node++)
         {
             if (TerminalKinds[node] == TerminalKind.Port)
             {
-                ports.Add(node);
-                portOwners.Add(TerminalOwners[node]);
+                ports[p] = node;
+                portOwners[p++] = TerminalOwners[node];
             }
             else
             {
-                ends.Add(node);
-                endCables.Add(ConductorCables[TerminalOwners[node]]);
+                ends[c] = node;
+                endCables[c++] = ConductorCables[TerminalOwners[node]];
             }
         }
-        (EquipmentPortStart, EquipmentPorts) = GraphBuilder.GroupStable(EquipmentIds.Length, [.. portOwners], [.. ports]);
-        (CableEndStart, CableEnds) = GraphBuilder.GroupStable(CableIds.Length, [.. endCables], [.. ends]);
+        (EquipmentPortStart, EquipmentPorts) = GraphBuilder.GroupStable(EquipmentIds.Length, portOwners, ports);
+        (CableEndStart, CableEnds) = GraphBuilder.GroupStable(CableIds.Length, endCables, ends);
         var equipment = new int[EquipmentIds.Length];
         for (var e = 0; e < equipment.Length; e++)
         {
