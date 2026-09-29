@@ -39,6 +39,8 @@ Totalt cirka 5–10 miljoner noder och lika många kanter. Det ryms i minnet (~1
 
 Budgeten kan mätas direkt i appen: **Prestanda** i verktygsfältet kör interaktionerna mot det laddade nätet och visar p50 och p95 för servern (`Server-Timing`) och webbläsaren. Status bedöms på serverns p95.
 
+Samma rader mäts automatiskt med k6: `scripts/perf.sh` (se [drift.md](drift.md#prestandamätning)) skriver en rapport och avslutas med fel om någon rad är över budget.
+
 ## Demoscenarier (prioritetsordning)
 
 1. **Navigering.** Ctrl+K, hitta en switch, borra ner till en port och följ en tjänst till slututrustningen medan alla linser följer med.
