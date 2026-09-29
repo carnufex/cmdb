@@ -49,6 +49,8 @@ Allt massarbete sker i en plan: förhandsvisning av skillnader, konfliktkontroll
 | Spårschema | Vilken väg tar tjänsten? |
 | Grannskapsgraf | Vad finns runt omkring? Expandera och backa. |
 
+**Innehållsträdet** (verktyget *Innehåll*, #17) visar site → plats → utrustning → kort → port för den site som är öppen, eller för den öppna utrustningens site. Portar och kort hämtas när utrustningen fälls ut, och raderna virtualiseras (Angular CDK), så även ett nav med tusentals portar är smidigt. Trädet följer panelstacken och markerar det öppna objektet. Tangentbordet fungerar som i ett vanligt träd: pilar, Home/End och Enter. Enter på en kopplad port öppnar spårningen från porten.
+
 **Grannskapsgrafen** (`/graf`, växla med *Karta | Grannskap* uppe till höger, #20) utgår från den site som är öppen, eller från `?g=`. Kanter är kablar (fysiskt lager) och transmissions- och logiska kretsar mellan siter, sammanslagna per site och lager. *Expandera en nivå* hämtar grannarna till upp till 40 oexpanderade siter åt gången. Dubbelklick expanderar en enskild site, *Backa* tar tillbaka senaste expansionen och *Fokusera på vald* börjar om från den öppna siten. Lager och sitetyper filtreras med kryssrutor. Färg är status, storlek är sitetyp. Grafen ritas med Sigma (WebGL) och startar från kartpositionerna innan ForceAtlas2 ordnar den.
 
 ## Avancerad sökning

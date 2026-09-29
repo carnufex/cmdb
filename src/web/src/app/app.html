@@ -12,6 +12,14 @@
     >
       Avancerad sökning
     </button>
+    <button
+      type="button"
+      class="text-button tool-button"
+      [attr.aria-pressed]="tools.open() === 'tree'"
+      (click)="tools.toggle('tree')"
+    >
+      Innehåll
+    </button>
   </div>
 
   <div class="actions">
@@ -77,6 +85,8 @@
     </nav>
     @if (tools.open() === 'query') {
       <aside class="tool" aria-label="Avancerad sökning"><cmdb-query-panel /></aside>
+    } @else if (tools.open() === 'tree') {
+      <aside class="tool" aria-label="Innehåll"><cmdb-tree-panel /></aside>
     } @else if (tools.open() === 'perf') {
       <aside class="tool wide" aria-label="Prestanda"><cmdb-perf-panel /></aside>
     }

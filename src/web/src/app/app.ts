@@ -10,6 +10,7 @@ import { ThemeStore } from './shell/theme';
 import { Tools } from './shell/tools';
 import { QueryPanelComponent } from './query/query-panel';
 import { PerfPanelComponent } from './perf/perf-panel';
+import { TreePanelComponent } from './tree/tree-panel';
 
 /** The user as the API sees them (GET /api/me). */
 export interface Me {
@@ -29,6 +30,7 @@ export interface Me {
     PanelHostComponent,
     QueryPanelComponent,
     PerfPanelComponent,
+    TreePanelComponent,
   ],
   templateUrl: './app.html',
   styleUrl: './app.scss',
