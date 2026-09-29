@@ -53,6 +53,11 @@ Varje objekt i svaren har en stabil referens (`ref`, till exempel `site:1268`) o
 - **Resurser:** `cmdb://docs/domanmodell`, `cmdb://docs/plan` och `cmdb://docs/arkitektur`. Det är samma dokument som i `docs/`, inbäddade vid bygget.
 - **Prompter:** `cable_cut_impact` (vad händer om en kabel kapas) och `find_sites_by_equipment` (översätt en fråga till `find_sites`).
 
+## Utan MCP
+
+- **OpenAPI:** `https://cmdb.rosenvall.se/api/openapi.json`, öppen utan inloggning. Datan bakom kräver token.
+- **`llms.txt`:** `https://cmdb.rosenvall.se/llms.txt` beskriver CMDB:n för språkmodeller: MCP-adress, inloggning, verktyg, REST, modellen i korthet och bra första frågor.
+
 ## För utvecklare
 
 Ett verktyg bor i samma slice som endpointen det motsvarar, till exempel `Features/Query/QueryTools.cs`, och anropar samma statiska läsfunktion (`QuerySitesEndpoint.RunAsync`). Nya läsfunktioner ska få både en endpoint och ett verktyg, och verktyget ska testas med MCP-klienten i `tests/Cmdb.Api.IntegrationTests/Agents/`.

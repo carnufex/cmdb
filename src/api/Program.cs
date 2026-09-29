@@ -36,6 +36,7 @@ builder.Services.AddSingleton(TypeCatalog.Embedded);
 builder.Services.AddCmdbAuthentication(builder.Configuration);
 builder.Services.AddFastEndpoints();
 builder.Services.AddCmdbMcp();
+builder.Services.AddCmdbOpenApi();
 
 var app = builder.Build();
 
@@ -55,6 +56,7 @@ if (migrateOnly || app.Configuration.GetValue<bool>("Database:MigrateOnStartup")
     }
 }
 
+app.UseCmdbOpenApi();
 app.UseServerTiming();
 app.UseAuthentication();
 app.UseAuthorization();
