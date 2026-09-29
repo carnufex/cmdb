@@ -6,6 +6,7 @@ using Cmdb.Api.Features.Circuits;
 using Cmdb.Api.Features.Search;
 using Cmdb.Api.Features.Services;
 using Cmdb.Api.Features.Sites;
+using Cmdb.Graph;
 using ModelContextProtocol;
 using ModelContextProtocol.Server;
 using Npgsql;
@@ -15,10 +16,13 @@ namespace Cmdb.Api.Features.Objects;
 
 public sealed record AgentObject(string Ref, string Url, object Detail);
 
-public sealed record AgentImpact(string Ref, string Url, int Circuits, int Services, IReadOnlyList<AgentHit> AffectedServices, bool Truncated);
+/// <param name="Via">Circuits from the service's own down to the one passing the object, as "code (layer)".</param>
+public sealed record AgentImpactedService(string Ref, string Code, string? Name, string Lifecycle, string Url, IReadOnlyList<string> Via);
+
+public sealed record AgentImpact(string Ref, string Url, int Circuits, int DirectCircuits, int Services, IReadOnlyList<AgentImpactedService> AffectedServices, bool Truncated);
 
 [McpServerToolType]
-public sealed class ObjectTools(NpgsqlDataSource db, AgentLinks links)
+public sealed class ObjectTools(NpgsqlDataSource db, GraphHolder holder, AgentLinks links)
 {
     private const int MaxServices = 50;
     private static readonly string[] Types = ["site", "equipment", "cable", "service", "circuit"];
@@ -45,24 +49,31 @@ public sealed class ObjectTools(NpgsqlDataSource db, AgentLinks links)
     }
 
     [McpServerTool(Name = "impact", Title = "Påverkansanalys", ReadOnly = true, Idempotent = true, OpenWorld = false)]
-    [Description("What a cut of a cable, or an outage of a site, would affect: the circuits through it, circuits riding on those, " +
-        "and the services they carry.")]
+    [Description("What a cut of a cable, or an outage of equipment or a site, would affect: the circuits through it, circuits " +
+        "riding on those, and the services they carry, each with the chain of circuits that reaches it.")]
     public async Task<AgentImpact> Impact(
-        [Description("A cable or site: \"cable:42\", \"site:1268\" or an exact code such as \"K-000123\".")] string reference,
+        [Description("A cable, equipment or site: \"cable:42\", \"equipment:9001\", \"site:1268\" or an exact code such as \"K-000123\".")] string reference,
         CancellationToken ct = default)
     {
         var (type, id) = await ResolveAsync(reference, ct);
-        if (type is not ("cable" or "site"))
+        if (type is not ("cable" or "equipment" or "site"))
         {
-            throw new McpException("impact works on cables and sites.");
+            throw new McpException("impact works on cables, equipment and sites.");
         }
-        var impact = await ImpactEndpoint.RunAsync(db, type, id, ct);
+        if (holder.Current is not { } graph)
+        {
+            throw new McpException("The network graph is still loading; try again in a few seconds.");
+        }
+        var impact = await ImpactEndpoint.RunAsync(graph, db, type, id, ct);
         return new AgentImpact(
             AgentLinks.Ref(type, id),
             links.For(type, id),
             impact.Circuits,
+            impact.Direct,
             impact.Services.Count,
-            [.. impact.Services.Take(MaxServices).Select(s => new AgentHit(AgentLinks.Ref("service", s.Id), "service", s.Id, s.Code, s.Name, null, s.Lifecycle ?? "", links.For("service", s.Id)))],
+            [.. impact.Services.Take(MaxServices).Select(s => new AgentImpactedService(
+                AgentLinks.Ref("service", s.Service.Id), s.Service.Code, s.Service.Name, s.Service.Lifecycle ?? "", links.For("service", s.Service.Id),
+                [.. s.Path.Select(c => $"{c.Circuit.Code} ({c.Layer})")]))],
             impact.Services.Count > MaxServices);
     }
 

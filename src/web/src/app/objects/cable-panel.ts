@@ -3,12 +3,13 @@ import { DecimalPipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, effect, inject, input } from '@angular/core';
 import { PanelStack } from '../shell/panels';
 import { StatusComponent } from '../shell/status';
-import { apiPath, asLifecycle, CableDetail, Impact } from './models';
+import { ImpactListComponent } from './impact-list';
+import { apiPath, CableDetail, Impact } from './models';
 import { ObjectLinkComponent } from './object-link';
 
 @Component({
   selector: 'cmdb-cable-panel',
-  imports: [ObjectLinkComponent, StatusComponent, DecimalPipe],
+  imports: [ObjectLinkComponent, StatusComponent, ImpactListComponent, DecimalPipe],
   template: `
     @if (cable.value(); as c) {
       <header class="header">
@@ -31,28 +32,11 @@ import { ObjectLinkComponent } from './object-link';
         </dl>
       </section>
       <section>
-        @if (impact.value(); as i) {
-          <h3>Berörda tjänster ({{ i.services.length }}) · {{ i.circuits }} kretsar</h3>
-          @if (i.services.length) {
-            <ul class="links">
-              @for (s of i.services; track s.id) {
-                <li>
-                  <cmdb-link [ref]="s" [showName]="true" /><cmdb-status
-                    [value]="asLifecycle(s.lifecycle)"
-                  />
-                </li>
-              }
-            </ul>
-          } @else {
-            <p class="muted">Inga tjänster går genom kabeln.</p>
-          }
-        } @else if (impact.error()) {
-          <h3>Berörda tjänster</h3>
-          <p class="muted">Påverkan kunde inte beräknas.</p>
-        } @else {
-          <h3>Berörda tjänster</h3>
-          <p class="muted">Beräknar påverkan…</p>
-        }
+        <cmdb-impact-list
+          [impact]="impact.value()"
+          [failed]="!!impact.error()"
+          none="Inga tjänster går genom kabeln."
+        />
       </section>
       <section>
         <h3>Kretsar genom kabeln ({{ c.circuits.length }})</h3>
@@ -89,7 +73,6 @@ export class CablePanelComponent {
   protected readonly impact = httpResource<Impact>(() =>
     this.cable.value() ? `/api/${apiPath.cable}/${this.id()}/impact` : undefined,
   );
-  protected readonly asLifecycle = asLifecycle;
   protected readonly layers: Record<string, string> = {
     physical: 'Fysisk',
     transmission: 'Transmission',

@@ -65,7 +65,9 @@ public sealed class McpTests(ApiFactory factory)
 
         var impact = await CallAsync(client, "impact", new() { ["reference"] = net.CableCode });
         impact.GetProperty("circuits").GetInt32().ShouldBe(1);
-        impact.GetProperty("affectedServices")[0].GetProperty("ref").GetString().ShouldBe($"service:{net.Service}");
+        var affected = impact.GetProperty("affectedServices")[0];
+        affected.GetProperty("ref").GetString().ShouldBe($"service:{net.Service}");
+        affected.GetProperty("via")[0].GetString().ShouldEndWith("(physical)");
 
         var catalog = await CallAsync(client, "describe_catalog", []);
         catalog.GetProperty("categories").EnumerateArray().ShouldContain(c => c.GetProperty("key").GetString() == "radio");
@@ -75,7 +77,7 @@ public sealed class McpTests(ApiFactory factory)
     [InlineData("search", """{ "query": "ab" }""", "three characters")]
     [InlineData("get_object", """{ "reference": "toaster:1" }""", "Unknown type")]
     [InlineData("get_object", """{ "reference": "site:999999999" }""", "No site")]
-    [InlineData("impact", """{ "reference": "service:1" }""", "cables and sites")]
+    [InlineData("impact", """{ "reference": "service:1" }""", "cables, equipment and sites")]
     [InlineData("find_sites", """{ "equipment": [ { "attribute": { "key": "noSuchKey", "op": "eq", "value": 1 } } ] }""", "noSuchKey")]
     [InlineData("neighbourhood", """{ "siteId": 1, "hops": 9 }""", "hops")]
     public async Task Invalid_arguments_come_back_as_tool_errors_the_agent_can_read(string tool, string arguments, string message)
@@ -156,6 +158,7 @@ public sealed class McpTests(ApiFactory factory)
         await Exec($"INSERT INTO circuit_hop (circuit_id, seq, terminal_id) VALUES ({circuit}, 0, {endA}), ({circuit}, 1, {endB})");
         var service = await Scalar<long>($"INSERT INTO service (code, name, service_type) VALUES ('TJ-{tag}', 'Agenttest', 'ethernet') RETURNING id");
         await Exec($"INSERT INTO service_circuit (service_id, circuit_id) VALUES ({service}, {circuit})");
+        await factory.ReloadGraphAsync();
         return new TestNetwork(siteA, codeA, siteB, cableCode, service, serial);
     }
 

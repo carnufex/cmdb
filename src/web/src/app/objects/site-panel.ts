@@ -5,6 +5,7 @@ import { MapView } from '../map/map-view';
 import { PanelStack } from '../shell/panels';
 import { StatusComponent } from '../shell/status';
 import { EditHeaderComponent } from './edit-header';
+import { ImpactListComponent } from './impact-list';
 import { apiPath, Impact, SiteDetail } from './models';
 import { ObjectLinkComponent } from './object-link';
 
@@ -18,7 +19,13 @@ const siteTypes: Record<string, string> = {
 
 @Component({
   selector: 'cmdb-site-panel',
-  imports: [ObjectLinkComponent, StatusComponent, EditHeaderComponent, DecimalPipe],
+  imports: [
+    ObjectLinkComponent,
+    StatusComponent,
+    EditHeaderComponent,
+    ImpactListComponent,
+    DecimalPipe,
+  ],
   template: `
     @if (site.value(); as s) {
       <header class="header">
@@ -104,6 +111,14 @@ const siteTypes: Record<string, string> = {
         } @else {
           <p class="muted">Inga kablar.</p>
         }
+      </section>
+
+      <section>
+        <cmdb-impact-list
+          [impact]="impact.value()"
+          [failed]="!!impact.error()"
+          none="Inga tjänster går genom siten."
+        />
       </section>
     } @else if (site.error()) {
       <p class="error">Siten kunde inte hämtas.</p>

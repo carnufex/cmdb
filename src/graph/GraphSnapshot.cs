@@ -94,7 +94,7 @@ public static class GraphSnapshot
             ServiceCircuitList = Array<int>(r),
             CarrierStart = Array<int>(r),
             Carriers = Array<int>(r),
-        };
+        }.IndexOwners();
     }
 
     public static void WriteFile(Graph graph, string path)

@@ -17,6 +17,7 @@ public class GraphBenchmarks
     private byte[] _snapshot = null!;
     private long[] _terminals = null!;
     private int[] _services = null!;
+    private int[] _cables = null!;
 
     [Params("medium", "full")]
     public string Scale { get; set; } = "medium";
@@ -32,6 +33,7 @@ public class GraphBenchmarks
         _snapshot = stream.ToArray();
         var rng = new Random(42);
         _terminals = Enumerable.Range(0, 1_000).Select(_ => _graph.TerminalId(rng.Next(_graph.NodeCount))).ToArray();
+        _cables = [.. Enumerable.Range(0, 1_000).Select(_ => rng.Next(network.Cables.Count)).Select(i => _graph.TryGetCable(network.Cables[i].Id, out var c) ? c : 0)];
         _services = [.. network.Services.Take(1_000).Select(s => _graph.TryGetService(s.Id, out var i) ? i : 0)];
     }
 
@@ -65,6 +67,22 @@ public class GraphBenchmarks
             foreach (var step in GraphTrace.Service(_graph, service))
             {
                 total += _graph.HopsOf(step.Circuit).Length;
+            }
+        }
+        return total;
+    }
+
+    /// <summary>Impact of cutting 1 000 random cables, with the path to every service (#10).</summary>
+    [Benchmark(Description = "Impact cable x1000")]
+    public long ImpactCables()
+    {
+        long total = 0;
+        foreach (var cable in _cables)
+        {
+            var r = GraphImpact.OfCable(_graph, cable);
+            for (var i = 0; i < r.Services.Length; i++)
+            {
+                total += r.PathOf(i).Count;
             }
         }
         return total;

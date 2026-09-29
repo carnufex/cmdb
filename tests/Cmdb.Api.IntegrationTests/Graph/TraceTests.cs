@@ -4,22 +4,21 @@ using Cmdb.Api.Features.Trace;
 using Cmdb.Catalog;
 using Cmdb.DataGen;
 using Cmdb.Graph;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.Extensions.DependencyInjection;
-using Npgsql;
 
 namespace Cmdb.Api.IntegrationTests.Graph;
 
-/// <summary>Tracing (#9) against a generated network loaded into its own database and served by its own API.</summary>
+/// <summary>Tracing (#9) against the small generated network (see <see cref="NetworkFixture"/>).</summary>
 public sealed class TraceTests(ApiFactory factory)
 {
+    /// <summary>The network <see cref="NetworkFixture"/> loads: generation is deterministic.</summary>
+    private static readonly Network Network = NetworkBuilder.Build(1, Scale.Small, TypeCatalog.Embedded);
+
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
     public void Every_physical_circuit_is_the_physical_trace_from_its_first_terminal()
     {
-        var network = NetworkBuilder.Build(1, Scale.Small, TypeCatalog.Embedded);
+        var network = Network;
         var g = GraphBuilder.Build(NetworkGraph.From(network), "v");
         var hops = network.Hops.GroupBy(h => h.CircuitId).ToDictionary(x => x.Key, x => x.OrderBy(h => h.Seq).Select(h => h.TerminalId).ToArray());
         var physical = network.Circuits.Where(c => c.Layer == "physical").ToList();
@@ -42,9 +41,9 @@ public sealed class TraceTests(ApiFactory factory)
     [Fact]
     public async Task Traces_a_service_down_to_the_fibres_and_names_every_hop()
     {
-        await using var net = await NetworkApi.StartAsync(factory);
-        var backhaul = net.Network.Services.First(s => s.Type == "mobile-backhaul");
-        using var client = net.Client();
+        var (_, api) = await NetworkFixture.GetAsync(factory);
+        var backhaul = Network.Services.First(s => s.Type == "mobile-backhaul");
+        using var client = NetworkFixture.Client(api);
 
         var trace = (await client.GetFromJsonAsync<TraceResult>($"/api/trace?service={backhaul.Id}", Ct))!;
 
@@ -61,9 +60,9 @@ public sealed class TraceTests(ApiFactory factory)
     [Fact]
     public async Task Traces_the_physical_route_from_a_port_and_the_services_through_it()
     {
-        await using var net = await NetworkApi.StartAsync(factory);
-        var circuit = net.Network.Circuits.First(c => c.Layer == "physical" && c.Lifecycle == "in_service");
-        using var client = net.Client();
+        var (_, api) = await NetworkFixture.GetAsync(factory);
+        var circuit = Network.Circuits.First(c => c.Layer == "physical" && c.Lifecycle == "in_service");
+        using var client = NetworkFixture.Client(api);
 
         var trace = (await client.GetFromJsonAsync<TraceResult>($"/api/trace?terminal={circuit.A}", Ct))!;
 
@@ -86,46 +85,5 @@ public sealed class TraceTests(ApiFactory factory)
         using var client = factory.CreateAuthenticatedClient();
 
         (await client.GetAsync(url, Ct)).StatusCode.ShouldBe(expected);
-    }
-
-    /// <summary>The API over a database holding the small generated network (seed 1).</summary>
-    private sealed class NetworkApi : IAsyncDisposable
-    {
-        private readonly WebApplicationFactory<Program> _app;
-        private readonly NpgsqlDataSource _db;
-
-        private NetworkApi(WebApplicationFactory<Program> app, NpgsqlDataSource db, Network network)
-        {
-            _app = app;
-            _db = db;
-            Network = network;
-        }
-
-        public Network Network { get; }
-
-        public static async Task<NetworkApi> StartAsync(ApiFactory factory)
-        {
-            var db = await factory.NewDatabaseAsync();
-            var network = NetworkBuilder.Build(1, Scale.Small, TypeCatalog.Embedded);
-            await Loader.LoadAsync(db, network, reset: false, TextWriter.Null, ct: Ct);
-            // The data source hides the password; the API gets the full connection string.
-            var connectionString = new NpgsqlConnectionStringBuilder(factory.ConnectionString) { Database = new NpgsqlConnectionStringBuilder(db.ConnectionString).Database }.ConnectionString;
-            var app = factory.WithWebHostBuilder(b => b.UseSetting("ConnectionStrings:Cmdb", connectionString));
-            await app.Services.GetRequiredService<GraphHolder>().Ready.WaitAsync(TimeSpan.FromSeconds(60), Ct);
-            return new NetworkApi(app, db, network);
-        }
-
-        public HttpClient Client()
-        {
-            var client = _app.CreateClient();
-            client.DefaultRequestHeaders.Authorization = new("Bearer", ApiFactory.Token());
-            return client;
-        }
-
-        public async ValueTask DisposeAsync()
-        {
-            await _app.DisposeAsync();
-            await _db.DisposeAsync();
-        }
     }
 }

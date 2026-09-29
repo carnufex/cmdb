@@ -10,14 +10,15 @@ import {
 } from '@angular/core';
 import { PanelStack } from '../shell/panels';
 import { EditHeaderComponent } from './edit-header';
-import { apiPath, EquipmentDetail } from './models';
+import { ImpactListComponent } from './impact-list';
+import { apiPath, EquipmentDetail, Impact } from './models';
 import { ObjectLinkComponent } from './object-link';
 
 type Port = EquipmentDetail['ports'][number];
 
 @Component({
   selector: 'cmdb-equipment-panel',
-  imports: [ObjectLinkComponent, EditHeaderComponent],
+  imports: [ObjectLinkComponent, EditHeaderComponent, ImpactListComponent],
   template: `
     @if (equipment.value(); as e) {
       <header class="header">
@@ -94,6 +95,14 @@ type Port = EquipmentDetail['ports'][number];
           </dl>
         </section>
       }
+
+      <section>
+        <cmdb-impact-list
+          [impact]="impact.value()"
+          [failed]="!!impact.error()"
+          none="Inga tjänster går genom utrustningen."
+        />
+      </section>
 
       @if (e.cards.length || e.freeSlots.length) {
         <section>
@@ -224,6 +233,10 @@ export class EquipmentPanelComponent {
 
   protected readonly url = computed(() => `/api/${apiPath.equipment}/${this.id()}`);
   protected readonly equipment = httpResource<EquipmentDetail>(() => this.url());
+  /** Loaded after the equipment itself: impact analysis has its own, larger budget. */
+  protected readonly impact = httpResource<Impact>(() =>
+    this.equipment.value() ? `${this.url()}/impact` : undefined,
+  );
   protected readonly selected = signal<Port | null>(null);
   protected readonly connectionLabels: Record<string, string> = {
     patch: 'Patch',

@@ -29,7 +29,7 @@ public sealed class ObjectDetailTests(ApiFactory factory)
         site.Cables.ShouldNotBeEmpty();
         site.Cables.ShouldAllBe(c => c.OtherEnd.Id != id);
         var impact = (await client.GetFromJsonAsync<Impact>($"/api/sites/{id}/impact", Ct))!;
-        impact.Services.ShouldContain(s => s.Name == $"Mobil backhaul {site.Code}");
+        impact.Services.ShouldContain(s => s.Service.Name == $"Mobil backhaul {site.Code}");
     }
 
     [Fact]
@@ -84,7 +84,7 @@ public sealed class ObjectDetailTests(ApiFactory factory)
         cable.Circuits.ShouldAllBe(c => c.Name == "physical");
         var impact = (await client.GetFromJsonAsync<Impact>($"/api/cables/{id}/impact", Ct))!;
         impact.Circuits.ShouldBeGreaterThan(cable.Circuits.Count);
-        impact.Services.ShouldContain(s => s.Name!.StartsWith("Mobil backhaul", StringComparison.Ordinal));
+        impact.Services.ShouldContain(s => s.Service.Name!.StartsWith("Mobil backhaul", StringComparison.Ordinal));
     }
 
     [Fact]

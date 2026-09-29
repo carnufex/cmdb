@@ -98,10 +98,13 @@ export interface CableDetail {
   circuits: ObjectRef[];
 }
 
-/** What depends on a cable or site (GET /api/{cables|sites}/{id}/impact). */
+/** What depends on a cable, equipment or site (GET /api/{cables|equipment|sites}/{id}/impact, #10). */
 export interface Impact {
   circuits: number;
-  services: ObjectRef[];
+  direct: number;
+  /** Each service with the circuits that reach it: its own circuit first, down to the one hit directly. */
+  services: { service: ObjectRef; path: { circuit: ObjectRef; layer: string }[] }[];
+  elapsedMs: number;
 }
 
 export interface ServiceDetail {
