@@ -58,6 +58,8 @@ if (migrateOnly || app.Configuration.GetValue<bool>("Database:MigrateOnStartup")
 app.UseServerTiming();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
+app.UseAgentLogging();
 app.UseFastEndpoints(c => c.Endpoints.RoutePrefix = "api");
 app.MapCmdbMcp();
 await app.RunAsync();

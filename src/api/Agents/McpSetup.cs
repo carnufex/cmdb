@@ -28,6 +28,18 @@ public static class McpSetup
         return services;
     }
 
+    /// <summary>Every MCP call is logged with who made it and through which client (ADR-0011; operation log in #23).</summary>
+    public static IApplicationBuilder UseAgentLogging(this IApplicationBuilder app) =>
+        app.Use(async (context, next) =>
+        {
+            if (context.Request.Path.StartsWithSegments(Path, StringComparison.Ordinal) && context.User.Identity?.IsAuthenticated == true)
+            {
+                var logger = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("Cmdb.Agents");
+                AgentLog.McpCall(logger, context.User.Identity.Name ?? "?", context.User.FindFirst(Auth.CmdbClaims.Client)?.Value ?? "?");
+            }
+            await next();
+        });
+
     public static IEndpointConventionBuilder MapCmdbMcp(this IEndpointRouteBuilder app) =>
         app.MapMcp(Path).RequireAuthorization();
 
@@ -48,4 +60,10 @@ public static class McpSetup
         affects and `neighbourhood` for nearby sites. `describe_catalog` lists equipment models, categories and attributes.
         The tools are read-only; changes will be proposed as plans that a human applies.
         """;
+}
+
+internal static partial class AgentLog
+{
+    [LoggerMessage(Level = LogLevel.Information, Message = "MCP call by {User} via {Client}")]
+    public static partial void McpCall(ILogger logger, string user, string client);
 }

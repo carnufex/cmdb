@@ -64,6 +64,16 @@ dotnet watch --project src/api          # http://localhost:5080, migrerar vid st
 cd src/web && npx ng serve              # http://localhost:4200, proxar /api till 5080
 ```
 
+## Använd CMDB från en agent
+
+CMDB:n har en MCP-server för agenter (ADR-0011). Med Claude Code:
+
+```bash
+claude mcp add --transport http cmdb https://cmdb.rosenvall.se/mcp --client-id cmdb-mcp --callback-port 33418
+```
+
+Logga in med en cmdb-användare när webbläsaren öppnas. Verktyg, tjänstekonton och gränser beskrivs i [docs/agenter.md](docs/agenter.md).
+
 ## Syntetisk data
 
 `src/datagen` genererar ett deterministiskt, påhittat nät (samma seed ger alltid samma nät) och laddar det med binär `COPY`:
