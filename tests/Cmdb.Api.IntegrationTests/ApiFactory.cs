@@ -63,7 +63,8 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         IEnumerable<string>? groups = null,
         string audience = Audience,
         DateTime? expires = null,
-        SecurityKey? key = null)
+        SecurityKey? key = null,
+        string issuer = Issuer)
     {
         var claims = new Dictionary<string, object>
         {
@@ -72,11 +73,13 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
             ["name"] = $"Demo {username}",
             ["email"] = $"{username}@cmdb.local",
             ["groups"] = (groups ?? ["cmdb-full"]).ToArray(),
+            // Authentik sets azp to the client the token was issued to.
+            ["azp"] = audience,
         };
         var now = DateTime.UtcNow;
         return new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
         {
-            Issuer = Issuer,
+            Issuer = issuer,
             Audience = audience,
             Claims = claims,
             IssuedAt = now.AddMinutes(-10),

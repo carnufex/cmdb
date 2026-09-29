@@ -8,7 +8,30 @@ CMDB:n är byggd för att agenter ska kunna läsa och fråga nätet lika lätt s
 |---|---|
 | Adress | `https://cmdb.rosenvall.se/mcp` (lokalt `http://localhost:8480/mcp`) |
 | Transport | Streamable HTTP, stateless |
-| Inloggning | Bearer-token från homelabbets Authentik. Klienter och tjänstekonton beskrivs i #62. |
+| Inloggning | Bearer-token från homelabbets Authentik, se nedan |
+
+### Koppla in en agent
+
+**Claude Code, interaktivt (din egen inloggning):**
+
+```bash
+claude mcp add --transport http cmdb https://cmdb.rosenvall.se/mcp --client-id cmdb-mcp --callback-port 33418
+```
+
+Vid första anropet öppnas webbläsaren för inloggning i Authentik med en cmdb-användare (`cmdb-demo-full`, `cmdb-demo-region` eller `cmdb-demo-projekt`, lösenordet `CMDB_DEMO_PASSWORD` i Bitwarden), eller med ett eget konto som ligger i någon av cmdb-grupperna. Authentik saknar dynamisk klientregistrering, så klienten `cmdb-mcp` är förregistrerad med callback på port 33418. Servern pekar själv ut Authentik via `/.well-known/oauth-protected-resource` (RFC 9728).
+
+Lokalt byts adressen mot `http://localhost:8480/mcp`. Codex och andra klienter använder samma klient-id och callback.
+
+**Obevakade agenter (tjänstekonto):**
+
+```bash
+TOKEN=$(curl -s https://authentik.rosenvall.se/application/o/token/   -d grant_type=client_credentials -d client_id=cmdb-agents   -d username=cmdb-agent-demo -d password="$CMDB_AGENT_TOKEN" -d "scope=openid profile email" | jq -r .access_token)
+claude mcp add --transport http cmdb https://cmdb.rosenvall.se/mcp --header "Authorization: Bearer $TOKEN"
+```
+
+`CMDB_AGENT_TOKEN` är tjänstekontots app-lösenord i Bitwarden. Tokenet gäller en timme. Nya tjänstekonton läggs till i homelabbets blueprint `apps-cmdb.yaml` i gruppen `cmdb-agents`, med app-lösenordet i Bitwarden.
+
+**Identitet och gränser:** API:t litar på tokens från cmdb-applikationerna i Authentik (`cmdb`, `cmdb-mcp` och `cmdb-agents`) men inte från andra applikationer i homelabbet. Varje MCP-anrop loggas med användare och klient (`azp`), och `/api/me` visar klienten. Agenter begränsas till 20 anrop per sekund (60 i skur) per klient och användare. Människor i webben begränsas inte.
 
 ### Verktyg
 
