@@ -60,6 +60,20 @@ Skriptet kör datagen som ett Job i namnrymden `cmdb` med imagen `cmdb-datagen` 
 
 Använd inte `kubectl port-forward` för att ladda full skala: tunneln tappar anslutningen mitt i en stor `COPY`.
 
+## Prestandamätning
+
+`scripts/perf.sh` mäter prestandabudgeten ([plan.md](plan.md#prestandabudget)) med k6 (#13), med stickprov ur det laddade nätet och serverns p95 (`Server-Timing`) mot budgeten. GitHub Actions är avstängt, så det här är det manuella jobbet.
+
+```bash
+scripts/perf.sh                          # mot demomiljön, 60 s, 15 anrop/s
+scripts/perf.sh --target local           # mot docker compose på localhost:8480
+scripts/perf.sh --comment 13             # posta rapporten i ett issue
+```
+
+- Anropen görs som agentkontot `cmdb-agent-demo`. Lösenordet hämtas ur Bitwarden (`CMDB_AGENT_TOKEN`) med `bws`, med åtkomsttoken från klustret om `BWS_ACCESS_TOKEN` saknas. Takten ligger under agentgränsen 20 anrop/s.
+- Rapporten hamnar i `artifacts/perf/<tid>-<mål>/summary.md` och `summary.json` (ignoreras av git).
+- En rad över budget, eller misslyckade anrop, markeras med ❌ och ger felkod. Kör mätningen efter varje driftsättning som rör API:t eller databasen, och kommentera rapporten i issuet.
+
 ## Rollback
 
 Återställ homelab-commiten `cmdb: deploy sha-…` med `git revert` och pusha. ArgoCD rullar tillbaka till förra digesten. Migreringar backas inte, vilket är skälet till regeln om bakåtkompatibla migreringar ovan.

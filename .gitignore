@@ -11,3 +11,4 @@ coverage/
 TestResults/
 generated-data/
 BenchmarkDotNet.Artifacts/
+artifacts/
