@@ -38,7 +38,7 @@ export class PerfRunner {
     const fields = (await this.request<QueryFields>('/api/query/fields', signal)).body;
     const hits = (
       await Promise.all(
-        ['RAD-00', 'SKP-00', 'AGG-0', 'HUB-0', 'K-00'].map(
+        ['RAD-00', 'SKP-00', 'AGG-0', 'HUB-0', 'K-00', 'TJ-00'].map(
           async (q) =>
             (await this.request<Hit[]>(`/api/search?q=${encodeURIComponent(q)}&limit=50`, signal))
               .body,
@@ -47,6 +47,7 @@ export class PerfRunner {
     ).flat();
     const sites = hits.filter((h) => h.type === 'site');
     const cables = hits.filter((h) => h.type === 'cable');
+    const services = hits.filter((h) => h.type === 'service');
 
     // Everyday terms, codes, a numeric id and terms without hits: the last ones expose bad query plans.
     const terms = [
@@ -81,6 +82,11 @@ export class PerfRunner {
     results.push(
       await this.measure('impact', 'Påverkansanalys, kabel', 200, RUNS, onProgress, signal, (i) =>
         this.request(`/api/cables/${cables[i % cables.length].id}/impact`, signal),
+      ),
+    );
+    results.push(
+      await this.measure('trace', 'Spåra tjänst', 50, RUNS, onProgress, signal, (i) =>
+        this.request(`/api/trace?service=${services[i % services.length].id}`, signal),
       ),
     );
     const tiles = randomTiles(RUNS + WARMUP);

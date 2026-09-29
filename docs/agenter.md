@@ -43,6 +43,7 @@ Alla verktyg är skrivskyddade. Ändringar kommer att föreslås som planer som 
 | `get_object` | Allt UI:t visar för ett objekt. Tar `"site:1268"` eller en exakt kod, till exempel `RAD-000007`. |
 | `find_sites` | Strukturerade frågor: sitetyp, livscykel, utrustning (kategori, modell, attribut, antal) och tjänster (samma som avancerad sökning) |
 | `impact` | Vad ett kabelavbrott eller ett siteavbrott påverkar: kretsar och tjänster |
+| `trace` | Spåra en tjänst eller krets ned genom lagren, eller den fysiska vägen från en terminal genom patchar, skarvar och ledare |
 | `neighbourhood` | Siter inom 1–3 kabelhopp från en site |
 | `describe_catalog` | Sitetyper, livscykler, tjänstetyper, kategorier med attribut och alla modeller |
 

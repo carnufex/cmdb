@@ -16,6 +16,7 @@ public class GraphBenchmarks
     private Graph _graph = null!;
     private byte[] _snapshot = null!;
     private long[] _terminals = null!;
+    private int[] _services = null!;
 
     [Params("medium", "full")]
     public string Scale { get; set; } = "medium";
@@ -31,6 +32,7 @@ public class GraphBenchmarks
         _snapshot = stream.ToArray();
         var rng = new Random(42);
         _terminals = Enumerable.Range(0, 1_000).Select(_ => _graph.TerminalId(rng.Next(_graph.NodeCount))).ToArray();
+        _services = [.. network.Services.Take(1_000).Select(s => _graph.TryGetService(s.Id, out var i) ? i : 0)];
     }
 
     [Benchmark(Description = "Build graph from rows")]
@@ -40,6 +42,34 @@ public class GraphBenchmarks
     public Graph? ReadSnapshot() => GraphSnapshot.Read(new MemoryStream(_snapshot));
 
     /// <summary>Resolve 1 000 external terminal ids to nodes.</summary>
+    /// <summary>The physical route from 1 000 random terminals, with the services passing each (#9).</summary>
+    [Benchmark(Description = "Trace terminal x1000")]
+    public long TraceTerminals()
+    {
+        long total = 0;
+        foreach (var id in _terminals)
+        {
+            _graph.TryGetNode(id, out var start);
+            total += GraphTrace.Physical(_graph, start).Nodes.Length + GraphTrace.ServicesThrough(_graph, start).Count;
+        }
+        return total;
+    }
+
+    /// <summary>1 000 services down through their layers, touching every hop (#9).</summary>
+    [Benchmark(Description = "Trace service x1000")]
+    public long TraceServices()
+    {
+        long total = 0;
+        foreach (var service in _services)
+        {
+            foreach (var step in GraphTrace.Service(_graph, service))
+            {
+                total += _graph.HopsOf(step.Circuit).Length;
+            }
+        }
+        return total;
+    }
+
     [Benchmark(Description = "Lookup x1000")]
     public int Lookup()
     {

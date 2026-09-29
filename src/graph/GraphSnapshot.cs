@@ -10,7 +10,7 @@ namespace Cmdb.Graph;
 public static class GraphSnapshot
 {
     private const uint Magic = 0x48505247; // "GRPH"
-    private const int Format = 1;
+    private const int Format = 2;
 
     public static void Write(Graph graph, Stream stream)
     {
@@ -43,6 +43,10 @@ public static class GraphSnapshot
         Array(w, graph.CircuitServiceStart);
         Array(w, graph.CircuitServices);
         Array(w, graph.ServiceIds);
+        Array(w, graph.ServiceCircuitStart);
+        Array(w, graph.ServiceCircuitList);
+        Array(w, graph.CarrierStart);
+        Array(w, graph.Carriers);
     }
 
     /// <summary>Reads a snapshot, or returns null when the file is from another format or data version.</summary>
@@ -86,6 +90,10 @@ public static class GraphSnapshot
             CircuitServiceStart = Array<int>(r),
             CircuitServices = Array<int>(r),
             ServiceIds = Array<long>(r),
+            ServiceCircuitStart = Array<int>(r),
+            ServiceCircuitList = Array<int>(r),
+            CarrierStart = Array<int>(r),
+            Carriers = Array<int>(r),
         };
     }
 

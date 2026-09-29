@@ -21,6 +21,7 @@
 - Vid start läses en ögonblicksbild (fil) om dess dataversion stämmer med databasen, annars laddas grafen med binär `COPY` och en ny ögonblicksbild skrivs. `/health/ready` svarar först när grafen finns, och `GET /api/graph` visar storlek, version och laddtid.
 - Planer är tunna lager ovanpå basgrafen, och att visa en plan är basgraf plus delta.
 - Alla traverseringar (spårning, påverkan, grannskap) sker i minnet. Databasen används för detaljer, skrivningar och geografiska frågor.
+- Spårning (`GET /api/trace`, `src/graph/GraphTrace.cs`, #9): från en terminal följs signalen åt båda hållen genom patch, skarv, terminering, intern koppling och ledare tills vägen når aktiv utrustning. Finns mer än en fortsättning stannar vägen och markeras som förgrening i stället för att en väg gissas; cykler och ett tak på 2 000 hopp stoppar också. En tjänst eller krets spåras nedåt via bärarna (logisk → transmission → fysisk). Bara namnen på de terminaler som ingår hämtas från databasen, i ett batchanrop.
 
 Uppmätt i full skala (7,6 M terminaler, 4,3 M kanter, 117 000 kretsar):
 

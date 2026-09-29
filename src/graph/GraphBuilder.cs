@@ -116,6 +116,8 @@ public static class GraphBuilder
         var serviceCircuits = data.ServiceCircuitCircuits.Select(c => Find(circuitIds, c, "service circuit")).ToArray();
         var services = data.ServiceCircuitServices.Select(s => Array.BinarySearch(serviceIds, s)).ToArray();
         var (circuitServiceStart, circuitServices) = GroupDistinct(circuitIds.Length, serviceCircuits, services);
+        var (serviceCircuitStart, serviceCircuitList) = GroupDistinct(serviceIds.Length, services, serviceCircuits);
+        var (carrierStart, carrierList) = GroupDistinct(circuitIds.Length, dependentCircuits, dependents);
 
         return new Graph
         {
@@ -145,6 +147,10 @@ public static class GraphBuilder
             CircuitServiceStart = circuitServiceStart,
             CircuitServices = circuitServices,
             ServiceIds = serviceIds,
+            ServiceCircuitStart = serviceCircuitStart,
+            ServiceCircuitList = serviceCircuitList,
+            CarrierStart = carrierStart,
+            Carriers = carrierList,
         };
     }
 

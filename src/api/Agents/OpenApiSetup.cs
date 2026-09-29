@@ -53,6 +53,7 @@ public static class OpenApiSetup
             ["/api/equipment"] = "Create equipment in a location or slot; ports are generated from the type (cmdb-full only).",
             ["/api/services/{id}"] = "A service and the circuits carrying it.",
             ["/api/circuits/{id}"] = "A circuit with its ordered hops and the circuits it rides on.",
+            ["/api/trace"] = "Trace a service or circuit down its layers, or the physical route from a terminal to the equipment at both ends.",
             ["/api/query/sites"] = "Advanced search: sites by type, lifecycle, equipment (category, model, attribute, count) and services.",
             ["/api/query/fields"] = "What advanced search can filter on, derived from the type catalog.",
             ["/api/tiles/{z}/{x}/{y}"] = "Map vector tile (MVT) of sites and cables in the SWEREF 99 TM tile grid.",
