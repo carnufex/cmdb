@@ -74,7 +74,7 @@ public sealed class GetEquipmentEndpoint(NpgsqlDataSource db) : Endpoint<Equipme
                     JOIN site s ON s.id = e.site_id
                     LEFT JOIN equipment pe ON pe.id = e.parent_id
                     WHERE e.id = $1 AND {ScopeSql.Site("s.id", 2)}
-                    """) { Parameters = { new() { Value = id }, new() { Value = scope.Keys } } },
+                    """) { Parameters = { new() { Value = id }, scope.Parameter() } },
                 new("""
                     SELECT c.slot, c.id, c.name, c.lifecycle::text FROM equipment c WHERE c.parent_id = $1 ORDER BY c.slot
                     """) { Parameters = { new() { Value = id } } },

@@ -47,7 +47,7 @@ public sealed class GetCircuitEndpoint(NpgsqlDataSource db) : Endpoint<CircuitRe
             {
                 new($"SELECT id, code, layer::text, lifecycle::text FROM circuit WHERE id = $1 AND {ScopeSql.Circuit("circuit.id", 2)}")
                 {
-                    Parameters = { new() { Value = id }, new() { Value = scope.Keys } },
+                    Parameters = { new() { Value = id }, scope.Parameter() },
                 },
                 new("""
                     SELECT h.seq, h.terminal_id, ch.kind::text || ' ' || ch.number
@@ -63,7 +63,7 @@ public sealed class GetCircuitEndpoint(NpgsqlDataSource db) : Endpoint<CircuitRe
                     UNION ALL
                     SELECT 'service', v.id, v.code, v.name, v.lifecycle::text
                     FROM service_circuit sc JOIN service v ON v.id = sc.service_id WHERE sc.circuit_id = $1 AND {ScopeSql.Service("v.id", 2)}
-                    """) { Parameters = { new() { Value = id }, new() { Value = scope.Keys } } },
+                    """) { Parameters = { new() { Value = id }, scope.Parameter() } },
             },
         };
 

@@ -60,7 +60,7 @@ public sealed class GetCableEndpoint(NpgsqlDataSource db) : Endpoint<CableReques
                     JOIN site a ON a.id = c.a_site_id
                     JOIN site b ON b.id = c.b_site_id
                     WHERE c.id = $1 AND {ScopeSql.Cable("c.id", 2)}
-                    """) { Parameters = { new() { Value = id }, new() { Value = scope.Keys } } },
+                    """) { Parameters = { new() { Value = id }, scope.Parameter() } },
                 new($"""
                     SELECT DISTINCT r.id, r.code, r.layer::text, r.lifecycle::text
                     FROM conductor co
@@ -69,7 +69,7 @@ public sealed class GetCableEndpoint(NpgsqlDataSource db) : Endpoint<CableReques
                     JOIN circuit r ON r.id = h.circuit_id
                     WHERE co.cable_id = $1 AND {ScopeSql.Circuit("r.id", 2)}
                     ORDER BY r.code
-                    """) { Parameters = { new() { Value = id }, new() { Value = scope.Keys } } },
+                    """) { Parameters = { new() { Value = id }, scope.Parameter() } },
                 new("""
                     SELECT count(DISTINCT ce.conductor_id)::int
                     FROM conductor co JOIN conductor_end ce ON ce.conductor_id = co.id JOIN circuit_hop h ON h.terminal_id = ce.terminal_id

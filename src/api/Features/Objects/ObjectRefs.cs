@@ -44,7 +44,7 @@ internal static class Terminals
             JOIN site s ON s.id = CASE WHEN ce.side = 'A' THEN c.a_site_id ELSE c.b_site_id END
             """, conn);
         cmd.Parameters.Add(new NpgsqlParameter { Value = ids.ToArray() });
-        cmd.Parameters.Add(new NpgsqlParameter { Value = scope.Keys });
+        cmd.Parameters.Add(scope.Parameter());
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
         {

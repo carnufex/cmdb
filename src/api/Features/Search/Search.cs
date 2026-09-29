@@ -162,7 +162,7 @@ public sealed class SearchEndpoint(NpgsqlDataSource db) : Endpoint<SearchRequest
             Value = long.TryParse(q, NumberStyles.None, CultureInfo.InvariantCulture, out var id) ? id : DBNull.Value,
             NpgsqlDbType = NpgsqlDbType.Bigint,
         });
-        cmd.Parameters.Add(new NpgsqlParameter { Value = scope.Keys });
+        cmd.Parameters.Add(scope.Parameter());
 
         var hits = new List<SearchHit>(limit);
         await using var reader = await cmd.ExecuteReaderAsync(ct);

@@ -56,7 +56,7 @@ public sealed class SiteGraphEndpoint(GraphHolder holder, NpgsqlDataSource db, S
             """))
         {
             cmd.Parameters.Add(new NpgsqlParameter { Value = siteId });
-            cmd.Parameters.Add(new NpgsqlParameter { Value = scope.Keys });
+            cmd.Parameters.Add(scope.Parameter());
             await using var reader = await cmd.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct))
             {
@@ -115,7 +115,7 @@ public sealed class SiteGraphEndpoint(GraphHolder holder, NpgsqlDataSource db, S
             """))
         {
             cmd.Parameters.Add(new NpgsqlParameter { Value = neighbourIds.Append(siteId).ToArray() });
-            cmd.Parameters.Add(new NpgsqlParameter { Value = scope.Keys });
+            cmd.Parameters.Add(scope.Parameter());
             await using var reader = await cmd.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct))
             {

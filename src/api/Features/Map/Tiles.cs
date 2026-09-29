@@ -50,7 +50,7 @@ public sealed class TilesEndpoint(NpgsqlDataSource db) : Endpoint<TileRequest>
         cmd.Parameters.Add(new NpgsqlParameter { Value = req.Z });
         cmd.Parameters.Add(new NpgsqlParameter { Value = req.X });
         cmd.Parameters.Add(new NpgsqlParameter { Value = req.Y });
-        cmd.Parameters.Add(new NpgsqlParameter { Value = HttpContext.Scope().Keys });
+        cmd.Parameters.Add(HttpContext.Scope().Parameter());
         var tile = (byte[])(await cmd.ExecuteScalarAsync(ct))!;
 
         HttpContext.Response.Headers.CacheControl = "private, max-age=60";
