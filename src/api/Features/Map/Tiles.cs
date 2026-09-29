@@ -22,6 +22,15 @@ public sealed class TilesEndpoint(RequestDb db) : Endpoint<TileRequest>
             return;
         }
 
+        var scope = HttpContext.Scope();
+        HttpContext.Response.Headers.CacheControl = "private, max-age=60";
+        if (scope.HidesCoordinates)
+        {
+            // Hidden positions (#22): the map is empty, not an error, so the rest of the UI works.
+            await Send.BytesAsync([], contentType: "application/vnd.mapbox-vector-tile", cancellation: ct);
+            return;
+        }
+
         // Access sites and small cables only from DetailZoom: a national view of 40 000 points is noise and
         // blows the tile budget. Only what the caller's scopes show is drawn (#22); tiles are per user and private.
         await using var cmd = db.CreateCommand($"""
@@ -36,7 +45,7 @@ public sealed class TilesEndpoint(RequestDb db) : Endpoint<TileRequest>
                   AND ($1 >= {TileGrid.DetailZoom} OR s.site_type IN ('hub', 'aggregation'))
                   AND {ScopeSql.Site("s.id", 4)}
             ), cables AS (
-                SELECT ST_AsMVTGeom(c.geom, b.geom, 4096, 64, true) AS geom,
+                SELECT ST_AsMVTGeom({ScopeSql.CableGeometry("c", 4, scope)}, b.geom, 4096, 64, true) AS geom,
                        c.id, c.code, c.lifecycle::text AS lifecycle, ct.medium::text AS medium, ct.conductor_count AS conductors
                 FROM cable c JOIN cable_type ct ON ct.id = c.cable_type_id, bounds b
                 WHERE c.geom && b.geom
@@ -50,10 +59,9 @@ public sealed class TilesEndpoint(RequestDb db) : Endpoint<TileRequest>
         cmd.Parameters.Add(new NpgsqlParameter { Value = req.Z });
         cmd.Parameters.Add(new NpgsqlParameter { Value = req.X });
         cmd.Parameters.Add(new NpgsqlParameter { Value = req.Y });
-        cmd.Parameters.Add(HttpContext.Scope().Parameter());
+        cmd.Parameters.Add(scope.Parameter());
         var tile = (byte[])(await cmd.ExecuteScalarAsync(ct))!;
 
-        HttpContext.Response.Headers.CacheControl = "private, max-age=60";
         await Send.BytesAsync(tile, contentType: "application/vnd.mapbox-vector-tile", cancellation: ct);
     }
 }

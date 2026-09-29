@@ -440,9 +440,10 @@ export class GraphLensComponent {
       return;
     }
     // Start from the map position (with a little jitter so equal points separate), then let forces settle it.
+    // Without positions (#22) the forces alone lay it out.
     this.graph.addNode(String(node.id), {
-      x: node.x * SCALE + Math.random() * 0.5,
-      y: node.y * SCALE + Math.random() * 0.5,
+      x: (node.x ?? 0) * SCALE + Math.random() * (node.x === null ? 10 : 0.5),
+      y: (node.y ?? 0) * SCALE + Math.random() * (node.y === null ? 10 : 0.5),
       size: nodeSizes[node.siteType] ?? 4,
       label: node.code,
       color: this.statusColor(node.lifecycle),

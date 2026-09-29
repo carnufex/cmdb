@@ -159,7 +159,9 @@ export class QueryPanelComponent {
 
   protected open(site: SiteQueryResult['sites'][number]): void {
     this.panels.open({ type: 'site', id: String(site.id) }, { replace: true });
-    this.mapView.focus({ x: site.x, y: site.y });
+    if (site.x !== null && site.y !== null) {
+      this.mapView.focus({ x: site.x, y: site.y });
+    }
   }
 
   protected close(): void {

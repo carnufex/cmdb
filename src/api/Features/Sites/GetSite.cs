@@ -20,8 +20,8 @@ public sealed record SiteDetail(
     string Name,
     string SiteType,
     string Lifecycle,
-    double X,
-    double Y,
+    double? X,
+    double? Y,
     JsonElement Attributes,
     IReadOnlyList<SiteLocation> Locations,
     IReadOnlyList<SiteCable> Cables);
@@ -83,7 +83,8 @@ public sealed class GetSiteEndpoint(RequestDb db) : Endpoint<SiteRequest, SiteDe
             return null;
         }
         var (siteId, code, name, type, lifecycle, x, y, attributes) = (reader.GetInt64(0), reader.GetString(1), reader.GetString(2),
-            reader.GetString(3), reader.GetString(4), reader.GetDouble(5), reader.GetDouble(6), reader.GetString(7));
+            reader.GetString(3), reader.GetString(4), scope.HidesCoordinates ? (double?)null : reader.GetDouble(5),
+            scope.HidesCoordinates ? (double?)null : reader.GetDouble(6), reader.GetString(7));
 
         await reader.NextResultAsync(ct);
         var locations = new List<(long Id, long? Parent, string Kind, string Name)>();

@@ -28,7 +28,7 @@ public sealed record SiteQuery(
     int Limit = 200);
 
 /// <param name="Matching">Equipment on the site matching the first equipment condition, if there is one.</param>
-public sealed record SiteQueryHit(long Id, string Code, string Name, string SiteType, string Lifecycle, double X, double Y, int? Matching);
+public sealed record SiteQueryHit(long Id, string Code, string Name, string SiteType, string Lifecycle, double? X, double? Y, int? Matching);
 
 /// <param name="Points">[id, x, y] of all matches (up to 5 000), drawn as their own map layer at every zoom.</param>
 /// <param name="Extent">Bounding box of those matches in SWEREF 99 TM, for "show in map".</param>
@@ -114,10 +114,14 @@ public sealed class QuerySitesEndpoint(RequestDb db, TypeCatalog catalog) : Endp
             while (await reader.ReadAsync(ct))
             {
                 total = reader.GetInt64(8);
-                var x = reader.GetDouble(5);
-                var y = reader.GetDouble(6);
-                extent = extent is null ? [x, y, x, y] : [Math.Min(extent[0], x), Math.Min(extent[1], y), Math.Max(extent[2], x), Math.Max(extent[3], y)];
-                points.Add([reader.GetInt64(0), Math.Round(x, 1), Math.Round(y, 1)]);
+                double? x = null, y = null;
+                if (!scope.HidesCoordinates)
+                {
+                    var (px, py) = (reader.GetDouble(5), reader.GetDouble(6));
+                    extent = extent is null ? [px, py, px, py] : [Math.Min(extent[0], px), Math.Min(extent[1], py), Math.Max(extent[2], px), Math.Max(extent[3], py)];
+                    points.Add([reader.GetInt64(0), Math.Round(px, 1), Math.Round(py, 1)]);
+                    (x, y) = (px, py);
+                }
                 if (sites.Count < req.Limit)
                 {
                     sites.Add(new SiteQueryHit(reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3),

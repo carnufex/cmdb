@@ -132,6 +132,11 @@ public sealed class SearchEndpoint(RequestDb db) : Endpoint<SearchRequest, IRead
     /// <summary>Also used by the MCP tool <c>search</c> (#61).</summary>
     internal static async Task<List<SearchHit>> RunAsync(NpgsqlDataSource db, string q, double? nx, double? ny, int limit, UserScope scope, CancellationToken ct)
     {
+        if (scope.HidesCoordinates)
+        {
+            // Ordering by distance would reveal positions one comparison at a time.
+            (nx, ny) = (null, null);
+        }
         var literal = EscapeLike(q);
 
         // Values are passed as plain parameters so each execution is planned with them; a LIKE 'prefix%' can
@@ -175,8 +180,8 @@ public sealed class SearchEndpoint(RequestDb db) : Endpoint<SearchRequest, IRead
                 reader.IsDBNull(3) ? null : reader.GetString(3),
                 reader.IsDBNull(4) ? null : reader.GetString(4),
                 reader.GetString(5),
-                reader.IsDBNull(6) ? null : reader.GetDouble(6),
-                reader.IsDBNull(7) ? null : reader.GetDouble(7)));
+                reader.IsDBNull(6) || scope.HidesCoordinates ? null : reader.GetDouble(6),
+                reader.IsDBNull(7) || scope.HidesCoordinates ? null : reader.GetDouble(7)));
         }
         return hits;
     }

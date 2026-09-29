@@ -26,8 +26,9 @@ public class AccessScope
     public string[] Plans { get; set; } = [];
 
     /// <summary>
-    /// Objects crossing the area's edge: "whole" shows a cable when either end is inside, "clip" only when both
-    /// are (and clips its geometry in tiles).
+    /// Cables crossing the area's edge: "whole" shows a cable with an end inside in full; "clip" also shows cables
+    /// passing through, and cuts every cable's geometry at the edge in tiles and trace routes. Sites and equipment
+    /// outside stay hidden either way.
     /// </summary>
     public string CrossingMode { get; set; } = "whole";
 

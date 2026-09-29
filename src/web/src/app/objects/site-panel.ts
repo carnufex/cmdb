@@ -38,7 +38,11 @@ const siteTypes: Record<string, string> = {
           (saved)="site.reload()"
         />
         <div class="meta">
-          <button type="button" class="linkish" (click)="showOnMap(s.x, s.y)">Visa i kartan</button>
+          @if (s.x !== null && s.y !== null) {
+            <button type="button" class="linkish" (click)="showOnMap(s.x, s.y)">
+              Visa i kartan
+            </button>
+          }
           @if (impact.value(); as i) {
             <span>{{ i.services.length }} tjänster och {{ i.circuits }} kretsar berörs</span>
           } @else {
