@@ -49,7 +49,7 @@ public sealed record UserScope(string[] Keys, IReadOnlySet<string> HiddenAttribu
 public sealed record ScopeDefinition(string Key, string Name, string[] Groups, string[] HiddenAttributes, DateTimeOffset? ValidTo, bool Unrestricted = false);
 
 /// <summary>The scope definitions, reloaded after every refresh of what they show.</summary>
-public sealed class ScopeRegistry(NpgsqlDataSource db)
+public sealed class ScopeRegistry(SystemDb system)
 {
     private volatile IReadOnlyList<ScopeDefinition> _scopes = [];
     private int _version;
@@ -62,7 +62,7 @@ public sealed class ScopeRegistry(NpgsqlDataSource db)
     public async Task LoadAsync(CancellationToken ct)
     {
         var scopes = new List<ScopeDefinition>();
-        await using var cmd = db.CreateCommand(
+        await using var cmd = system.Source.CreateCommand(
             "SELECT key, name, groups, hidden_attributes, valid_to, area IS NULL AND cardinality(site_types) = 0 FROM access_scope ORDER BY key");
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
@@ -91,7 +91,7 @@ public sealed class ScopeRegistry(NpgsqlDataSource db)
 /// Keeps the materialised visibility current: at start, every few minutes, and soon after the change stream brings
 /// new cables or circuits. Until the first refresh has run, scopes show nothing.
 /// </summary>
-public sealed partial class ScopeRefreshService(NpgsqlDataSource db, ScopeRegistry registry, IConfiguration config, ILogger<ScopeRefreshService> logger)
+public sealed partial class ScopeRefreshService(SystemDb system, ScopeRegistry registry, IConfiguration config, ILogger<ScopeRefreshService> logger)
     : BackgroundService
 {
     private readonly Channel<bool> _requests = Channel.CreateBounded<bool>(new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropWrite });
@@ -115,7 +115,7 @@ public sealed partial class ScopeRefreshService(NpgsqlDataSource db, ScopeRegist
                 if (!first || config.GetValue("Scopes:RefreshOnStart", true))
                 {
                     var sw = System.Diagnostics.Stopwatch.StartNew();
-                    await ScopeVisibility.RefreshAsync(db, stoppingToken);
+                    await ScopeVisibility.RefreshAsync(system.Source, stoppingToken);
                     Refreshed(logger, sw.Elapsed.TotalSeconds);
                 }
                 await registry.LoadAsync(stoppingToken);
@@ -166,7 +166,7 @@ public sealed class GraphMask
 }
 
 /// <summary>Builds and caches graph masks per scope combination, graph instance and registry version (#22).</summary>
-public sealed class ScopeMasks(NpgsqlDataSource db, ScopeRegistry registry)
+public sealed class ScopeMasks(SystemDb system, ScopeRegistry registry)
 {
     private readonly Lock _gate = new();
     private (Cmdb.Graph.Graph Graph, int Version) _for;
@@ -214,7 +214,7 @@ public sealed class ScopeMasks(NpgsqlDataSource db, ScopeRegistry registry)
         {
             return mask;
         }
-        await using var conn = await db.OpenConnectionAsync(CancellationToken.None);
+        await using var conn = await system.Source.OpenConnectionAsync(CancellationToken.None);
         await using var batch = new NpgsqlBatch(conn)
         {
             BatchCommands =

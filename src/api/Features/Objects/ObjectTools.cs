@@ -23,7 +23,7 @@ public sealed record AgentImpactedService(string Ref, string Code, string? Name,
 public sealed record AgentImpact(string Ref, string Url, int Circuits, int DirectCircuits, int Services, IReadOnlyList<AgentImpactedService> AffectedServices, bool Truncated);
 
 [McpServerToolType]
-public sealed class ObjectTools(NpgsqlDataSource db, GraphHolder holder, AgentLinks links, ScopeMasks masks, IHttpContextAccessor http)
+public sealed class ObjectTools(RequestDb db, GraphHolder holder, AgentLinks links, ScopeMasks masks, IHttpContextAccessor http)
 {
     private const int MaxServices = 50;
 

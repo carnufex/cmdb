@@ -20,7 +20,7 @@ public sealed record CircuitDetail(
     IReadOnlyList<ObjectRef> Services);
 
 /// <summary>A circuit's path hop by hop, the circuits it rides on, the ones riding on it and its services.</summary>
-public sealed class GetCircuitEndpoint(NpgsqlDataSource db) : Endpoint<CircuitRequest, CircuitDetail>
+public sealed class GetCircuitEndpoint(RequestDb db) : Endpoint<CircuitRequest, CircuitDetail>
 {
     public override void Configure() => Get("/circuits/{id}");
 

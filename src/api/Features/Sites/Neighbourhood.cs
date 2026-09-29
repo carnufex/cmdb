@@ -26,7 +26,7 @@ public sealed class NeighbourhoodValidator : Validator<NeighbourhoodRequest>
 }
 
 /// <summary>Sites reachable from a site over cables, up to three hops, nearest first.</summary>
-public sealed class NeighbourhoodEndpoint(NpgsqlDataSource db) : Endpoint<NeighbourhoodRequest, IReadOnlyList<Neighbour>>
+public sealed class NeighbourhoodEndpoint(RequestDb db) : Endpoint<NeighbourhoodRequest, IReadOnlyList<Neighbour>>
 {
     public const int Max = 200;
 
@@ -77,7 +77,7 @@ public sealed record AgentNeighbour(string Ref, string Code, string Name, string
 public sealed record NeighbourhoodResult(string Ref, IReadOnlyList<AgentNeighbour> Sites, bool Truncated);
 
 [McpServerToolType]
-public sealed class NeighbourhoodTools(NpgsqlDataSource db, AgentLinks links, IHttpContextAccessor http)
+public sealed class NeighbourhoodTools(RequestDb db, AgentLinks links, IHttpContextAccessor http)
 {
     private const int MaxSites = 50;
 

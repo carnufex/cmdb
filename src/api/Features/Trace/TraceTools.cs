@@ -11,7 +11,7 @@ namespace Cmdb.Api.Features.Trace;
 public sealed record AgentTrace(string Start, string Url, TraceResult Trace);
 
 [McpServerToolType]
-public sealed class TraceTools(GraphHolder holder, NpgsqlDataSource db, AgentLinks links, ScopeMasks masks, IHttpContextAccessor http)
+public sealed class TraceTools(GraphHolder holder, RequestDb db, AgentLinks links, ScopeMasks masks, IHttpContextAccessor http)
 {
     [McpServerTool(Name = "trace", Title = "Spårning", ReadOnly = true, Idempotent = true, OpenWorld = false)]
     [Description("Trace a service or circuit down through the layers it rides on (logical → transmission → physical), each " +

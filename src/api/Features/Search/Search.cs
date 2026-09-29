@@ -49,7 +49,7 @@ public sealed class SearchValidator : Validator<SearchRequest>
 /// Quick search over sites, equipment, cables, services and circuits (pg_trgm, see #12). Ranking: exact code or
 /// id, then prefix, then contains; within a level by object type, distance to <c>near</c> and similarity.
 /// </summary>
-public sealed class SearchEndpoint(NpgsqlDataSource db) : Endpoint<SearchRequest, IReadOnlyList<SearchHit>>
+public sealed class SearchEndpoint(RequestDb db) : Endpoint<SearchRequest, IReadOnlyList<SearchHit>>
 {
     private const int PerLevel = 40;
 

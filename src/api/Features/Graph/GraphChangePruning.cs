@@ -7,7 +7,7 @@ namespace Cmdb.Api.Features.Graph;
 /// Keeps the change stream's outbox small (#78): every hour, rows older than <c>Graph:OutboxRetentionDays</c>
 /// (7) are removed. Readers further behind than that reload in full instead of catching up.
 /// </summary>
-public sealed partial class GraphChangePruning(NpgsqlDataSource db, IConfiguration config, ILogger<GraphChangePruning> logger) : BackgroundService
+public sealed partial class GraphChangePruning(Cmdb.Api.Auth.SystemDb system, IConfiguration config, ILogger<GraphChangePruning> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -17,7 +17,7 @@ public sealed partial class GraphChangePruning(NpgsqlDataSource db, IConfigurati
         {
             try
             {
-                var deleted = await PostgresGraphChangeFeed.PruneAsync(db, retention, ct: stoppingToken);
+                var deleted = await PostgresGraphChangeFeed.PruneAsync(system.Source, retention, ct: stoppingToken);
                 if (deleted > 0)
                 {
                     Pruned(logger, deleted, retention.TotalDays);

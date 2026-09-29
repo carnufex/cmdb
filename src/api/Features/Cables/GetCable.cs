@@ -26,7 +26,7 @@ public sealed record CableDetail(
 /// A cable, its ends and the circuits routed directly through its conductors. What depends on it further up
 /// the layers is impact analysis, served separately with its own budget (CableImpact).
 /// </summary>
-public sealed class GetCableEndpoint(NpgsqlDataSource db) : Endpoint<CableRequest, CableDetail>
+public sealed class GetCableEndpoint(RequestDb db) : Endpoint<CableRequest, CableDetail>
 {
     public override void Configure() => Get("/cables/{id}");
 

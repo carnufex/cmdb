@@ -14,7 +14,7 @@ public sealed record AgentHit(string Ref, string Type, long Id, string Code, str
 public sealed record SearchToolResult(IReadOnlyList<AgentHit> Hits, bool Truncated);
 
 [McpServerToolType]
-public sealed class SearchTools(NpgsqlDataSource db, AgentLinks links, IHttpContextAccessor http)
+public sealed class SearchTools(RequestDb db, AgentLinks links, IHttpContextAccessor http)
 {
     public const int MaxLimit = 50;
 

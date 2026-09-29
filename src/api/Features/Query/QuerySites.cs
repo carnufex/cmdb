@@ -79,7 +79,7 @@ public sealed class SiteQueryValidator : Validator<SiteQuery>
 /// carried through them. Every condition becomes a semi-join on site id, so Postgres can pick hash joins over
 /// the whole network rather than probing per site.
 /// </summary>
-public sealed class QuerySitesEndpoint(NpgsqlDataSource db, TypeCatalog catalog) : Endpoint<SiteQuery, SiteQueryResult>
+public sealed class QuerySitesEndpoint(RequestDb db, TypeCatalog catalog) : Endpoint<SiteQuery, SiteQueryResult>
 {
     private const int MaxIds = 5_000;
 

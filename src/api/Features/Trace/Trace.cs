@@ -68,7 +68,7 @@ public sealed class TraceValidator : Validator<TraceRequest>
 /// both ends, or a service or circuit down through the layers it rides on. The walk is in memory (ADR-0002); only the
 /// names of the few terminals involved come from the database.
 /// </summary>
-public sealed class TraceEndpoint(GraphHolder holder, NpgsqlDataSource db, ScopeMasks masks) : Endpoint<TraceRequest, TraceResult>
+public sealed class TraceEndpoint(GraphHolder holder, RequestDb db, ScopeMasks masks) : Endpoint<TraceRequest, TraceResult>
 {
     public override void Configure() => Get("/trace");
 
