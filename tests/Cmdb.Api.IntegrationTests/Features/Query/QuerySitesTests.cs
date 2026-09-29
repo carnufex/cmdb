@@ -106,6 +106,7 @@ public sealed class QuerySitesTests(ApiFactory factory)
 
     private async Task<SiteQueryResult> QueryAsync(object query)
     {
+        await factory.RefreshScopesAsync();
         using var client = factory.CreateAuthenticatedClient();
         var response = await client.PostAsJsonAsync("/api/query/sites", query, Ct);
         response.StatusCode.ShouldBe(HttpStatusCode.OK, await response.Content.ReadAsStringAsync(Ct));

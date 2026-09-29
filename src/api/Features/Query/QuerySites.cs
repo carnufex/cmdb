@@ -1,3 +1,4 @@
+using Cmdb.Api.Auth;
 using System.Diagnostics;
 using System.Globalization;
 using System.Text;
@@ -92,19 +93,18 @@ public sealed class QuerySitesEndpoint(NpgsqlDataSource db, TypeCatalog catalog)
         }
         ThrowIfAnyErrors();
 
-        await Send.OkAsync(await RunAsync(db, req, ct), ct);
+        await Send.OkAsync(await RunAsync(db, req, HttpContext.Scope(), ct), ct);
     }
 
     /// <summary>Runs a validated query. Also used by the MCP tool <c>find_sites</c> (#61).</summary>
-    internal static async Task<SiteQueryResult> RunAsync(NpgsqlDataSource db, SiteQuery req, CancellationToken ct)
+    internal static async Task<SiteQueryResult> RunAsync(NpgsqlDataSource db, SiteQuery req, UserScope scope, CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
-        var sql = Build(req, out var parameters);
+        var sql = Build(req, scope, out var parameters);
         await using var conn = await db.OpenConnectionAsync(ct);
         await using var cmd = new NpgsqlCommand(sql, conn);
         cmd.Parameters.AddRange(parameters.ToArray());
 
-        // TODO(#22): the caller's scope becomes one more condition on s.
         long total = 0;
         var sites = new List<SiteQueryHit>();
         var points = new List<double[]>();
@@ -145,7 +145,7 @@ public sealed class QuerySitesEndpoint(NpgsqlDataSource db, TypeCatalog catalog)
         }
     }
 
-    internal static string Build(SiteQuery req, out List<NpgsqlParameter> parameters)
+    internal static string Build(SiteQuery req, UserScope scope, out List<NpgsqlParameter> parameters)
     {
         var ps = new List<NpgsqlParameter>();
         string P(object value, NpgsqlDbType? type = null)
@@ -159,7 +159,9 @@ public sealed class QuerySitesEndpoint(NpgsqlDataSource db, TypeCatalog catalog)
             return $"${ps.Count}";
         }
 
-        var where = new List<string>();
+        // Only sites in the caller's scopes (#22), and only services in them count as passing a site.
+        var scopeKeys = P(scope.Keys);
+        var where = new List<string> { ScopeSql.Site("s.id", int.Parse(scopeKeys[1..], CultureInfo.InvariantCulture)) };
         if (req.SiteTypes is { Count: > 0 })
         {
             where.Add($"s.site_type = ANY({P(req.SiteTypes.ToArray())}::text[])");
@@ -202,7 +204,8 @@ public sealed class QuerySitesEndpoint(NpgsqlDataSource db, TypeCatalog catalog)
                          JOIN circuit_hop h ON h.circuit_id = sc.circuit_id
                          JOIN port p ON p.terminal_id = h.terminal_id
                          JOIN equipment e ON e.id = p.equipment_id
-                         WHERE v.service_type = ANY({P(req.ServiceTypes.ToArray())}::text[]))
+                         WHERE v.service_type = ANY({P(req.ServiceTypes.ToArray())}::text[])
+                           AND {ScopeSql.Service("v.id", int.Parse(scopeKeys[1..], CultureInfo.InvariantCulture))})
                 """);
         }
 

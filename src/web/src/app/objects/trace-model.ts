@@ -3,7 +3,8 @@ import { ObjectRef } from './models';
 /** One terminal on a traced path (TraceHop in the API). */
 export interface TraceHop {
   terminalId: number;
-  kind: 'port' | 'conductor_end' | 'unknown';
+  /** hidden: outside the caller's access scope (#22), a placeholder without names. */
+  kind: 'port' | 'conductor_end' | 'unknown' | 'hidden';
   /** How the previous hop connects to this one: patch, splice, termination, internal or conductor. */
   edge: string | null;
   label: string;
@@ -45,6 +46,8 @@ export interface TraceResult {
   services: ObjectRef[];
   elapsedMs: number;
   route: TraceRoute | null;
+  /** Circuits and services involved but outside the caller's scope (#22). */
+  hidden: number;
 }
 
 export type TraceStart = { by: 'service' | 'circuit' | 'terminal'; id: number };
@@ -103,6 +106,7 @@ export const endLabels: Record<string, string> = {
   branch: 'förgrening',
   loop: 'slinga',
   limit: 'tak för antal hopp',
+  boundary: 'gränsen för ditt omfång',
 };
 
 export const layerLabels: Record<string, string> = {

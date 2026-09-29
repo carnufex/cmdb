@@ -158,6 +158,7 @@ public sealed class McpTests(ApiFactory factory)
         await Exec($"INSERT INTO circuit_hop (circuit_id, seq, terminal_id) VALUES ({circuit}, 0, {endA}), ({circuit}, 1, {endB})");
         var service = await Scalar<long>($"INSERT INTO service (code, name, service_type) VALUES ('TJ-{tag}', 'Agenttest', 'ethernet') RETURNING id");
         await Exec($"INSERT INTO service_circuit (service_id, circuit_id) VALUES ({service}, {circuit})");
+        await factory.RefreshScopesAsync();
         await factory.GraphCaughtUpAsync();
         return new TestNetwork(siteA, codeA, siteB, cableCode, service, serial);
     }

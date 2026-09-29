@@ -68,6 +68,15 @@ Grundregeln är att allt är nekat tills något uttryckligen beviljas. Omfång b
 4. Postgres Row Level Security som sista spärr.
 5. Objekt som korsar en polygongräns: modellen stöder både hel visning och klippning (konfigurerbart).
 
+**Så är det byggt (#22, steg 1):**
+
+- `access_scope` (EF-modell) har område (MultiPolygon, EPSG:3006; tomt = hela nätet), sitetyper, dolda attribut, planer (för #24), gränsläge (`whole`/`clip`), giltig till och grupper. Motivering, beviljad av och godkänd av finns också, och en check constraint kräver två olika personer. Demoomfången är syntetiska och synkas vid migrering, som typkatalogen: *Hela nätet* för `cmdb-full` och `cmdb-agents`, *Region Nord* för `cmdb-region-nord` och *Projekt A* för `cmdb-projekt-a`. Projekt A omfattar ett område på västkusten, bara radiositer och skåp, och döljer serienummer.
+- Vad varje omfång visar materialiseras i `scope_site`, `scope_cable`, `scope_circuit` och `scope_service`. Kablar följer gränsläget. Kretsar följer sina två ändar (port → utrustningens site, ledarände → kabelns site på den sidan) och tjänster sina kretsar. Utrustning och portar följer sin site. Omräkningen sker i en transaktion (4,5 s i full skala) vid migrering, vid start, var femte minut och efter ändringar från ändringsflödet. Nya siter, kablar och kretsar är dolda tills dess, vilket är säkert eftersom grundregeln är att neka.
+- Varje förfrågan får sina omfång från token-grupperna (`UserScope`). Alla SQL-ytor filtrerar på omfångsnycklarna: sök, sitevy, utrustning, kabel, tjänst, krets, hovringskort, avancerad sökning, grannskap, grannskapsgraf och kartplattor. Ett objekt utanför omfånget ger 404, inte 403. Dolda attribut tas bort ur svaren.
+- Grafmotorn får synlighetsmasker (bool per site, kabel, krets och tjänst), byggda ur samma tabeller och cachade per grafinstans och omfångskombination. Spårningen stannar vid gränsen (`TraceEnd.Boundary`) och visar en neutral platshållare utan id eller namn. Påverkan och spårning räknar kretsar och tjänster utanför omfånget (`hiddenServices`, `hidden`) utan att nämna dem.
+- MCP-verktygen går genom samma kod med agentens token. `/api/me` visar gällande omfång, och webben visar dem i verktygsfältet.
+- Kvar i #22: Postgres RLS som sista spärr (steg 2), samt klippning av kabelgeometri i kartplattor och dolda koordinater (steg 3).
+
 ## Databas
 
 - **EF Core code-first (ADR-0009).** `CmdbDbContext` i `src/database` är den enda källan till schemat. Ändringar görs i modellen och blir en genererad migrering i `src/database/Migrations`, som granskas i PR. Ett test failar om modellen ändrats utan migrering.

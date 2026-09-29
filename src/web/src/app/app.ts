@@ -18,6 +18,8 @@ export interface Me {
   name: string | null;
   email: string | null;
   groups: string[];
+  /** Access scopes that apply (#22), by name. */
+  scopes: string[] | null;
 }
 
 @Component({

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Cmdb.Api.Features.Objects;
+using Cmdb.Api.Auth;
 using FastEndpoints;
 using Npgsql;
 
@@ -39,7 +40,7 @@ public sealed class GetEquipmentEndpoint(NpgsqlDataSource db) : Endpoint<Equipme
 
     public override async Task HandleAsync(EquipmentRequest req, CancellationToken ct)
     {
-        var detail = await LoadAsync(db, req.Id, ct);
+        var detail = await LoadAsync(db, req.Id, HttpContext.Scope(), ct);
         if (detail is null)
         {
             await Send.NotFoundAsync(ct);
@@ -49,15 +50,15 @@ public sealed class GetEquipmentEndpoint(NpgsqlDataSource db) : Endpoint<Equipme
     }
 
     /// <summary>Also used by the MCP tools (#61), so agents see exactly what the UI shows.</summary>
-    internal static async Task<EquipmentDetail?> LoadAsync(NpgsqlDataSource db, long id, CancellationToken ct)
+    internal static async Task<EquipmentDetail?> LoadAsync(NpgsqlDataSource db, long id, UserScope scope, CancellationToken ct)
     {
-        // TODO(#22): the caller's scope decides visibility; peers outside it become placeholders.
+        // Equipment is visible with its site (#22); what its ports connect to outside the scope becomes a placeholder.
         await using var conn = await db.OpenConnectionAsync(ct);
         await using var batch = new NpgsqlBatch(conn)
         {
             BatchCommands =
             {
-                new("""
+                new($"""
                     WITH RECURSIVE path AS (
                         SELECT l.id, l.parent_id, l.name::text AS path FROM location l
                         WHERE l.id = (SELECT location_id FROM equipment WHERE id = $1)
@@ -72,8 +73,8 @@ public sealed class GetEquipmentEndpoint(NpgsqlDataSource db) : Endpoint<Equipme
                     JOIN equipment_type et ON et.id = e.equipment_type_id
                     JOIN site s ON s.id = e.site_id
                     LEFT JOIN equipment pe ON pe.id = e.parent_id
-                    WHERE e.id = $1
-                    """) { Parameters = { new() { Value = id } } },
+                    WHERE e.id = $1 AND {ScopeSql.Site("s.id", 2)}
+                    """) { Parameters = { new() { Value = id }, new() { Value = scope.Keys } } },
                 new("""
                     SELECT c.slot, c.id, c.name, c.lifecycle::text FROM equipment c WHERE c.parent_id = $1 ORDER BY c.slot
                     """) { Parameters = { new() { Value = id } } },
@@ -104,7 +105,7 @@ public sealed class GetEquipmentEndpoint(NpgsqlDataSource db) : Endpoint<Equipme
             }
             detail = new EquipmentDetail(
                 reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetString(4), reader.GetString(5),
-                reader.GetString(6), Terminals.Json(reader.GetString(7)), Terminals.Json(reader.GetString(8)),
+                reader.GetString(6), Terminals.Json(reader.GetString(7)), Terminals.Json(scope.MaskAttributes(reader.GetString(8))),
                 new ObjectRef("site", reader.GetInt64(9), reader.GetString(10), reader.GetString(11), reader.GetString(12)),
                 reader.IsDBNull(13) ? null : reader.GetString(13),
                 reader.IsDBNull(14) ? null : new ObjectRef("equipment", reader.GetInt64(14), reader.GetString(15), null, reader.GetString(16)),
@@ -130,7 +131,7 @@ public sealed class GetEquipmentEndpoint(NpgsqlDataSource db) : Endpoint<Equipme
             }
         }
 
-        var peers = await Terminals.DescribeAsync(conn, [.. connections.Select(c => c.Peer).Distinct()], ct);
+        var peers = await Terminals.DescribeAsync(conn, [.. connections.Select(c => c.Peer).Distinct()], scope, ct);
         var cells = PanelCells(detail.TypeKey, detail.Slot);
         var byPort = connections.ToLookup(c => c.Port);
         var usedSlots = cards.Select(c => c.Slot).ToHashSet();

@@ -14,6 +14,9 @@ public enum TraceEnd : byte
 
     /// <summary>Hit the hop limit.</summary>
     Limit,
+
+    /// <summary>The next terminal is outside the caller's access scope (#22).</summary>
+    Boundary,
 }
 
 /// <param name="Nodes">The terminals in order from one end to the other; the start is somewhere in between.</param>
@@ -35,7 +38,8 @@ public static class GraphTrace
     /// Follows the signal from a terminal in both directions through patches, splices, internal connections and
     /// conductors until each side ends at active equipment, splits, loops or hits the limit.
     /// </summary>
-    public static PhysicalPath Physical(Graph g, int start)
+    /// <param name="visible">Terminals the caller may see; the walk stops before any other (#22). Null means all.</param>
+    public static PhysicalPath Physical(Graph g, int start, Func<int, bool>? visible = null)
     {
         var neighbours = g.Neighbours(start);
         var kinds = g.NeighbourKinds(start);
@@ -43,7 +47,7 @@ public static class GraphTrace
         // From an end the path reads away from the start; from the middle it reads end → start → end.
         var (first, firstKinds, firstEnd) = neighbours.Length switch
         {
-            2 => Walk(g, start, neighbours[0], kinds[0], onPath),
+            2 => Walk(g, start, neighbours[0], kinds[0], onPath, visible),
             > 2 => ([], [], TraceEnd.Branch),
             _ => ([], [], TraceEnd.Endpoint),
         };
@@ -51,7 +55,7 @@ public static class GraphTrace
         {
             0 => ([], [], TraceEnd.Endpoint),
             > 2 => ([], [], TraceEnd.Branch),
-            _ => Walk(g, start, neighbours[^1], kinds[^1], onPath),
+            _ => Walk(g, start, neighbours[^1], kinds[^1], onPath, visible),
         };
 
         // first runs away from the start: reverse it so the path reads end → start → end.
@@ -80,7 +84,8 @@ public static class GraphTrace
     }
 
     /// <summary>Walks away from <paramref name="from"/> starting at <paramref name="next"/>; returns the nodes and the edge into each.</summary>
-    private static (List<int> Nodes, List<EdgeKind> Kinds, TraceEnd End) Walk(Graph g, int from, int next, EdgeKind kind, HashSet<int> onPath)
+    private static (List<int> Nodes, List<EdgeKind> Kinds, TraceEnd End) Walk(
+        Graph g, int from, int next, EdgeKind kind, HashSet<int> onPath, Func<int, bool>? visible)
     {
         var nodes = new List<int>();
         var kinds = new List<EdgeKind>();
@@ -88,6 +93,10 @@ public static class GraphTrace
         var cur = next;
         while (true)
         {
+            if (visible is not null && !visible(cur))
+            {
+                return (nodes, kinds, TraceEnd.Boundary);
+            }
             if (!onPath.Add(cur))
             {
                 return (nodes, kinds, TraceEnd.Loop);
@@ -132,35 +141,36 @@ public static class GraphTrace
     /// The circuits carrying a service and, depth first, the circuits each rides on: logical over transmission over
     /// physical. Each circuit appears once.
     /// </summary>
-    public static List<CircuitStep> Service(Graph g, int service)
+    /// <param name="visible">Circuits the caller may see; others are left out with what they ride on (#22).</param>
+    public static List<CircuitStep> Service(Graph g, int service, Func<int, bool>? visible = null)
     {
         var steps = new List<CircuitStep>();
         var seen = new HashSet<int>();
         foreach (var circuit in g.CircuitsOf(service))
         {
-            Down(g, circuit, 0, -1, steps, seen);
+            Down(g, circuit, 0, -1, steps, seen, visible);
         }
         return steps;
     }
 
     /// <summary>A circuit and, depth first, what it rides on.</summary>
-    public static List<CircuitStep> Circuit(Graph g, int circuit)
+    public static List<CircuitStep> Circuit(Graph g, int circuit, Func<int, bool>? visible = null)
     {
         var steps = new List<CircuitStep>();
-        Down(g, circuit, 0, -1, steps, []);
+        Down(g, circuit, 0, -1, steps, [], visible);
         return steps;
     }
 
-    private static void Down(Graph g, int circuit, int depth, int parent, List<CircuitStep> steps, HashSet<int> seen)
+    private static void Down(Graph g, int circuit, int depth, int parent, List<CircuitStep> steps, HashSet<int> seen, Func<int, bool>? visible)
     {
-        if (!seen.Add(circuit))
+        if (!seen.Add(circuit) || (visible is not null && !visible(circuit)))
         {
             return;
         }
         steps.Add(new CircuitStep(circuit, depth, parent));
         foreach (var carrier in g.CarriersOf(circuit))
         {
-            Down(g, carrier, depth + 1, circuit, steps, seen);
+            Down(g, carrier, depth + 1, circuit, steps, seen, visible);
         }
     }
 

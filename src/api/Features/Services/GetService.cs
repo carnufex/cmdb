@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Cmdb.Api.Features.Objects;
+using Cmdb.Api.Auth;
 using FastEndpoints;
 using Npgsql;
 
@@ -25,7 +26,7 @@ public sealed class GetServiceEndpoint(NpgsqlDataSource db) : Endpoint<ServiceRe
 
     public override async Task HandleAsync(ServiceRequest req, CancellationToken ct)
     {
-        var detail = await LoadAsync(db, req.Id, ct);
+        var detail = await LoadAsync(db, req.Id, HttpContext.Scope(), ct);
         if (detail is null)
         {
             await Send.NotFoundAsync(ct);
@@ -35,18 +36,23 @@ public sealed class GetServiceEndpoint(NpgsqlDataSource db) : Endpoint<ServiceRe
     }
 
     /// <summary>Also used by the MCP tools (#61), so agents see exactly what the UI shows.</summary>
-    internal static async Task<ServiceDetail?> LoadAsync(NpgsqlDataSource db, long id, CancellationToken ct)
+    internal static async Task<ServiceDetail?> LoadAsync(NpgsqlDataSource db, long id, UserScope scope, CancellationToken ct)
     {
+        // A service is visible when a circuit carrying it is (#22); only those circuits are listed.
         await using var conn = await db.OpenConnectionAsync(ct);
         await using var batch = new NpgsqlBatch(conn)
         {
             BatchCommands =
             {
-                new("SELECT id, code, name, service_type, lifecycle::text, attributes::text FROM service WHERE id = $1") { Parameters = { new() { Value = id } } },
-                new("""
+                new($"SELECT id, code, name, service_type, lifecycle::text, attributes::text FROM service WHERE id = $1 AND {ScopeSql.Service("service.id", 2)}")
+                {
+                    Parameters = { new() { Value = id }, new() { Value = scope.Keys } },
+                },
+                new($"""
                     SELECT r.id, r.code, r.layer::text, r.lifecycle::text, r.a_terminal_id, r.b_terminal_id
-                    FROM service_circuit sc JOIN circuit r ON r.id = sc.circuit_id WHERE sc.service_id = $1 ORDER BY r.code
-                    """) { Parameters = { new() { Value = id } } },
+                    FROM service_circuit sc JOIN circuit r ON r.id = sc.circuit_id
+                    WHERE sc.service_id = $1 AND {ScopeSql.Circuit("r.id", 2)} ORDER BY r.code
+                    """) { Parameters = { new() { Value = id }, new() { Value = scope.Keys } } },
             },
         };
 
@@ -59,7 +65,7 @@ public sealed class GetServiceEndpoint(NpgsqlDataSource db) : Endpoint<ServiceRe
                 return null;
             }
             service = new ServiceDetail(reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3),
-                reader.GetString(4), Terminals.Json(reader.GetString(5)), []);
+                reader.GetString(4), Terminals.Json(scope.MaskAttributes(reader.GetString(5))), []);
             await reader.NextResultAsync(ct);
             while (await reader.ReadAsync(ct))
             {
@@ -68,7 +74,7 @@ public sealed class GetServiceEndpoint(NpgsqlDataSource db) : Endpoint<ServiceRe
             }
         }
 
-        var terminals = await Terminals.DescribeAsync(conn, [.. circuits.SelectMany(c => new[] { c.A, c.B }).Distinct()], ct);
+        var terminals = await Terminals.DescribeAsync(conn, [.. circuits.SelectMany(c => new[] { c.A, c.B }).Distinct()], scope, ct);
         return service with
         {
             Circuits = [.. circuits.Select(c => new ServiceCircuit(c.Ref, terminals.GetValueOrDefault(c.A), terminals.GetValueOrDefault(c.B)))],

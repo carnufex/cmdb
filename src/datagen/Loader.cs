@@ -27,6 +27,7 @@ internal static class Loader
         await using (var context = CmdbDatabase.CreateContext(db))
         {
             await CatalogSync.SyncAsync(context, TypeCatalog.Embedded, ct);
+            await Cmdb.Database.Scopes.ScopeCatalog.SyncAsync(context, ct);
         }
 
         await using var conn = await db.OpenConnectionAsync(ct);
@@ -246,6 +247,9 @@ internal static class Loader
         await Exec(conn, "SET cmdb.bulk = 'off'", ct);
         await Exec(conn, "INSERT INTO graph_change (kind, key) VALUES ('reload', 0)", ct);
         var sw = Stopwatch.StartNew();
+        await Cmdb.Database.Scopes.ScopeVisibility.RefreshAsync(db, ct);
+        log.WriteLine($"  scopes  {sw.Elapsed.TotalSeconds,6:0.0} s");
+        sw.Restart();
         await Exec(conn, "ANALYZE", ct);
         log.WriteLine($"  analyze {sw.Elapsed.TotalSeconds,6:0.0} s");
     }

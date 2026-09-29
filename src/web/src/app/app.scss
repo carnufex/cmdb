@@ -48,6 +48,19 @@
   gap: var(--space-2);
 }
 
+.scope {
+  padding: 1px var(--space-2);
+  border: var(--line);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+
+  &.none {
+    color: var(--status-conflict);
+  }
+}
+
 .user {
   color: var(--text-muted);
   font-size: var(--text-sm);

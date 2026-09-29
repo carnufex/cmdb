@@ -31,6 +31,7 @@ describe('App', () => {
       name: 'Demo Region',
       email: null,
       groups: ['cmdb-region-nord'],
+      scopes: ['Region Nord'],
     };
     http.expectOne('/api/me').flush(me);
     await fixture.whenStable();
@@ -38,6 +39,7 @@ describe('App', () => {
 
     expect(el.querySelector('.synthetic')?.textContent).toContain('Syntetisk');
     expect(el.querySelector('.user')?.textContent).toContain('Demo Region');
+    expect(el.querySelector('.scope')?.textContent).toContain('Region Nord');
     expect(document.documentElement.dataset['theme']).toBe('light');
   });
 

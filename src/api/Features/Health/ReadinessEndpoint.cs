@@ -4,8 +4,8 @@ using Npgsql;
 
 namespace Cmdb.Api.Features.Health;
 
-/// <summary>Ready to serve traffic: the database answers and the network graph is loaded.</summary>
-public sealed class ReadinessEndpoint(NpgsqlDataSource db, GraphHolder graph) : EndpointWithoutRequest<HealthResponse>
+/// <summary>Ready to serve traffic: the database answers, the network graph is loaded and access scopes are known.</summary>
+public sealed class ReadinessEndpoint(NpgsqlDataSource db, GraphHolder graph, Cmdb.Api.Auth.ScopeRefreshService scopes) : EndpointWithoutRequest<HealthResponse>
 {
     public override void Configure()
     {
@@ -23,6 +23,11 @@ public sealed class ReadinessEndpoint(NpgsqlDataSource db, GraphHolder graph) : 
             if (!graph.IsReady)
             {
                 await Send.ResponseAsync(new HealthResponse("graph loading"), StatusCodes.Status503ServiceUnavailable, ct);
+                return;
+            }
+            if (!scopes.Ready.IsCompleted)
+            {
+                await Send.ResponseAsync(new HealthResponse("scopes loading"), StatusCodes.Status503ServiceUnavailable, ct);
                 return;
             }
             await Send.OkAsync(new HealthResponse("ok"), ct);

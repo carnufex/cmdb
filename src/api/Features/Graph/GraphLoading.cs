@@ -17,7 +17,8 @@ namespace Cmdb.Api.Features.Graph;
 /// </para>
 /// </summary>
 public sealed partial class GraphLoadingService(
-    NpgsqlDataSource db, IGraphChangeFeed feed, GraphHolder holder, IConfiguration config, ILogger<GraphLoadingService> logger) : BackgroundService
+    NpgsqlDataSource db, IGraphChangeFeed feed, GraphHolder holder, Cmdb.Api.Auth.ScopeRefreshService scopes, IConfiguration config,
+    ILogger<GraphLoadingService> logger) : BackgroundService
 {
     private DateTimeOffset _snapshotWritten = DateTimeOffset.MinValue;
 
@@ -116,6 +117,11 @@ public sealed partial class GraphLoadingService(
             return;
         }
         holder.Apply(next, new GraphChangeInfo(batch.Changes, batch.Keys.Count, sw.Elapsed, DateTimeOffset.UtcNow));
+        // New cables, circuits or equipment may change what access scopes show (#22).
+        if (batch.Keys.Cables.Count + batch.Keys.Circuits.Count + batch.Keys.Equipment.Count > 0)
+        {
+            scopes.Request();
+        }
         Applied(logger, batch.Changes, batch.Keys.Count, sw.Elapsed.TotalMilliseconds, next.Version);
         if (DateTimeOffset.UtcNow - _snapshotWritten >= SnapshotInterval)
         {

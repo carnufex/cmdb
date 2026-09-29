@@ -1,3 +1,4 @@
+using Cmdb.Api.Auth;
 using System.ComponentModel;
 using Cmdb.Api.Agents;
 using FastEndpoints;
@@ -29,15 +30,16 @@ public sealed class NeighbourhoodEndpoint(NpgsqlDataSource db) : Endpoint<Neighb
 {
     public const int Max = 200;
 
-    // TODO(#22): the caller's scope decides which neighbours are shown; hidden ones end the walk with a placeholder.
-    private const string Sql = """
+    // Access scopes (#22): the walk only crosses cables in scope and stops at sites outside it, which are not listed.
+    private static readonly string Sql = $"""
         WITH RECURSIVE walk(site_id, hops, via) AS (
-            SELECT $1::bigint, 0, NULL::text
+            SELECT $1::bigint, 0, NULL::text WHERE {ScopeSql.Site("$1::bigint", 4)}
             UNION ALL
             SELECT CASE WHEN c.a_site_id = w.site_id THEN c.b_site_id ELSE c.a_site_id END, w.hops + 1,
                    CASE WHEN w.hops = 0 THEN c.code ELSE w.via END
             FROM walk w JOIN cable c ON c.a_site_id = w.site_id OR c.b_site_id = w.site_id
-            WHERE w.hops < $2
+            WHERE w.hops < $2 AND {ScopeSql.Cable("c.id", 4)}
+              AND {ScopeSql.Site("CASE WHEN c.a_site_id = w.site_id THEN c.b_site_id ELSE c.a_site_id END", 4)}
         ), nearest AS (
             SELECT DISTINCT ON (site_id) site_id, hops, via FROM walk WHERE site_id <> $1 ORDER BY site_id, hops, via
         )
@@ -50,14 +52,15 @@ public sealed class NeighbourhoodEndpoint(NpgsqlDataSource db) : Endpoint<Neighb
     public override void Configure() => Get("/sites/{id}/neighbourhood");
 
     public override async Task HandleAsync(NeighbourhoodRequest req, CancellationToken ct) =>
-        await Send.OkAsync(await RunAsync(db, req.Id, req.Hops, Max, ct), ct);
+        await Send.OkAsync(await RunAsync(db, req.Id, req.Hops, Max, HttpContext.Scope(), ct), ct);
 
-    internal static async Task<List<Neighbour>> RunAsync(NpgsqlDataSource db, long id, int hops, int limit, CancellationToken ct)
+    internal static async Task<List<Neighbour>> RunAsync(NpgsqlDataSource db, long id, int hops, int limit, UserScope scope, CancellationToken ct)
     {
         await using var cmd = db.CreateCommand(Sql);
         cmd.Parameters.Add(new NpgsqlParameter { Value = id });
         cmd.Parameters.Add(new NpgsqlParameter { Value = hops });
         cmd.Parameters.Add(new NpgsqlParameter { Value = limit });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = scope.Keys });
         var neighbours = new List<Neighbour>();
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
@@ -74,7 +77,7 @@ public sealed record AgentNeighbour(string Ref, string Code, string Name, string
 public sealed record NeighbourhoodResult(string Ref, IReadOnlyList<AgentNeighbour> Sites, bool Truncated);
 
 [McpServerToolType]
-public sealed class NeighbourhoodTools(NpgsqlDataSource db, AgentLinks links)
+public sealed class NeighbourhoodTools(NpgsqlDataSource db, AgentLinks links, IHttpContextAccessor http)
 {
     private const int MaxSites = 50;
 
@@ -89,7 +92,7 @@ public sealed class NeighbourhoodTools(NpgsqlDataSource db, AgentLinks links)
         {
             throw new McpException("hops must be between 1 and 3.");
         }
-        var sites = await NeighbourhoodEndpoint.RunAsync(db, siteId, hops, MaxSites + 1, ct);
+        var sites = await NeighbourhoodEndpoint.RunAsync(db, siteId, hops, MaxSites + 1, http.HttpContext!.Scope(), ct);
         return new NeighbourhoodResult(
             AgentLinks.Ref("site", siteId),
             [.. sites.Take(MaxSites).Select(s => new AgentNeighbour(AgentLinks.Ref("site", s.Id), s.Code, s.Name, s.SiteType, s.Lifecycle, s.Hops, s.Via, links.For("site", s.Id)))],

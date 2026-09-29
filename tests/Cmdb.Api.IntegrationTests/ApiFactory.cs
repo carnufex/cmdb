@@ -38,11 +38,22 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         await CmdbDatabase.MigrateAsync(Db);
         await using var context = CmdbDatabase.CreateContext(Db);
         await CatalogSync.SyncAsync(context, TypeCatalog.Embedded);
+        await Cmdb.Database.Scopes.ScopeCatalog.SyncAsync(context);
         // Starting the host loads the graph in the background; tests begin once it is in place.
         await Services.GetRequiredService<Cmdb.Graph.GraphHolder>().Ready.WaitAsync(TimeSpan.FromSeconds(60));
     }
 
     /// <summary>Creates an empty database with PostGIS available but no migrations applied.</summary>
+    /// <summary>
+    /// Recomputes what access scopes show (#22). New sites, cables and circuits are hidden until then, so tests that
+    /// insert them call this before reading.
+    /// </summary>
+    public async Task RefreshScopesAsync()
+    {
+        await Cmdb.Database.Scopes.ScopeVisibility.RefreshAsync(Db);
+        await Services.GetRequiredService<Cmdb.Api.Auth.ScopeRegistry>().LoadAsync(default);
+    }
+
     /// <summary>Waits until the graph has followed the change stream (#11) past everything committed so far.</summary>
     public Task GraphCaughtUpAsync() => GraphCaughtUpAsync(Services, Db);
 

@@ -1,4 +1,5 @@
 using Cmdb.Api.Features.Objects;
+using Cmdb.Api.Auth;
 using FastEndpoints;
 using Npgsql;
 
@@ -25,7 +26,7 @@ public sealed class GetCircuitEndpoint(NpgsqlDataSource db) : Endpoint<CircuitRe
 
     public override async Task HandleAsync(CircuitRequest req, CancellationToken ct)
     {
-        var detail = await LoadAsync(db, req.Id, ct);
+        var detail = await LoadAsync(db, req.Id, HttpContext.Scope(), ct);
         if (detail is null)
         {
             await Send.NotFoundAsync(ct);
@@ -35,29 +36,34 @@ public sealed class GetCircuitEndpoint(NpgsqlDataSource db) : Endpoint<CircuitRe
     }
 
     /// <summary>Also used by the MCP tools (#61), so agents see exactly what the UI shows.</summary>
-    internal static async Task<CircuitDetail?> LoadAsync(NpgsqlDataSource db, long id, CancellationToken ct)
+    internal static async Task<CircuitDetail?> LoadAsync(NpgsqlDataSource db, long id, UserScope scope, CancellationToken ct)
     {
+        // A circuit outside the scope does not exist (#22); hops outside it are placeholders, and related circuits
+        // and services are listed only when in scope.
         await using var conn = await db.OpenConnectionAsync(ct);
         await using var batch = new NpgsqlBatch(conn)
         {
             BatchCommands =
             {
-                new("SELECT id, code, layer::text, lifecycle::text FROM circuit WHERE id = $1") { Parameters = { new() { Value = id } } },
+                new($"SELECT id, code, layer::text, lifecycle::text FROM circuit WHERE id = $1 AND {ScopeSql.Circuit("circuit.id", 2)}")
+                {
+                    Parameters = { new() { Value = id }, new() { Value = scope.Keys } },
+                },
                 new("""
                     SELECT h.seq, h.terminal_id, ch.kind::text || ' ' || ch.number
                     FROM circuit_hop h LEFT JOIN channel ch ON ch.id = h.channel_id
                     WHERE h.circuit_id = $1 ORDER BY h.seq
                     """) { Parameters = { new() { Value = id } } },
-                new("""
+                new($"""
                     SELECT 'carrier', r.id, r.code, r.layer::text, r.lifecycle::text
-                    FROM circuit_dependency d JOIN circuit r ON r.id = d.carrier_id WHERE d.circuit_id = $1
+                    FROM circuit_dependency d JOIN circuit r ON r.id = d.carrier_id WHERE d.circuit_id = $1 AND {ScopeSql.Circuit("r.id", 2)}
                     UNION ALL
                     SELECT 'carried', r.id, r.code, r.layer::text, r.lifecycle::text
-                    FROM circuit_dependency d JOIN circuit r ON r.id = d.circuit_id WHERE d.carrier_id = $1
+                    FROM circuit_dependency d JOIN circuit r ON r.id = d.circuit_id WHERE d.carrier_id = $1 AND {ScopeSql.Circuit("r.id", 2)}
                     UNION ALL
                     SELECT 'service', v.id, v.code, v.name, v.lifecycle::text
-                    FROM service_circuit sc JOIN service v ON v.id = sc.service_id WHERE sc.circuit_id = $1
-                    """) { Parameters = { new() { Value = id } } },
+                    FROM service_circuit sc JOIN service v ON v.id = sc.service_id WHERE sc.circuit_id = $1 AND {ScopeSql.Service("v.id", 2)}
+                    """) { Parameters = { new() { Value = id }, new() { Value = scope.Keys } } },
             },
         };
 
@@ -84,7 +90,7 @@ public sealed class GetCircuitEndpoint(NpgsqlDataSource db) : Endpoint<CircuitRe
             }
         }
 
-        var terminals = await Terminals.DescribeAsync(conn, [.. hops.Select(h => h.Terminal).Distinct()], ct);
+        var terminals = await Terminals.DescribeAsync(conn, [.. hops.Select(h => h.Terminal).Distinct()], scope, ct);
         return circuit with
         {
             Hops = [.. hops.Where(h => terminals.ContainsKey(h.Terminal)).Select(h => new CircuitHop(h.Seq, terminals[h.Terminal], h.Channel))],
