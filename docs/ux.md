@@ -6,6 +6,10 @@ Mörk, informationstät och lugn, i samma familj som Linear. Tunna linjer (1 px)
 
 **Men:** allt bygger på design-tokens med ett mörkt standardtema **och** ett ljust tema. Projektorer och dagsljus i fält gör enbart mörkt tema oanvändbart. Testa demon på den projektor som faktiskt ska användas.
 
+## Skärmstorlek
+
+Minsta stödda storlek är **1280×720 CSS-pixlar**, vilket motsvarar 1080p med 150 % skalning (#72). Där ska kartan, ett verktyg (avancerad sökning eller prestanda) och objektpanelen kunna vara öppna samtidigt, utan radbrytning i verktygsfältet och utan sidscroll. Paneler och verktyg scrollar internt. Under 1440 px bredd blir objektpanelen och verktygen smalare, så att kartan behåller ungefär 500 px. Större skärmar ger kartan all extra yta.
+
 ## Färg betyder status
 
 | Status | Färg |

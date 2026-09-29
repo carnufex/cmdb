@@ -110,3 +110,18 @@ button {
   font-family: var(--font-mono);
   font-size: 0.95em;
 }
+
+// 1080p at 150 % scaling is 1280×720 CSS px, the smallest size the demo supports (#72). Below 1440 px the side panel
+// and tools give the map more room.
+:root {
+  --tool-width: 380px;
+  --tool-width-wide: 460px;
+}
+
+@media (max-width: 1439px) {
+  :root {
+    --panel-width: 360px;
+    --tool-width: 340px;
+    --tool-width-wide: 400px;
+  }
+}

@@ -41,7 +41,6 @@
           <th scope="col">Mätning</th>
           <th scope="col" class="num">Server<br /><span>p50 / p95</span></th>
           <th scope="col" class="num">Webbläsare<br /><span>p50 / p95</span></th>
-          <th scope="col" class="num">Budget</th>
         </tr>
       </thead>
       <tbody>
@@ -51,7 +50,13 @@
               {{ m.label }}
               <span class="status" [attr.data-status]="m.status">
                 <span class="dot" aria-hidden="true"></span>{{ statusLabels[m.status] }}
+                @if (m.budget !== null) {
+                  · &lt; {{ m.budget }} ms
+                }
               </span>
+              @if (m.budgetNote) {
+                <span class="note">{{ m.budgetNote }}</span>
+              }
               <span class="n">n = {{ m.n }}</span>
             </th>
             <td class="num">
@@ -67,16 +72,6 @@
                 {{ m.browser.p95 | number: '1.0-1' }}
               } @else {
                 <strong>{{ m.browser.p95 | number: '1.0-1' }}</strong>
-              }
-            </td>
-            <td class="num">
-              @if (m.budget !== null) {
-                &lt; {{ m.budget }}
-                @if (m.budgetNote) {
-                  <span class="note">{{ m.budgetNote }}</span>
-                }
-              } @else {
-                <span class="muted">–</span>
               }
             </td>
           </tr>

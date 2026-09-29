@@ -125,7 +125,12 @@ fieldset {
   }
 
   .op {
-    flex: 0 0 96px;
+    flex: 0 0 72px;
+  }
+
+  // The attribute name is the longest value in the row; give it the room.
+  label:first-child {
+    flex: 1.4;
   }
 }
 
