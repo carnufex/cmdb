@@ -39,6 +39,7 @@ builder.Services.AddCmdbMcp();
 builder.Services.AddSingleton<Cmdb.Graph.GraphHolder>();
 builder.Services.AddSingleton<Cmdb.Graph.IGraphChangeFeed, Cmdb.Graph.PostgresGraphChangeFeed>();
 builder.Services.AddHostedService<Cmdb.Api.Features.Graph.GraphLoadingService>();
+builder.Services.AddHostedService<Cmdb.Api.Features.Graph.GraphChangePruning>();
 builder.Services.AddCmdbOpenApi();
 
 var app = builder.Build();

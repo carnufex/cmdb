@@ -62,6 +62,16 @@ public sealed class PostgresGraphChangeFeed(NpgsqlDataSource db) : IGraphChangeF
             return new GraphChangeBatch(next, Reload: true, keys, rows, 0);
         }
 
+        // Rows below the pruned mark are gone (#78): a watermark that old may have missed changes, so start over.
+        await using (var cmd = new NpgsqlCommand("SELECT tx::text FROM graph_change_pruned WHERE id = 1", conn, tx))
+        {
+            if (await cmd.ExecuteScalarAsync(ct) is string pruned && ulong.Parse(pruned, CultureInfo.InvariantCulture) >= since.Value)
+            {
+                await tx.CommitAsync(ct);
+                return new GraphChangeBatch(next, Reload: true, keys, rows, 0);
+            }
+        }
+
         var reload = false;
         var changes = 0;
         await using (var cmd = new NpgsqlCommand("SELECT kind, key FROM graph_change WHERE tx >= $1::text::xid8 AND tx < $2::text::xid8", conn, tx))
@@ -142,6 +152,48 @@ public sealed class PostgresGraphChangeFeed(NpgsqlDataSource db) : IGraphChangeF
         if (!last)
         {
             await reader.NextResultAsync(ct);
+        }
+    }
+
+    /// <summary>
+    /// Removes outbox rows older than <paramref name="retention"/> in batches and records the highest removed
+    /// transaction id. Safe to run from several instances: only the one holding the lock prunes.
+    /// </summary>
+    public static async Task<int> PruneAsync(NpgsqlDataSource db, TimeSpan retention, int batchSize = 50_000, CancellationToken ct = default)
+    {
+        var total = 0;
+        while (true)
+        {
+            await using var conn = await db.OpenConnectionAsync(ct);
+            await using var tx = await conn.BeginTransactionAsync(ct);
+            await using (var lockCmd = new NpgsqlCommand("SELECT pg_try_advisory_xact_lock(hashtext('graph_change_prune'))", conn, tx))
+            {
+                if (!(bool)(await lockCmd.ExecuteScalarAsync(ct))!)
+                {
+                    return total;
+                }
+            }
+            await using var cmd = new NpgsqlCommand("""
+                WITH gone AS (
+                    DELETE FROM graph_change WHERE id IN (
+                        SELECT id FROM graph_change WHERE created_at < now() - $1::interval ORDER BY id LIMIT $2)
+                    RETURNING tx
+                ), mark AS (
+                    INSERT INTO graph_change_pruned (id, tx, pruned_at)
+                    SELECT 1, max(tx), now() FROM gone HAVING count(*) > 0
+                    ON CONFLICT (id) DO UPDATE SET tx = greatest(graph_change_pruned.tx, excluded.tx), pruned_at = now()
+                )
+                SELECT count(*)::int FROM gone
+                """, conn, tx);
+            cmd.Parameters.Add(new NpgsqlParameter { Value = retention });
+            cmd.Parameters.Add(new NpgsqlParameter { Value = batchSize });
+            var deleted = (int)(await cmd.ExecuteScalarAsync(ct))!;
+            await tx.CommitAsync(ct);
+            total += deleted;
+            if (deleted < batchSize)
+            {
+                return total;
+            }
         }
     }
 

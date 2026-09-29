@@ -144,6 +144,27 @@ public sealed class ChangeStreamTests(ApiFactory factory)
         }
     }
 
+    [Fact]
+    public async Task Pruning_removes_old_rows_and_sends_readers_that_far_behind_to_a_full_reload()
+    {
+        await using var db = await SmallNetworkAsync(7);
+        var feed = new PostgresGraphChangeFeed(db);
+        var old = await feed.PositionAsync(Ct);
+        await Exec(db, "UPDATE cable SET lifecycle = 'decommissioning' WHERE id = (SELECT min(id) FROM cable)");
+        await Exec(db, "UPDATE graph_change SET created_at = now() - interval '8 days'");
+        var recent = await feed.PositionAsync(Ct);
+        await Exec(db, "UPDATE cable SET lifecycle = 'in_service' WHERE id = (SELECT min(id) FROM cable)");
+
+        var deleted = await PostgresGraphChangeFeed.PruneAsync(db, TimeSpan.FromDays(7), batchSize: 1, ct: Ct);
+
+        var cable = await Scalar(db, "SELECT min(id) FROM cable");
+        deleted.ShouldBe(3); // the bulk load's reload marker and the first update's old and new row, one per batch
+        (await Rows(db)).ShouldBe([("cable", cable), ("cable", cable)]);
+        (await feed.ReadAsync(old, Ct)).Reload.ShouldBeTrue();
+        var current = await feed.ReadAsync(recent, Ct);
+        current.Reload.ShouldBeFalse();
+    }
+
     private async Task<NpgsqlDataSource> SmallNetworkAsync(int seed)
     {
         var db = await factory.NewDatabaseAsync();
