@@ -13,6 +13,7 @@ import { EditHeaderComponent } from './edit-header';
 import { ImpactListComponent } from './impact-list';
 import { apiPath, EquipmentDetail, Impact } from './models';
 import { ObjectLinkComponent } from './object-link';
+import { traceId } from './trace-model';
 
 type Port = EquipmentDetail['ports'][number];
 
@@ -76,6 +77,13 @@ type Port = EquipmentDetail['ports'][number];
           <h3>
             Port <span class="mono">{{ p.name }}</span>
           </h3>
+          @if (p.connections.length) {
+            <p class="port-actions">
+              <button type="button" class="action" (click)="trace(p.terminalId)">
+                Spåra från porten
+              </button>
+            </p>
+          }
           <dl class="facts">
             <dt>Typ</dt>
             <dd>{{ p.type }}{{ p.group ? ' · ' + p.group : '' }}</dd>
@@ -249,6 +257,10 @@ export class EquipmentPanelComponent {
       ([k, v]) => [k, String(v)] as const,
     ),
   );
+
+  protected trace(terminalId: number): void {
+    this.panels.open({ type: 'trace', id: traceId({ by: 'terminal', id: terminalId }) });
+  }
 
   constructor() {
     effect(() => {

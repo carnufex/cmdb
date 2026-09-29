@@ -52,6 +52,8 @@ public sealed class TraceTests(ApiFactory factory)
         trace.Circuits.Single(c => c.Layer == "logical").Depth.ShouldBe(0);
         trace.Circuits.Where(c => c.Layer == "physical").ShouldAllBe(c => c.Depth == 1);
         trace.Circuits.SelectMany(c => c.Hops).ShouldAllBe(h => h.Kind != "unknown" && h.Site != null);
+        trace.Circuits.Where(c => c.Layer == "physical").SelectMany(c => c.Hops.Skip(1)).ShouldAllBe(h => h.Edge != null);
+        trace.Route.ShouldBeNull();
         trace.Sites.ShouldContain(s => s.Code.StartsWith("RAD-", StringComparison.Ordinal));
         trace.Sites.ShouldContain(s => s.Code.StartsWith("AGG-", StringComparison.Ordinal));
         trace.Cables.ShouldNotBeEmpty();
@@ -73,6 +75,23 @@ public sealed class TraceTests(ApiFactory factory)
         trace.Physical.Hops.ShouldContain(h => h.Edge == "conductor");
         trace.Services.ShouldNotBeEmpty();
         trace.ElapsedMs.ShouldBeLessThan(50);
+    }
+
+    [Fact]
+    public async Task Geometry_draws_the_route_on_the_map()
+    {
+        var (_, api) = await NetworkFixture.GetAsync(factory);
+        var backhaul = Network.Services.First(s => s.Type == "mobile-backhaul");
+        using var client = NetworkFixture.Client(api);
+
+        var trace = (await client.GetFromJsonAsync<TraceResult>($"/api/trace?service={backhaul.Id}&geometry=true", Ct))!;
+
+        var route = trace.Route.ShouldNotBeNull();
+        route.Sites.Select(s => s.Id).ShouldBe(trace.Sites.Select(s => s.Id));
+        route.Cables.Select(c => c.Id).ShouldBe(trace.Cables.Select(c => c.Id));
+        route.Cables.ShouldAllBe(c => c.Coordinates.Length >= 2);
+        route.Extent.Length.ShouldBe(4);
+        route.Sites.ShouldAllBe(s => s.X >= route.Extent[0] && s.X <= route.Extent[2] && s.Y >= route.Extent[1] && s.Y <= route.Extent[3]);
     }
 
     [Theory]

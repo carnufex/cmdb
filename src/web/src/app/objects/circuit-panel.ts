@@ -4,6 +4,7 @@ import { PanelStack } from '../shell/panels';
 import { StatusComponent } from '../shell/status';
 import { apiPath, CircuitDetail } from './models';
 import { ObjectLinkComponent } from './object-link';
+import { traceId } from './trace-model';
 
 @Component({
   selector: 'cmdb-circuit-panel',
@@ -15,6 +16,7 @@ import { ObjectLinkComponent } from './object-link';
         <div class="code mono">{{ c.code }}</div>
         <div class="meta">
           <cmdb-status [value]="c.lifecycle" /><span>{{ c.hops.length }} hopp</span>
+          <button type="button" class="action" (click)="trace(c.id)">Spåra</button>
         </div>
       </header>
       @if (c.services.length) {
@@ -112,6 +114,10 @@ export class CircuitPanelComponent {
     transmission: 'Transmission',
     logical: 'Logisk',
   };
+
+  protected trace(id: number): void {
+    this.panels.open({ type: 'trace', id: traceId({ by: 'circuit', id }) });
+  }
 
   constructor() {
     effect(() => {

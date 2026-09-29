@@ -19,6 +19,8 @@ import VectorLayer from 'ol/layer/Vector';
 import VectorSource from 'ol/source/Vector';
 import Feature from 'ol/Feature';
 import OlPoint from 'ol/geom/Point';
+import LineString from 'ol/geom/LineString';
+import { Geometry } from 'ol/geom';
 import { Circle, Fill, Stroke, Style } from 'ol/style';
 import TileState from 'ol/TileState';
 import Attribution from 'ol/control/Attribution';
@@ -41,7 +43,7 @@ import {
 } from './map-grid';
 import { createBasemap, esriTileUrl, parseBasemap } from './map-basemap';
 import { createStyler, Palette, readPalette } from './map-style';
-import { MapView } from './map-view';
+import { MapView, Route } from './map-view';
 
 interface Hover {
   x: number;
@@ -79,6 +81,7 @@ export class MapComponent {
   private network?: VectorTileLayer;
   private basemap?: TileLayer<XYZ>;
   private marks?: VectorLayer<VectorSource<Feature<OlPoint>>>;
+  private route?: VectorLayer<VectorSource<Feature<Geometry>>>;
   private palette?: Palette;
 
   constructor() {
@@ -107,6 +110,13 @@ export class MapComponent {
       }
       this.showMarks(highlight?.points ?? [], highlight?.extent ?? null);
     });
+    // A trace draws its route in its own layer, on top of everything (#19).
+    effect(() => {
+      const route = this.mapView.route();
+      if (this.route && this.map) {
+        this.showRoute(route);
+      }
+    });
     // Other parts of the app (search, panels) ask the map to go somewhere.
     effect(() => {
       const focus = this.mapView.focusRequest();
@@ -131,6 +141,7 @@ export class MapComponent {
       reset();
       this.network?.changed();
       this.marks?.changed();
+      this.route?.changed();
     };
 
     this.network = new VectorTileLayer({
@@ -152,7 +163,16 @@ export class MapComponent {
       style: () => this.markStyle(),
       zIndex: 10,
     });
-    const layers: (TileLayer | VectorTileLayer | VectorLayer)[] = [this.network, this.marks];
+    this.route = new VectorLayer({
+      source: new VectorSource<Feature<Geometry>>(),
+      style: (f) => this.routeStyle(f),
+      zIndex: 20,
+    });
+    const layers: (TileLayer | VectorTileLayer | VectorLayer)[] = [
+      this.network,
+      this.marks,
+      this.route,
+    ];
     if (parseBasemap(this.config.basemap) === 'esri') {
       this.basemap = createBasemap(this.theme.theme());
       layers.unshift(this.basemap);
@@ -175,6 +195,7 @@ export class MapComponent {
     if (pending) {
       this.showMarks(pending.points, pending.extent);
     }
+    this.showRoute(this.mapView.route());
     const reportCenter = () => {
       const [x, y] = this.map!.getView().getCenter() ?? [0, 0];
       this.mapView.center.set({ x, y });
@@ -193,7 +214,7 @@ export class MapComponent {
       const feature = this.map!.forEachFeatureAtPixel(e.pixel, (f) => f, { hitTolerance: 4 });
       this.target().nativeElement.style.cursor = feature ? 'pointer' : '';
       this.hover.set(
-        feature && !feature.get('mark')
+        feature && !feature.get('mark') && !feature.get('route')
           ? {
               x: e.pixel[0],
               y: e.pixel[1],
@@ -205,7 +226,10 @@ export class MapComponent {
     });
     this.map.on('click', (e) => {
       const feature = this.map!.forEachFeatureAtPixel(e.pixel, (f) => f, { hitTolerance: 4 });
-      if (feature?.get('mark')) {
+      if (feature?.get('route')) {
+        // Part of an open trace: stack it on the trace instead of starting over.
+        this.panels.open({ type: feature.get('route'), id: String(feature.getId()) });
+      } else if (feature?.get('mark')) {
         this.panels.open({ type: 'site', id: String(feature.getId()) }, { replace: true });
       } else if (feature) {
         const type = feature.get('layer') === 'sites' ? 'site' : 'cable';
@@ -280,6 +304,66 @@ export class MapComponent {
     return this.markStyleCache.style;
   }
 
+  private routeStyleCache?: { key: string; line: Style[]; point: Style };
+
+  private routeStyle(feature: FeatureLike): Style | Style[] {
+    const palette = (this.palette ??= readPalette(this.host.nativeElement));
+    const key = `${palette.focus}|${palette.bg}`;
+    if (this.routeStyleCache?.key !== key) {
+      this.routeStyleCache = {
+        key,
+        line: [
+          new Style({ stroke: new Stroke({ color: palette.bg, width: 7 }) }),
+          new Style({ stroke: new Stroke({ color: palette.focus, width: 3.5 }) }),
+        ],
+        point: new Style({
+          image: new Circle({
+            radius: 6,
+            fill: new Fill({ color: palette.focus }),
+            stroke: new Stroke({ color: palette.bg, width: 2 }),
+          }),
+          zIndex: 1,
+        }),
+      };
+    }
+    return feature.get('route') === 'site' ? this.routeStyleCache.point : this.routeStyleCache.line;
+  }
+
+  /** Draws a traced route over a dimmed network and frames it. */
+  private showRoute(route: Route | null): void {
+    const source = this.route!.getSource()!;
+    source.clear(true);
+    if (!route) {
+      this.network?.setOpacity(this.mapView.highlight()?.points.length ? 0.35 : 1);
+      return;
+    }
+    const features: Feature<Geometry>[] = [
+      ...route.cables.map((c) => {
+        const f = new Feature<Geometry>(new LineString(c.coordinates.map((p) => [p[0], p[1]])));
+        f.setId(c.id);
+        f.set('route', 'cable');
+        return f;
+      }),
+      ...route.sites.map((s) => {
+        const f = new Feature<Geometry>(new OlPoint([s.x, s.y]));
+        f.setId(s.id);
+        f.set('route', 'site');
+        return f;
+      }),
+    ];
+    source.addFeatures(features);
+    this.network?.setOpacity(0.35);
+    if (route.extent.length === 4) {
+      const [minX, minY, maxX, maxY] = route.extent;
+      const pad = Math.max(maxX - minX, maxY - minY) < 2_000 ? 2_000 : 0;
+      this.map!.getView().fit([minX - pad, minY - pad, maxX + pad, maxY + pad], {
+        padding: [48, 48, 48, 48],
+        duration: 400,
+        maxZoom: 12,
+      });
+    }
+  }
+
   /** Draws marked sites and dims the network while there are any, then frames them. */
   private showMarks(
     points: readonly (readonly [number, number, number])[],
@@ -295,7 +379,7 @@ export class MapComponent {
         return f;
       }),
     );
-    this.network?.setOpacity(points.length > 0 ? 0.35 : 1);
+    this.network?.setOpacity(points.length > 0 || this.mapView.route() ? 0.35 : 1);
     if (extent && points.length > 0) {
       const [minX, minY, maxX, maxY] = extent;
       const pad = Math.max(maxX - minX, maxY - minY) < 2_000 ? 2_000 : 0;

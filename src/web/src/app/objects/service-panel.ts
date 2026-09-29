@@ -4,6 +4,7 @@ import { PanelStack } from '../shell/panels';
 import { StatusComponent } from '../shell/status';
 import { apiPath, ServiceDetail } from './models';
 import { ObjectLinkComponent } from './object-link';
+import { traceId } from './trace-model';
 
 @Component({
   selector: 'cmdb-service-panel',
@@ -14,7 +15,10 @@ import { ObjectLinkComponent } from './object-link';
         <div class="kind">Tjänst · {{ s.serviceType }}</div>
         <div class="code mono">{{ s.code }}</div>
         <div class="title">{{ s.name }}</div>
-        <div class="meta"><cmdb-status [value]="s.lifecycle" /></div>
+        <div class="meta">
+          <cmdb-status [value]="s.lifecycle" />
+          <button type="button" class="action" (click)="trace(s.id)">Spåra ände till ände</button>
+        </div>
       </header>
       <section>
         <h3>Bärs av</h3>
@@ -68,6 +72,10 @@ export class ServicePanelComponent {
   protected readonly attributes = computed(() =>
     Object.entries(this.service.value()?.attributes ?? {}).map(([k, v]) => [k, String(v)] as const),
   );
+
+  protected trace(id: number): void {
+    this.panels.open({ type: 'trace', id: traceId({ by: 'service', id }) });
+  }
 
   constructor() {
     effect(() => {

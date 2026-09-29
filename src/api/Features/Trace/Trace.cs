@@ -17,6 +17,10 @@ public sealed class TraceRequest
 
     [QueryParam]
     public long? Circuit { get; set; }
+
+    /// <summary>Adds the route's geometry for the map (#19): site points and simplified cable lines.</summary>
+    [QueryParam]
+    public bool Geometry { get; set; }
 }
 
 /// <summary>One terminal on a path, named for people: "RAD-000007 BB-6 1 · bh1" or "K-001521 fiber 3 (A)".</summary>
@@ -29,6 +33,13 @@ public sealed record TracePath(IReadOnlyList<TraceHop> Hops, int StartIndex, boo
 /// <param name="Depth">0 for the circuits carrying the service; +1 for each layer they ride on.</param>
 public sealed record TraceCircuit(ObjectRef Circuit, string Layer, int Depth, long? CarriedCircuitId, IReadOnlyList<TraceHop> Hops);
 
+/// <summary>The route in SWEREF 99 TM, for drawing: site points and cable lines simplified to about 10 m.</summary>
+public sealed record TraceRoute(IReadOnlyList<RouteSite> Sites, IReadOnlyList<RouteCable> Cables, double[] Extent);
+
+public sealed record RouteSite(long Id, double X, double Y);
+
+public sealed record RouteCable(long Id, double[][] Coordinates);
+
 /// <param name="Sites">Sites along the physical route in order, for the map.</param>
 /// <param name="Cables">Cables along the physical route in order, for the map.</param>
 /// <param name="Services">For a terminal: services whose circuits pass it, directly or through circuits above.</param>
@@ -39,7 +50,8 @@ public sealed record TraceResult(
     IReadOnlyList<ObjectRef> Sites,
     IReadOnlyList<ObjectRef> Cables,
     IReadOnlyList<ObjectRef> Services,
-    double ElapsedMs);
+    double ElapsedMs,
+    TraceRoute? Route = null);
 
 public sealed class TraceValidator : Validator<TraceRequest>
 {
@@ -65,6 +77,10 @@ public sealed class TraceEndpoint(GraphHolder holder, NpgsqlDataSource db) : End
             return;
         }
         var result = await RunAsync(graph, db, req.Terminal, req.Service, req.Circuit, ct);
+        if (result is not null && req.Geometry)
+        {
+            result = result with { Route = await RouteAsync(db, result.Sites, result.Cables, ct) };
+        }
         if (result is null)
         {
             await Send.NotFoundAsync(ct);
@@ -144,7 +160,7 @@ public sealed class TraceEndpoint(GraphHolder holder, NpgsqlDataSource db) : End
                 Layer(g.LayerOf(step.Circuit)),
                 step.Depth,
                 step.Parent < 0 ? null : g.CircuitId(step.Parent),
-                [.. hops.Select(n => names.Hop(g.TerminalId(n), null))]);
+                [.. hops.Select((n, i) => names.Hop(g.TerminalId(n), i == 0 ? null : EdgeBetween(g, hops[i - 1], n)))]);
         }).ToList();
 
         // The route on the map: the physical path, or the physical circuits in the order they were reached.
@@ -160,6 +176,66 @@ public sealed class TraceEndpoint(GraphHolder holder, NpgsqlDataSource db) : End
             cables,
             terminal is not null ? [.. services.Select(i => names.Service(g.ServiceId(i)))] : [],
             Math.Round(sw.Elapsed.TotalMilliseconds, 2));
+    }
+
+    /// <summary>How two consecutive hops connect, when they are adjacent in the graph (physical circuits).</summary>
+    private static EdgeKind? EdgeBetween(Cmdb.Graph.Graph g, int from, int to)
+    {
+        var neighbours = g.Neighbours(from);
+        for (var i = 0; i < neighbours.Length; i++)
+        {
+            if (neighbours[i] == to)
+            {
+                return g.NeighbourKinds(from)[i];
+            }
+        }
+        return null;
+    }
+
+    private static async Task<TraceRoute> RouteAsync(NpgsqlDataSource db, IReadOnlyList<ObjectRef> sites, IReadOnlyList<ObjectRef> cables, CancellationToken ct)
+    {
+        await using var conn = await db.OpenConnectionAsync(ct);
+        await using var batch = new NpgsqlBatch(conn)
+        {
+            BatchCommands =
+            {
+                new("SELECT id, ST_X(ST_PointOnSurface(geom)), ST_Y(ST_PointOnSurface(geom)) FROM site WHERE id = ANY($1)")
+                {
+                    Parameters = { new() { Value = sites.Select(s => s.Id).ToArray() } },
+                },
+                new("""
+                    SELECT c.id, ARRAY(SELECT ARRAY[round(ST_X(p.geom)), round(ST_Y(p.geom))] FROM ST_DumpPoints(ST_Simplify(c.geom, 10)) p ORDER BY p.path)
+                    FROM cable c WHERE c.id = ANY($1)
+                    """)
+                {
+                    Parameters = { new() { Value = cables.Select(c => c.Id).ToArray() } },
+                },
+            },
+        };
+        var points = new Dictionary<long, RouteSite>();
+        var lines = new Dictionary<long, RouteCable>();
+        await using (var reader = await batch.ExecuteReaderAsync(ct))
+        {
+            while (await reader.ReadAsync(ct))
+            {
+                points[reader.GetInt64(0)] = new RouteSite(reader.GetInt64(0), reader.GetDouble(1), reader.GetDouble(2));
+            }
+            await reader.NextResultAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                var coordinates = reader.GetFieldValue<double[,]>(1);
+                lines[reader.GetInt64(0)] = new RouteCable(
+                    reader.GetInt64(0),
+                    [.. Enumerable.Range(0, coordinates.GetLength(0)).Select(i => new[] { coordinates[i, 0], coordinates[i, 1] })]);
+            }
+        }
+        // In route order, like the lists they come from.
+        var routeSites = sites.Where(s => points.ContainsKey(s.Id)).Select(s => points[s.Id]).ToList();
+        var routeCables = cables.Where(c => lines.ContainsKey(c.Id)).Select(c => lines[c.Id]).ToList();
+        var xs = routeSites.Select(s => s.X).Concat(routeCables.SelectMany(c => c.Coordinates.Select(p => p[0]))).ToList();
+        var ys = routeSites.Select(s => s.Y).Concat(routeCables.SelectMany(c => c.Coordinates.Select(p => p[1]))).ToList();
+        double[] extent = xs.Count == 0 ? [] : [xs.Min(), ys.Min(), xs.Max(), ys.Max()];
+        return new TraceRoute(routeSites, routeCables, extent);
     }
 
     private static List<ObjectRef> Distinct(IEnumerable<ObjectRef?> refs)
