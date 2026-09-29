@@ -75,12 +75,7 @@ Grundregeln är att allt är nekat tills något uttryckligen beviljas. Omfång b
 - Varje förfrågan får sina omfång från token-grupperna (`UserScope`). Alla SQL-ytor filtrerar på omfångsnycklarna: sök, sitevy, utrustning, kabel, tjänst, krets, hovringskort, avancerad sökning, grannskap, grannskapsgraf och kartplattor. Ett objekt utanför omfånget ger 404, inte 403. Dolda attribut tas bort ur svaren.
 - Grafmotorn får synlighetsmasker (bool per site, kabel, krets och tjänst), byggda ur samma tabeller och cachade per grafinstans och omfångskombination. Spårningen stannar vid gränsen (`TraceEnd.Boundary`) och visar en neutral platshållare utan id eller namn. Påverkan och spårning räknar kretsar och tjänster utanför omfånget (`hiddenServices`, `hidden`) utan att nämna dem.
 - MCP-verktygen går genom samma kod med agentens token. `/api/me` visar gällande omfång, och webben visar dem i verktygsfältet.
-- **Row-level security (steg 2)** är sista spärren, oberoende av applikationens filter:
-  - `site`, `equipment`, `cable`, `circuit` och `service` har RLS med FORCE, så att även ägarrollen omfattas.
-  - Läsning är tillåten när sessionens `cmdb.scopes` är `*` eller innehåller ett omfång som visar raden (samma `scope_*`-tabeller). Skrivning kräver `*` tills planer (#24) ger omfångsbundna skrivningar.
-  - API:t har en anslutningspool per omfångskombination (`ScopedDataSources`), där omfånget sätts som startparameter (`-c cmdb.scopes=…`). Förfrågningar använder `RequestDb` och systemarbete (grafladdning, ändringsflöde, rensning, omräkning, migrering) `SystemDb` (`*`).
-  - Den vanliga `NpgsqlDataSource` i containern ser ingenting, så en glömd pool nekar. Datageneratorn kör med `*` och lyfter FORCE under COPY, eftersom COPY FROM inte tillåts under RLS.
-  - En superanvändare går förbi RLS. Det gäller den lokala utvecklingsmiljön och testcontainern, men inte demon, där `cmdb` äger tabellerna utan att vara superanvändare. Testet `Loads_as_a_role_without_superuser` verifierar RLS med en sådan roll.
+- **Postgres RLS (steg 2) är tillbakadragen** i väntan på beslut (#96, ADR-0012 *Föreslagen*). Under RLS fick sök och kartplattor sekventiella genomsökningar, eftersom deras villkor inte är leakproof. API:t har kvar anslutningspooler per omfångskombination (`ScopedDataSources`, `RequestDb`, `SystemDb`), och den vanliga poolen nekar allt, så RLS kan slås på igen för de roller beslutet gäller.
 - Kvar i #22 (steg 3): klippning av kabelgeometri i kartplattor och dolda koordinater.
 
 ## Databas

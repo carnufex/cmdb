@@ -17,9 +17,6 @@ internal static class Loader
         "connection", "conductor_end", "conductor", "cable", "port", "terminal", "equipment", "location", "site",
     ];
 
-    /// <summary>Tables with row-level security (the RowLevelSecurity migration).</summary>
-    private static readonly string[] RlsTables = ["site", "equipment", "cable", "circuit", "service"];
-
     private static readonly string[] IdentityTables =
         ["site", "location", "equipment", "terminal", "cable", "conductor", "connection", "channel", "service", "circuit"];
 
@@ -37,9 +34,6 @@ internal static class Loader
         // Bulk rows skip the change stream's triggers (#11); one 'reload' entry at the end tells the graph to start over.
         await Exec(conn, "SET cmdb.bulk = 'on'", ct);
         await Exec(conn, "SET cmdb.scopes = '*'", ct);
-        // COPY FROM is not allowed where row-level security applies (#22). The generator owns the tables, so it lifts
-        // FORCE for the load and puts it back afterwards; a superuser is not affected either way.
-        await Exec(conn, string.Concat(RlsTables.Select(t => $"ALTER TABLE {t} NO FORCE ROW LEVEL SECURITY;")), ct);
         if (reset)
         {
             await Exec(conn, $"TRUNCATE {string.Join(", ", NetworkTables)}, graph_change RESTART IDENTITY", ct);
@@ -251,7 +245,6 @@ internal static class Loader
         {
             await Exec(conn, $"SELECT setval(pg_get_serial_sequence('{table}', 'id'), GREATEST((SELECT max(id) FROM {table}), 1))", ct);
         }
-        await Exec(conn, string.Concat(RlsTables.Select(t => $"ALTER TABLE {t} FORCE ROW LEVEL SECURITY;")), ct);
         await Exec(conn, "SET cmdb.bulk = 'off'", ct);
         await Exec(conn, "INSERT INTO graph_change (kind, key) VALUES ('reload', 0)", ct);
         var sw = Stopwatch.StartNew();

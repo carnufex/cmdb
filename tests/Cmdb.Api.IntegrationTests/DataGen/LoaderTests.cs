@@ -69,23 +69,6 @@ public sealed class LoaderTests(ApiFactory factory)
 
         (await Count(db, "service")).ShouldBe(network.Services.Count);
 
-        // Row-level security (#22) is the last barrier for the owner too: no scopes sees nothing, a scope sees its
-        // part, and writes need the whole network.
-        await using var none = As(null);
-        await using var north = As("region-nord");
-        (await Count(none, "site")).ShouldBe(0);
-        (await Count(none, "equipment")).ShouldBe(0);
-        var sites = await Count(north, "site");
-        sites.ShouldBeGreaterThan(0);
-        sites.ShouldBeLessThan(network.Sites.Count);
-        await using (var cmd = db.CreateCommand("SELECT count(*) FROM scope_site WHERE scope_key = 'region-nord'"))
-        {
-            sites.ShouldBe((long)(await cmd.ExecuteScalarAsync(Ct))!);
-        }
-        await using (var update = north.CreateCommand("UPDATE site SET name = name || '!'"))
-        {
-            (await update.ExecuteNonQueryAsync(Ct)).ShouldBe(0);
-        }
     }
 
     [Theory]
