@@ -5,11 +5,13 @@ COPY global.json Directory.Build.props Directory.Packages.props .editorconfig ./
 COPY src/api/Cmdb.Api.csproj src/api/
 COPY src/database/Cmdb.Database.csproj src/database/
 COPY src/catalog/Cmdb.Catalog.csproj src/catalog/
+COPY src/graph/Cmdb.Graph.csproj src/graph/
 RUN dotnet restore src/api/Cmdb.Api.csproj
 COPY catalog/ catalog/
 COPY docs/ docs/
 COPY src/database/ src/database/
 COPY src/catalog/ src/catalog/
+COPY src/graph/ src/graph/
 COPY src/api/ src/api/
 RUN dotnet publish src/api/Cmdb.Api.csproj -c Release -o /app --no-restore
 

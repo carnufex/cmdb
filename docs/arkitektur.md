@@ -16,10 +16,20 @@
 
 ## Grafmotor i minnet
 
-- Hela grafen (~5–10 M noder/kanter) laddas i varje API-podd i kompakt form: heltals-id:n och adjacency i CSR-format i sammanhängande arrayer.
-- Start från ögonblicksbild på några sekunder, därefter inkrementella uppdateringar från ändringsströmmen.
-- Planer är tunna lager ovanpå basgrafen. Att visa en plan är basgraf + delta.
+- Hela grafen laddas i varje API-podd i kompakt form (`src/graph`, #8). Noderna är terminalerna, med täta heltalsindex. Kanterna är kopplingar plus en kant per ledare, lagrade i CSR-format i sammanhängande arrayer. Utrustning, siter, kablar, kretsar (hopp, beroenden) och tjänster ligger i parallella arrayer.
+- Grafen är oföränderlig. Läsare tar den aktuella instansen en gång per operation, och en ny version byts in atomiskt.
+- Vid start läses en ögonblicksbild (fil) om dess dataversion stämmer med databasen, annars laddas grafen med binär `COPY` och en ny ögonblicksbild skrivs. `/health/ready` svarar först när grafen finns, och `GET /api/graph` visar storlek, version och laddtid.
+- Planer är tunna lager ovanpå basgrafen, och att visa en plan är basgraf plus delta.
 - Alla traverseringar (spårning, påverkan, grannskap) sker i minnet. Databasen används för detaljer, skrivningar och geografiska frågor.
+
+Uppmätt i full skala (7,6 M terminaler, 4,3 M kanter, 117 000 kretsar):
+
+| | |
+|---|---|
+| Laddning från databasen | 8,6 s |
+| Laddning från ögonblicksbild | 0,3 s (fil 243 MB) |
+| Grafens arrayer | 232 MB (container i stabilt läge omkring 320 MB) |
+| Uppslag terminal-id → nod | 0,16 µs |
 
 ## Skrivningar, spårbarhet och reproducerbarhet
 

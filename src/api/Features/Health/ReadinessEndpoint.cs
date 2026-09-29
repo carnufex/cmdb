@@ -1,10 +1,11 @@
+using Cmdb.Graph;
 using FastEndpoints;
 using Npgsql;
 
 namespace Cmdb.Api.Features.Health;
 
-/// <summary>Ready to serve traffic: the database answers.</summary>
-public sealed class ReadinessEndpoint(NpgsqlDataSource db) : EndpointWithoutRequest<HealthResponse>
+/// <summary>Ready to serve traffic: the database answers and the network graph is loaded.</summary>
+public sealed class ReadinessEndpoint(NpgsqlDataSource db, GraphHolder graph) : EndpointWithoutRequest<HealthResponse>
 {
     public override void Configure()
     {
@@ -19,6 +20,11 @@ public sealed class ReadinessEndpoint(NpgsqlDataSource db) : EndpointWithoutRequ
         {
             await using var cmd = db.CreateCommand("SELECT 1");
             await cmd.ExecuteScalarAsync(ct);
+            if (!graph.IsReady)
+            {
+                await Send.ResponseAsync(new HealthResponse("graph loading"), StatusCodes.Status503ServiceUnavailable, ct);
+                return;
+            }
             await Send.OkAsync(new HealthResponse("ok"), ct);
         }
         catch (NpgsqlException)

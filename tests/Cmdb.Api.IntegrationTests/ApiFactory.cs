@@ -38,6 +38,8 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         await CmdbDatabase.MigrateAsync(Db);
         await using var context = CmdbDatabase.CreateContext(Db);
         await CatalogSync.SyncAsync(context, TypeCatalog.Embedded);
+        // Starting the host loads the graph in the background; tests begin once it is in place.
+        await Services.GetRequiredService<Cmdb.Graph.GraphHolder>().Ready.WaitAsync(TimeSpan.FromSeconds(60));
     }
 
     /// <summary>Creates an empty database with PostGIS available but no migrations applied.</summary>

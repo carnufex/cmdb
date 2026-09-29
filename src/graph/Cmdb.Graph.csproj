@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Cmdb.Graph</RootNamespace>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Npgsql" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Cmdb.Api" />
+    <InternalsVisibleTo Include="Cmdb.Api.Tests" />
+    <InternalsVisibleTo Include="Cmdb.Api.IntegrationTests" />
+    <InternalsVisibleTo Include="Cmdb.Graph.Benchmarks" />
+  </ItemGroup>
+</Project>

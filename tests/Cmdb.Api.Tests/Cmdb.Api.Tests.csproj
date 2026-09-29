@@ -10,6 +10,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\api\Cmdb.Api.csproj" />
     <ProjectReference Include="..\..\src\datagen\Cmdb.DataGen.csproj" />
+    <ProjectReference Include="..\..\src\graph\Cmdb.Graph.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />

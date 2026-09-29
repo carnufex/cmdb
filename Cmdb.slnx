@@ -12,8 +12,12 @@
   <Folder Name="/src/datagen/">
     <Project Path="src/datagen/Cmdb.DataGen.csproj" />
   </Folder>
+  <Folder Name="/src/graph/">
+    <Project Path="src/graph/Cmdb.Graph.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Cmdb.Api.IntegrationTests/Cmdb.Api.IntegrationTests.csproj" />
     <Project Path="tests/Cmdb.Api.Tests/Cmdb.Api.Tests.csproj" />
+    <Project Path="tests/Cmdb.Graph.Benchmarks/Cmdb.Graph.Benchmarks.csproj" />
   </Folder>
 </Solution>
