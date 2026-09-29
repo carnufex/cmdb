@@ -16,3 +16,4 @@ Nya beslut: kopiera närmaste ADR, öka numret och sätt status **Föreslagen**.
 | [0010](0010-kartbakgrund-esri-i-poc.md) | Kartbakgrund från Esri i POC:en (ersätter bakgrundsdelen av 0004) |
 | [0011](0011-agentic-first-mcp.md) | Agentic-first: MCP-server i API:t, agenter som vanliga konsumenter |
 | [0012](0012-rls-for-direkt-databasatkomst.md) | Var Postgres RLS gäller (direkt databasåtkomst, #96) |
+| [0013](0013-lagring-av-historik-och-loggar.md) | Lagring av historik, operationslogg och läslogg (**Föreslagen**, #101) |
