@@ -30,9 +30,11 @@ internal static class Loader
         }
 
         await using var conn = await db.OpenConnectionAsync(ct);
+        // Bulk rows skip the change stream's triggers (#11); one 'reload' entry at the end tells the graph to start over.
+        await Exec(conn, "SET cmdb.bulk = 'on'", ct);
         if (reset)
         {
-            await Exec(conn, $"TRUNCATE {string.Join(", ", NetworkTables)} RESTART IDENTITY", ct);
+            await Exec(conn, $"TRUNCATE {string.Join(", ", NetworkTables)}, graph_change RESTART IDENTITY", ct);
         }
         else if (await Scalar<bool>(conn, "SELECT EXISTS (SELECT 1 FROM site)", ct))
         {
@@ -241,6 +243,8 @@ internal static class Loader
         {
             await Exec(conn, $"SELECT setval(pg_get_serial_sequence('{table}', 'id'), GREATEST((SELECT max(id) FROM {table}), 1))", ct);
         }
+        await Exec(conn, "SET cmdb.bulk = 'off'", ct);
+        await Exec(conn, "INSERT INTO graph_change (kind, key) VALUES ('reload', 0)", ct);
         var sw = Stopwatch.StartNew();
         await Exec(conn, "ANALYZE", ct);
         log.WriteLine($"  analyze {sw.Elapsed.TotalSeconds,6:0.0} s");

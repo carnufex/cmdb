@@ -6,11 +6,12 @@ namespace Cmdb.Graph;
 public static class GraphLoader
 {
     // Enum values as their position in the Postgres enum, which is also the C# enum value.
-    private static string L(string column) => $"(array_position(enum_range(NULL::lifecycle_state), {column}) - 1)::smallint";
+    internal static string L(string column) => $"(array_position(enum_range(NULL::lifecycle_state), {column}) - 1)::smallint";
 
     public static async Task<Graph> LoadAsync(NpgsqlDataSource db, CancellationToken ct = default)
     {
-        var version = await DataVersionAsync(db, ct);
+        // Taken before reading: changes committed during the load are read again from the change stream (#11).
+        var version = await PostgresGraphChangeFeed.CurrentPositionAsync(db, ct);
         var data = new GraphData();
 
         await Task.WhenAll(
@@ -72,23 +73,6 @@ public static class GraphLoader
             }, ct));
 
         return GraphBuilder.Build(data, version);
-    }
-
-    /// <summary>
-    /// A cheap fingerprint of the data the graph is built from: row counts and highest ids. Until the change stream
-    /// (#11) gives a real sequence, this decides whether a snapshot file is still valid.
-    /// </summary>
-    public static async Task<string> DataVersionAsync(NpgsqlDataSource db, CancellationToken ct = default)
-    {
-        await using var cmd = db.CreateCommand("""
-            SELECT concat_ws('.',
-                (SELECT count(*) FROM terminal), (SELECT max(id) FROM terminal),
-                (SELECT count(*) FROM connection WHERE valid_to IS NULL), (SELECT max(id) FROM connection),
-                (SELECT count(*) FROM equipment), (SELECT max(id) FROM equipment),
-                (SELECT count(*) FROM circuit_hop), (SELECT max(id) FROM circuit),
-                (SELECT count(*) FROM circuit_dependency), (SELECT count(*) FROM service_circuit))
-            """);
-        return (string)(await cmd.ExecuteScalarAsync(ct))!;
     }
 
     private static async Task Export(NpgsqlDataSource db, string query, Action<NpgsqlBinaryExporter> readRow, CancellationToken ct)

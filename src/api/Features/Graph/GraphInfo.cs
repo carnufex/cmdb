@@ -13,9 +13,14 @@ public sealed record GraphInfoResponse(
     long ManagedBytes,
     string? Source,
     double LoadSeconds,
-    DateTimeOffset? LoadedAt);
+    DateTimeOffset? LoadedAt,
+    string? Position,
+    GraphChangeInfoResponse? LastChange);
 
-/// <summary>What the in-memory graph holds and how it was loaded (#8).</summary>
+/// <param name="Milliseconds">Reading the changed rows, patching and rebuilding the graph.</param>
+public sealed record GraphChangeInfoResponse(int Changes, int Keys, double Milliseconds, DateTimeOffset AppliedAt);
+
+/// <summary>What the in-memory graph holds, how it was loaded (#8) and how far it has followed the change stream (#11).</summary>
 public sealed class GraphInfoEndpoint(GraphHolder holder) : EndpointWithoutRequest<GraphInfoResponse>
 {
     public override void Configure() => Get("/graph");
@@ -34,6 +39,8 @@ public sealed class GraphInfoEndpoint(GraphHolder holder) : EndpointWithoutReque
             info?.ManagedBytes ?? 0,
             info?.Source,
             Math.Round(info?.Duration.TotalSeconds ?? 0, 2),
-            info?.LoadedAt), ct);
+            info?.LoadedAt,
+            holder.Position,
+            holder.LastChange is { } c ? new GraphChangeInfoResponse(c.Changes, c.Keys, Math.Round(c.Duration.TotalMilliseconds, 1), c.AppliedAt) : null), ct);
     }
 }

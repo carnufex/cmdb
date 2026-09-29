@@ -77,6 +77,55 @@ public sealed class GraphImpactTests
     }
 
     [Fact]
+    public void The_rows_recovered_from_a_graph_build_the_same_graph()
+    {
+        var g = Network();
+
+        var again = GraphBuilder.Build(GraphData.From(g), g.Version);
+
+        Bytes(again).ShouldBe(Bytes(g));
+    }
+
+    [Fact]
+    public void Replacing_a_key_swaps_its_rows_and_keeps_the_rest()
+    {
+        var g = Network();
+        var data = GraphData.From(g);
+        var keys = new GraphKeys();
+        keys.Circuits.Add(4);
+        keys.Terminals.Add(3);
+        var current = new GraphData();
+        current.CircuitIds.Add(4);
+        current.CircuitLayers.Add((byte)CircuitLayer.Logical);
+        current.HopCircuits.AddRange([4, 4]);
+        current.HopTerminals.AddRange([1, 3]);
+        current.DependencyCircuits.Add(4);
+        current.DependencyCarriers.Add(3); // no longer rides on 2
+        current.ConnectionA.Add(2);
+        current.ConnectionB.Add(3);
+        current.ConnectionKinds.Add((byte)EdgeKind.Patch);
+        current.ConnectionLifecycles.Add((byte)Lifecycle.Planned);
+
+        data.Replace(keys, current);
+        var changed = GraphBuilder.Build(data, "v2");
+
+        changed.TryGetCircuit(4, out var c4);
+        changed.HopsOf(c4).ToArray().Select(changed.TerminalId).ShouldBe([1L, 3]);
+        changed.CarriersOf(c4).ToArray().Select(changed.CircuitId).ShouldBe([3L]);
+        changed.TryGetService(900, out _).ShouldBeFalse(); // its only link, to circuit 4, is not in the new rows
+        changed.TryGetNode(3, out var port3);
+        changed.Neighbours(port3).ToArray().Select(changed.TerminalId).ShouldBe([2L]);
+        changed.EdgeCount.ShouldBe(g.EdgeCount + 1);
+    }
+
+    private static byte[] Bytes(Cmdb.Graph.Graph g)
+    {
+        using var stream = new MemoryStream();
+        GraphSnapshot.Write(g, stream);
+        return stream.ToArray();
+    }
+
+    [Fact]
     public void Ownership_indexes_survive_a_snapshot_round_trip()
     {
         var g = Network();
