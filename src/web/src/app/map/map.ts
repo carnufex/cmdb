@@ -23,7 +23,7 @@ import LineString from 'ol/geom/LineString';
 import Polygon from 'ol/geom/Polygon';
 import Draw from 'ol/interaction/Draw';
 import { Geometry } from 'ol/geom';
-import { Circle, Fill, Stroke, Style } from 'ol/style';
+import { Circle, Fill, RegularShape, Stroke, Style, Text } from 'ol/style';
 import TileState from 'ol/TileState';
 import Attribution from 'ol/control/Attribution';
 import XYZ from 'ol/source/XYZ';
@@ -45,7 +45,7 @@ import {
 } from './map-grid';
 import { createBasemap, esriTileUrl, parseBasemap } from './map-basemap';
 import { createStyler, Palette, readPalette } from './map-style';
-import { MapView, PlannedObjects, Route } from './map-view';
+import { MapView, Operations, PlannedObjects, Route } from './map-view';
 
 interface Hover {
   x: number;
@@ -85,7 +85,10 @@ export class MapComponent {
   private marks?: VectorLayer<VectorSource<Feature<OlPoint>>>;
   private route?: VectorLayer<VectorSource<Feature<Geometry>>>;
   private planned?: VectorLayer<VectorSource<Feature<Geometry>>>;
+  private operations?: VectorLayer<VectorSource<Feature<Geometry>>>;
+  private liveKey = '';
   private lassoDraw?: Draw;
+  protected readonly operationsShown = signal(false);
   private palette?: Palette;
 
   constructor() {
@@ -146,6 +149,13 @@ export class MapComponent {
         this.showPlanned(planned);
       }
     });
+    // The operations layer (#156): incidents, work, risks, and the live call's fault and what it takes down.
+    effect(() => {
+      const operations = this.mapView.operations();
+      if (this.operations && this.map) {
+        this.showOperations(operations);
+      }
+    });
     // Other parts of the app (search, panels) ask the map to go somewhere.
     effect(() => {
       const focus = this.mapView.focusRequest();
@@ -172,6 +182,7 @@ export class MapComponent {
       this.marks?.changed();
       this.route?.changed();
       this.planned?.changed();
+      this.operations?.changed();
     };
 
     this.network = new VectorTileLayer({
@@ -203,10 +214,16 @@ export class MapComponent {
       style: (f) => this.plannedStyle(f),
       zIndex: 15,
     });
+    this.operations = new VectorLayer({
+      source: new VectorSource<Feature<Geometry>>(),
+      style: (f) => this.operationsStyle(f),
+      zIndex: 18,
+    });
     const layers: (TileLayer | VectorTileLayer | VectorLayer)[] = [
       this.network,
       this.marks,
       this.planned,
+      this.operations,
       this.route,
     ];
     if (parseBasemap(this.config.basemap) === 'esri') {
@@ -233,6 +250,7 @@ export class MapComponent {
     }
     this.showRoute(this.mapView.route());
     this.showPlanned(this.mapView.planned());
+    this.showOperations(this.mapView.operations());
     const reportCenter = () => {
       const [x, y] = this.map!.getView().getCenter() ?? [0, 0];
       this.mapView.center.set({ x, y });
@@ -267,6 +285,14 @@ export class MapComponent {
         // Drawing a cable in a plan (#26): a site click picks the site, production or planned.
         if (feature && (feature.get('planned') === 'site' || feature.get('layer') === 'sites')) {
           this.mapView.pick(String(feature.get('code')));
+        }
+        return;
+      }
+      if (feature?.get('ops')) {
+        // The operations layer (#156): incidents, risks and the live fault open their site.
+        const site = feature.get('siteId') as number | undefined;
+        if (site) {
+          this.panels.open({ type: 'site', id: String(site) }, { replace: true });
         }
         return;
       }
@@ -401,6 +427,188 @@ export class MapComponent {
     ]);
   }
 
+  private operationsStyleCache?: { key: string; styles: Record<string, Style | Style[]> };
+
+  /** Colour says status here too: red is down, amber is at risk or under work. */
+  // Canvas colours: a token's #rrggbb with an alpha byte (canvas does not take color-mix()).
+  private operationsStyle(feature: FeatureLike): Style | Style[] {
+    const palette = (this.palette ??= readPalette(this.host.nativeElement));
+    const key = `${palette.conflict}|${palette.decommissioning}|${palette.bg}`;
+    if (this.operationsStyleCache?.key !== key) {
+      const red = palette.conflict;
+      const amber = palette.decommissioning;
+      const halo = new Stroke({ color: palette.bg, width: 2 });
+      this.operationsStyleCache = {
+        key,
+        styles: {
+          work: new Style({
+            fill: new Fill({ color: alpha(amber, 0.22) }),
+            stroke: new Stroke({ color: amber, width: 2 }),
+          }),
+          'work-planned': new Style({
+            fill: new Fill({ color: alpha(amber, 0.1) }),
+            stroke: new Stroke({ color: amber, width: 2, lineDash: [6, 5] }),
+          }),
+          risk: new Style({
+            image: new RegularShape({
+              points: 3,
+              radius: 8,
+              fill: new Fill({ color: amber }),
+              stroke: halo,
+            }),
+            zIndex: 2,
+          }),
+          incident: new Style({
+            image: new Circle({ radius: 7, fill: new Fill({ color: red }), stroke: halo }),
+            zIndex: 3,
+          }),
+          down: [
+            new Style({ stroke: new Stroke({ color: palette.bg, width: 6 }) }),
+            new Style({ stroke: new Stroke({ color: red, width: 3 }) }),
+          ],
+          'down-site': new Style({
+            image: new Circle({ radius: 3.5, fill: new Fill({ color: red }), stroke: halo }),
+            zIndex: 1,
+          }),
+          false: [
+            new Style({ stroke: new Stroke({ color: palette.bg, width: 6 }) }),
+            new Style({ stroke: new Stroke({ color: amber, width: 3, lineDash: [8, 6] }) }),
+          ],
+          'false-site': new Style({
+            image: new Circle({ radius: 3.5, fill: new Fill({ color: amber }), stroke: halo }),
+            zIndex: 1,
+          }),
+          fault: new Style({
+            image: new Circle({
+              radius: 13,
+              fill: new Fill({ color: alpha(red, 0.25) }),
+              stroke: new Stroke({ color: red, width: 3 }),
+            }),
+            zIndex: 4,
+          }),
+        },
+      };
+    }
+    const kind = feature.get('ops') as string;
+    const style = this.operationsStyleCache.styles[kind];
+    const label = feature.get('label') as string | undefined;
+    if (!label || Array.isArray(style)) {
+      return style;
+    }
+    // Labels are per feature; the shared style keeps its symbol.
+    return [
+      style,
+      new Style({
+        text: new Text({
+          text: label,
+          offsetY: kind === 'fault' ? -24 : -16,
+          font: '600 12px Inter Variable, system-ui, sans-serif',
+          fill: new Fill({
+            color:
+              kind === 'fault' || kind === 'incident' ? palette.conflict : palette.decommissioning,
+          }),
+          stroke: new Stroke({ color: palette.bg, width: 4 }),
+        }),
+        zIndex: 5,
+      }),
+    ];
+  }
+
+  /** Draws the operations layer and, when the live call moves to a new object, frames it. */
+  private showOperations(operations: Operations | null): void {
+    const source = this.operations!.getSource()!;
+    source.clear(true);
+    this.operationsShown.set(operations !== null);
+    if (!operations) {
+      this.liveKey = '';
+      return;
+    }
+    const point = (x: number, y: number, props: Record<string, unknown>) => {
+      const f = new Feature<Geometry>(new OlPoint([x, y]));
+      f.setProperties(props);
+      return f;
+    };
+    const line = (coordinates: readonly (readonly number[])[], ops: string) => {
+      const f = new Feature<Geometry>(new LineString(coordinates.map((p) => [p[0], p[1]])));
+      f.set('ops', ops);
+      return f;
+    };
+    const features: Feature<Geometry>[] = [
+      ...operations.works.map((w) => {
+        const f = new Feature<Geometry>(new Polygon([w.ring.map((p) => [p[0], p[1]])]));
+        f.setProperties({
+          ops: w.ongoing ? 'work' : 'work-planned',
+          code: w.ongoing ? 'Pågående arbete' : 'Planerat arbete',
+          name: `${w.title}, ${w.contractor}`,
+        });
+        return f;
+      }),
+      ...operations.risks.map((r) =>
+        point(r.site.x, r.site.y, { ops: 'risk', code: 'Risk', name: r.title, siteId: r.site.id }),
+      ),
+    ];
+    const live = operations.live;
+    if (live?.impact) {
+      for (const [route, kind] of [
+        [live.impact.falseRedundancy, 'false'],
+        [live.impact.down, 'down'],
+      ] as const) {
+        features.push(...route.cables.map((c) => line(c.coordinates, kind)));
+        features.push(...route.sites.map((s) => point(s.x, s.y, { ops: `${kind}-site` })));
+      }
+    }
+    features.push(
+      ...operations.incidents.map((i) =>
+        point(i.site.x, i.site.y, {
+          ops: 'incident',
+          code: `${i.number} · ${i.priority}`,
+          name: i.site.name,
+          label: i.priority,
+          siteId: i.site.id,
+        }),
+      ),
+    );
+    if (live) {
+      features.push(
+        point(live.site.x, live.site.y, {
+          ops: 'fault',
+          code: live.site.code,
+          name: live.site.name,
+          label: live.impact ? `${live.site.name} · ${live.impact.priority}` : live.site.name,
+          siteId: live.site.id,
+        }),
+      );
+    }
+    source.addFeatures(features);
+
+    // Follow the call: frame the fault and what it takes down, or fly to the station it is about.
+    const key = live
+      ? `${live.conversationId}|${live.reference}|${live.impact ? 'impact' : 'site'}`
+      : '';
+    if (live && key !== this.liveKey) {
+      const extent = live.impact?.down.extent.length === 4 ? live.impact.down.extent : null;
+      if (extent) {
+        const [minX, minY, maxX, maxY] = extent;
+        this.map!.getView().fit(
+          [
+            Math.min(minX, live.site.x) - 3_000,
+            Math.min(minY, live.site.y) - 3_000,
+            Math.max(maxX, live.site.x) + 3_000,
+            Math.max(maxY, live.site.y) + 3_000,
+          ],
+          { padding: [64, 64, 64, 64], duration: 800, maxZoom: 11 },
+        );
+      } else {
+        this.map!.getView().animate({
+          center: [live.site.x, live.site.y],
+          zoom: 10,
+          duration: 800,
+        });
+      }
+    }
+    this.liveKey = key;
+  }
+
   private routeStyleCache?: { key: string; line: Style[]; point: Style };
 
   private routeStyle(feature: FeatureLike): Style | Style[] {
@@ -519,4 +727,14 @@ export class MapComponent {
       })();
     });
   }
+}
+
+/** A #rrggbb token with transparency, for fills drawn on the canvas. */
+function alpha(hex: string, opacity: number): string {
+  return /^#[0-9a-f]{6}$/i.test(hex)
+    ? hex +
+        Math.round(opacity * 255)
+          .toString(16)
+          .padStart(2, '0')
+    : hex;
 }

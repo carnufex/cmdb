@@ -10,6 +10,7 @@ const palette: Palette = {
   construction: '#0088ff',
   inService: '#00aa55',
   decommissioning: '#ffaa00',
+  conflict: '#ff3300',
 };
 
 describe('map style', () => {

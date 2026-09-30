@@ -34,6 +34,52 @@ export interface PlannedObjects {
   cables: readonly { id: number; code: string; coordinates: readonly (readonly number[])[] }[];
 }
 
+interface MapPoint {
+  id: number;
+  code: string;
+  name: string;
+  x: number;
+  y: number;
+}
+
+interface RouteGeometry {
+  sites: readonly { id: number; x: number; y: number }[];
+  cables: readonly { id: number; coordinates: readonly (readonly number[])[] }[];
+  extent: readonly number[];
+}
+
+/**
+ * The operations layer (#156): open incidents, work areas, risks, and what the latest voice call is about with the
+ * routes its fault takes down, so the map follows a call while it happens.
+ */
+export interface Operations {
+  incidents: readonly { number: string; priority: string; site: MapPoint; createdAt: string }[];
+  live: {
+    tool: string;
+    reference: string;
+    conversationId: string;
+    at: string;
+    site: MapPoint;
+    impact: {
+      priority: string;
+      affected: number;
+      servicesDown: number;
+      down: RouteGeometry;
+      falseRedundancy: RouteGeometry;
+    } | null;
+  } | null;
+  works: readonly {
+    id: number;
+    title: string;
+    contractor: string;
+    startsAt: string;
+    endsAt: string;
+    ongoing: boolean;
+    ring: readonly (readonly number[])[];
+  }[];
+  risks: readonly { id: string; kind: string; title: string; site: MapPoint }[];
+}
+
 /**
  * What the map is looking at, shared with other parts of the app: search ranks hits near the centre, and
  * anything can ask the map to go somewhere or mark a set of sites.
@@ -45,6 +91,7 @@ export class MapView {
   readonly highlight = signal<Highlight | null>(null);
   readonly route = signal<Route | null>(null);
   readonly planned = signal<PlannedObjects | null>(null);
+  readonly operations = signal<Operations | null>(null);
 
   /**
    * While true, clicking a site in the map picks it (#26, drawing a cable in a plan) instead of opening its panel; the

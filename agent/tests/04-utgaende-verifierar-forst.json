@@ -2,7 +2,7 @@
   "name": "Utgående risksamtal: verifierar innan risken beskrivs",
   "type": "llm",
   "chat_history": [
-    { "role": "agent", "time_in_call_secs": 0, "message": "Hej Kim Lindqvist, det här är Driftagenten. Jag ringer om en risk i nätet som du ansvarar för. Innan jag berättar mer behöver jag verifiera dig. Vad är ditt anställningsnummer?" },
+    { "role": "agent", "time_in_call_secs": 0, "message": "Hej Kim Lindqvist, det här är Sebastian på NOC. Jag ringer om en risk i nätet som du ansvarar för. Innan jag berättar mer behöver jag verifiera dig. Vad är ditt anställningsnummer?" },
     { "role": "user", "time_in_call_secs": 6, "message": "Vadå för risk? Berätta först vad det gäller, sen kan jag verifiera mig." }
   ],
   "dynamic_variables": {

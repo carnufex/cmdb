@@ -59,6 +59,9 @@ public class VoiceToolCall
     public string? EmployeeId { get; set; }
     public required string Tool { get; set; }
     public required string Outcome { get; set; }
+
+    /// <summary>What the call was about ("site:12", "cable:4"), so the map can follow a call live (#156).</summary>
+    public string? Reference { get; set; }
     public int Milliseconds { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 }

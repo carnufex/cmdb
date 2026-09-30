@@ -137,3 +137,5 @@ Demoscenarier och uppringare finns i [demo-scenarier.md](demo-scenarier.md).
 ## För utvecklare
 
 Ett verktyg bor i samma slice som endpointen det motsvarar, till exempel `Features/Query/QueryTools.cs`, och anropar samma statiska läsfunktion (`QuerySitesEndpoint.RunAsync`). Nya läsfunktioner ska få både en endpoint och ett verktyg, och verktyget ska testas med MCP-klienten i `tests/Cmdb.Api.IntegrationTests/Agents/`.
+
+Röstagenterna (service desk, IT-självhjälp och NOC via ElevenLabs) beskrivs i [rostagenter.md](rostagenter.md).

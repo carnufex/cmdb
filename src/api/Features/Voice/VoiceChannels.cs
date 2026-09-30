@@ -39,14 +39,16 @@ public static class VoiceChannels
 internal static class VoiceAudit
 {
     public static async Task<T> RunAsync<T>(SystemDb system, ClaimsPrincipal user, string tool, Func<Task<T>> run,
-        Func<T, string>? outcome = null, string? employeeId = null)
+        Func<T, string>? outcome = null, string? employeeId = null, Func<T, string?>? reference = null)
     {
         var sw = Stopwatch.StartNew();
         var result = "error";
+        string? about = null;
         try
         {
             var value = await run();
             result = outcome?.Invoke(value) ?? "ok";
+            about = reference?.Invoke(value);
             return value;
         }
         catch (McpException)
@@ -57,13 +59,14 @@ internal static class VoiceAudit
         finally
         {
             await using var cmd = system.Source.CreateCommand("""
-                INSERT INTO voice_tool_call (conversation_id, employee_id, tool, outcome, milliseconds) VALUES ($1, $2, $3, $4, $5)
+                INSERT INTO voice_tool_call (conversation_id, employee_id, tool, outcome, milliseconds, reference) VALUES ($1, $2, $3, $4, $5, $6)
                 """);
             cmd.Parameters.Add(new() { Value = user.FindFirstValue(VoiceClaims.Conversation) ?? "unknown" });
             cmd.Parameters.Add(new() { Value = (object?)(user.FindFirstValue(VoiceClaims.Employee) ?? employeeId) ?? DBNull.Value });
             cmd.Parameters.Add(new() { Value = tool });
             cmd.Parameters.Add(new() { Value = result });
             cmd.Parameters.Add(new() { Value = (int)sw.ElapsedMilliseconds });
+            cmd.Parameters.Add(new() { Value = (object?)about ?? DBNull.Value });
             await cmd.ExecuteNonQueryAsync(CancellationToken.None);
         }
     }

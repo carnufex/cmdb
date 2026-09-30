@@ -10,6 +10,7 @@ export interface Palette {
   construction: string;
   inService: string;
   decommissioning: string;
+  conflict: string;
 }
 
 export function readPalette(root: HTMLElement): Palette {
@@ -23,6 +24,7 @@ export function readPalette(root: HTMLElement): Palette {
     construction: v('--status-construction'),
     inService: v('--status-in-service'),
     decommissioning: v('--status-decommissioning'),
+    conflict: v('--status-conflict'),
   };
 }
 
