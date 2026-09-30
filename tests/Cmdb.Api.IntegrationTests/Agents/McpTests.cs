@@ -26,7 +26,9 @@ public sealed class McpTests(ApiFactory factory)
         tools.Where(t => t.ProtocolTool.Annotations!.ReadOnlyHint != true).Select(t => t.Name).Order()
             .ShouldBe(["add_to_plan", "connect_ports", "create_plan", "create_site_from_template", "splice_ports_to_cable", "terminate_cable"]);
         tools.ShouldAllBe(t => t.ProtocolTool.Annotations!.DestructiveHint != true);
-        resources.Select(r => r.Uri).ShouldBe(["cmdb://docs/domanmodell", "cmdb://docs/plan", "cmdb://docs/arkitektur"], ignoreOrder: true);
+        resources.Select(r => r.Uri).ShouldBe(["cmdb://docs/domanmodell", "cmdb://docs/plan", "cmdb://docs/arkitektur", "cmdb://changelog"], ignoreOrder: true);
+        var changelog = await client.ReadResourceAsync("cmdb://changelog", cancellationToken: Ct);
+        ((ModelContextProtocol.Protocol.TextResourceContents)changelog.Contents[0]).Text.ShouldContain("# Händelselogg");
         prompts.Select(p => p.Name).ShouldBe(["cable_cut_impact", "find_sites_by_equipment"], ignoreOrder: true);
         client.ServerInstructions.ShouldNotBeNull().ShouldContain("SYNTHETIC");
     }

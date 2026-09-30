@@ -14,6 +14,7 @@ import { TreePanelComponent } from './tree/tree-panel';
 import { ActivePlan } from './plans/active-plan';
 import { PlanPanelComponent } from './plans/plan-panel';
 import { GridPanelComponent } from './grid/grid-panel';
+import { ChangelogPanelComponent, ChangelogStore } from './changelog/changelog';
 
 /** The user as the API sees them (GET /api/me). */
 export interface Me {
@@ -38,6 +39,7 @@ export interface Me {
     TreePanelComponent,
     PlanPanelComponent,
     GridPanelComponent,
+    ChangelogPanelComponent,
   ],
   templateUrl: './app.html',
   styleUrl: './app.scss',
@@ -49,6 +51,7 @@ export class App {
   protected readonly panels = inject(PanelStack);
   protected readonly tools = inject(Tools);
   protected readonly plan = inject(ActivePlan);
+  protected readonly changelog = inject(ChangelogStore);
   protected readonly me = httpResource<Me>(() =>
     this.auth.isAuthenticated() ? '/api/me' : undefined,
   );

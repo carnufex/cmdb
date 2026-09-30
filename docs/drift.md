@@ -88,6 +88,16 @@ scripts/perf.sh --comment 13             # posta rapporten i ett issue
 - Rapporten hamnar i `artifacts/perf/<tid>-<mål>/summary.md` och `summary.json` (ignoreras av git).
 - En rad över budget, eller misslyckade anrop, markeras med ❌ och ger felkod. Kör mätningen efter varje driftsättning som rör API:t eller databasen, och kommentera rapporten i issuet.
 
+## Händelselogg
+
+Användarna ser nyheter under *Nyheter* i verktygsfältet (#82). Posterna ligger i `changelog/entries.json` och synkas till databasen i migreringssteget.
+
+1. `scripts/deploy.sh --deploy` skriver underlaget för det som just rullades ut till `artifacts/changelog/<tagg>.md`. Underlaget är prompten i `docs/changelog-prompt.md` plus issue, PR och berörda delar per commit. Det kan också köras för hand: `scripts/changelog.sh <från-sha> <till-sha>`, och med `--generate` om `claude` finns.
+2. Agenten som driftsätter skriver posterna med prompten och lägger dem i `changelog/entries.json` med `"published": false`.
+3. En människa granskar texten i PR:en och sätter `"published": true`. Posten syns efter nästa utrullning och räknas som oläst för alla som inte öppnat *Nyheter* sedan dess.
+
+Agenter läser samma logg som MCP-resursen `cmdb://changelog` eller via `GET /api/changelog`.
+
 ## Rollback
 
 Återställ homelab-commiten `cmdb: deploy sha-…` med `git revert` och pusha. ArgoCD rullar tillbaka till förra digesten. Migreringar backas inte, vilket är skälet till regeln om bakåtkompatibla migreringar ovan.

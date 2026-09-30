@@ -12,6 +12,9 @@ public class UserPreference
     /// <summary>dark or light.</summary>
     public string Theme { get; set; } = "dark";
 
+    /// <summary>When the user last opened the change log (#82); later posts are unread.</summary>
+    public DateTimeOffset? ChangelogReadAt { get; set; }
+
     public DateTimeOffset UpdatedAt { get; set; }
 }
 

@@ -74,6 +74,8 @@ git -C "$homelab" diff --quiet -- kubernetes/applications/cmdb \
   || die "Ocommittade ändringar i homelab under kubernetes/applications/cmdb."
 hl_branch=$(git -C "$homelab" rev-parse --abbrev-ref HEAD)
 git -C "$homelab" pull -q --rebase --autostash origin "$hl_branch"
+# The deployment being replaced, for the change log's range (#82).
+previous=$(grep -oE "cmdb-api:sha-[0-9a-f]+" "$manifest" | head -1 | sed 's/.*sha-//' || true)
 sed -i -E \
   -e "s#image: $REGISTRY/cmdb-api[:@][^[:space:]]*#image: $api_ref#" \
   -e "s#image: $REGISTRY/cmdb-web[:@][^[:space:]]*#image: $web_ref#" \
@@ -102,4 +104,13 @@ if [[ $WAIT -eq 1 ]]; then
   code=$(curl -s -o /dev/null -w '%{http_code}' https://cmdb.rosenvall.se/config.json)
   [[ "$code" == 200 ]] || die "https://cmdb.rosenvall.se/config.json svarade $code."
   echo "https://cmdb.rosenvall.se kör $tag."
+fi
+
+# Underlaget till händelseloggen (#82) för det som just rullades ut: skriv posterna med prompten och lägg dem i
+# changelog/entries.json i en PR.
+if [[ -n "${previous:-}" && "$previous" != "$sha" ]]; then
+  mkdir -p artifacts/changelog
+  if scripts/changelog.sh "$previous" "$sha" > "artifacts/changelog/$tag.md" 2>/dev/null; then
+    echo "Underlag till händelseloggen: artifacts/changelog/$tag.md (sha-$previous … $tag)"
+  fi
 fi
