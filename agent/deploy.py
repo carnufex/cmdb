@@ -25,12 +25,14 @@ STATE = HERE / "agent.json"
 API = "https://api.elevenlabs.io"
 
 NAME = "CMDB Driftagent"
-LLM = "claude-haiku-4-5"
+LLM = "deepseek-v41-flash"  # #147: trying it instead of claude-haiku-4-5; no reasoning, for latency
 TTS_MODEL = "eleven_v4_turbo"
 # "Sanna Hartfield - Direct and Natural": Swedish, Stockholm, conversational (shared library).
 VOICE = {"public_owner_id": "3d1fa6a5595e0a31fff8d7c1a2f2794b91ca87ddd200066dfbdfcef662a65a1b", "voice_id": "4xkUqaR9MYOJHoaC1Nak",
          "name": "Sanna (Driftagent)"}
 FIRST_MESSAGE = "Driftagenten, hej. Vilken station gäller det, och vad ser du?"
+# English as an extra language (#147): language_detection switches when the caller speaks English.
+FIRST_MESSAGE_EN = "Operations agent, hello. Which station is it about, and what are you seeing?"
 KEYWORDS = ["Lingonåsen", "aggregering", "aggregeringsnod", "ODF", "likriktare", "patch", "skarv", "fiberbrott", "P1", "NOC",
             "anställningsnummer", "verifieringskod"]
 
@@ -169,6 +171,7 @@ def agent_body(voice_id: str, mcp_id: str, kb: list[dict], test_ids: list[str]) 
                 "prompt": {
                     "prompt": (HERE / "prompt.md").read_text(encoding="utf-8"),
                     "llm": LLM,
+                    "reasoning_effort": "none",
                     "temperature": 0.2,
                     "mcp_server_ids": [mcp_id],
                     "knowledge_base": kb,
@@ -176,9 +179,13 @@ def agent_body(voice_id: str, mcp_id: str, kb: list[dict], test_ids: list[str]) 
                     "built_in_tools": {"end_call": {
                         "name": "end_call", "description": "Avsluta samtalet när uppringaren säger att hen är klar.",
                         "type": "system", "params": {"system_tool_type": "end_call"},
+                    }, "language_detection": {
+                        "name": "language_detection", "description": "Byt språk när uppringaren talar engelska (eller svenska igen).",
+                        "type": "system", "params": {"system_tool_type": "language_detection"},
                     }},
                 },
             },
+            "language_presets": {"en": {"overrides": {"agent": {"first_message": FIRST_MESSAGE_EN, "language": "en"}}}},
             "tts": {"model_id": TTS_MODEL, "voice_id": voice_id, "optimize_streaming_latency": 3},
             "asr": {"keywords": KEYWORDS, "quality": "high"},
             "conversation": {"max_duration_seconds": 600},

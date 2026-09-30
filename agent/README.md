@@ -13,8 +13,8 @@ Röstagenten för felanmälan (epic #130, ADR-0015). Här finns allt agenten bes
 | `run_tests.py` | Kör agenttesterna, avslutar med kod 1 vid fel |
 
 ## Inställningar
-- **Röst:** "Sanna Hartfield" (svensk, Stockholm), TTS-modell `eleven_v4_turbo`, språk `sv`.
-- **LLM:** `claude-haiku-4-5`, temperatur 0,2.
+- **Röst:** "Sanna Hartfield" (svensk, Stockholm), TTS-modell `eleven_v4_turbo`, språk `sv` med `en` som extra språk (#147): `language_detection` byter till engelska när uppringaren talar engelska.
+- **LLM:** `deepseek-v41-flash` utan resonemang (`reasoning_effort: none`), temperatur 0,2. Provas i stället för `claude-haiku-4-5` (#147); byt tillbaka i `LLM` i `deploy.py`.
 - **MCP:** `https://cmdb.rosenvall.se/voice/mcp`.
   - Hemligheten ligger som en hemlighet i arbetsytan (`cmdb-voice-secret`, värdet från Bitwarden `CMDB_VOICE_SECRET`).
   - Samtals-id:t skickas i `X-Conversation-Id` (`system__conversation_id`).
