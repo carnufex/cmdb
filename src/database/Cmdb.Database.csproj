@@ -13,4 +13,8 @@
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL.NetTopologySuite" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- The user-facing change log (#82) is reviewed data in the repository root, synced with the migrations. -->
+    <EmbeddedResource Include="..\..\changelog\entries.json" LogicalName="changelog/entries.json" />
+  </ItemGroup>
 </Project>

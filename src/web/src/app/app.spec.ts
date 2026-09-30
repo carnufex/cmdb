@@ -34,6 +34,8 @@ describe('App', () => {
       scopes: ['Region Nord'],
     };
     http.expectOne('/api/me').flush(me);
+    TestBed.tick();
+    http.match('/api/changelog').forEach((r) => r.flush({ posts: [], unread: 0 }));
     await fixture.whenStable();
     const el = fixture.nativeElement as HTMLElement;
 
@@ -48,6 +50,8 @@ describe('App', () => {
     fixture.detectChanges();
     http.expectOne('/api/me/preferences').flush({ theme: 'dark' });
     http.expectOne('/api/me').flush({ username: 'x', name: null, email: null, groups: [] });
+    TestBed.tick();
+    http.match('/api/changelog').forEach((r) => r.flush({ posts: [], unread: 0 }));
     await fixture.whenStable();
 
     (fixture.nativeElement as HTMLElement)

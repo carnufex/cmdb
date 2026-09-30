@@ -74,6 +74,9 @@ if (migrateOnly || app.Configuration.GetValue<bool>("Database:MigrateOnStartup")
     StartupLog.CatalogSynced(app.Logger, synced);
     // Access scopes (#22) are synthetic demo data too; what they show is materialised after the sync.
     await Cmdb.Database.Scopes.ScopeCatalog.SyncAsync(scope.ServiceProvider.GetRequiredService<CmdbDbContext>());
+    // The change log (#82) is reviewed data too.
+    await Cmdb.Database.Changelog.ChangelogSync.SyncAsync(scope.ServiceProvider.GetRequiredService<CmdbDbContext>(),
+        Cmdb.Database.Changelog.ChangelogSync.Embedded());
     await Cmdb.Database.Scopes.ScopeVisibility.RefreshAsync(app.Services.GetRequiredService<Cmdb.Api.Auth.SystemDb>().Source);
     await Cmdb.Database.Scopes.DirectAccess.GrantAsync(app.Services.GetRequiredService<Cmdb.Api.Auth.SystemDb>().Source);
     if (migrateOnly)

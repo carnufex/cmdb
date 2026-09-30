@@ -62,6 +62,7 @@ Varje objekt i svaren har en stabil referens (`ref`, till exempel `site:1268`) o
 ### Resurser och prompter
 
 - **Resurser:** `cmdb://docs/domanmodell`, `cmdb://docs/plan` och `cmdb://docs/arkitektur`. Det är samma dokument som i `docs/`, inbäddade vid bygget.
+- **Händelselogg:** `cmdb://changelog` visar vad som ändrats för användare, med issuereferenser (#82).
 - **Prompter:** `cable_cut_impact` (vad händer om en kabel kapas) och `find_sites_by_equipment` (översätt en fråga till `find_sites`).
 
 ## Utan MCP

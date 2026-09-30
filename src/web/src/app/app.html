@@ -62,6 +62,21 @@
   <div class="actions">
     <button
       type="button"
+      class="text-button tool-button news"
+      [attr.aria-pressed]="tools.open() === 'changelog'"
+      [attr.aria-label]="
+        'Nyheter' +
+        (changelog.log.value()?.unread ? ', ' + changelog.log.value()!.unread + ' olästa' : '')
+      "
+      (click)="tools.toggle('changelog')"
+    >
+      Nyheter
+      @if (changelog.log.value()?.unread; as unread) {
+        <span class="badge" aria-hidden="true">{{ unread }}</span>
+      }
+    </button>
+    <button
+      type="button"
       class="text-button tool-button"
       [attr.aria-pressed]="tools.open() === 'perf'"
       (click)="tools.toggle('perf')"
@@ -136,6 +151,8 @@
       <aside class="tool" aria-label="Planer"><cmdb-plan-panel /></aside>
     } @else if (tools.open() === 'grid') {
       <aside class="tool wide" aria-label="Kalkylark"><cmdb-grid-panel /></aside>
+    } @else if (tools.open() === 'changelog') {
+      <aside class="tool" aria-label="Nyheter"><cmdb-changelog-panel /></aside>
     } @else if (tools.open() === 'perf') {
       <aside class="tool wide" aria-label="Prestanda"><cmdb-perf-panel /></aside>
     }
