@@ -2,7 +2,7 @@ import { EquipmentDetail } from './models';
 
 export type PanelPort = EquipmentDetail['ports'][number];
 
-/** Reserved and conflicting ports get their data from reservations (#25); the panel already draws them. */
+/** Reserved and conflicting ports get their data from reservations and plans (#25). */
 export type PortStatus = 'free' | 'connected' | 'planned' | 'reserved' | 'conflict';
 
 export const portStatusLabels: Record<PortStatus, string> = {
@@ -14,18 +14,19 @@ export const portStatusLabels: Record<PortStatus, string> = {
 };
 
 /**
- * A port's status: free without connections; a conflict when two connections of the same kind meet in it (a
- * port takes one patch at the front and one splice or termination at the back); planned when every connection
- * is still planned or under construction; otherwise connected.
+ * A port's status: a conflict when two connections of the same kind meet in it (a port takes one patch at the
+ * front and one splice or termination at the back) or when plans' claims on it collide (#25); free without
+ * connections, or reserved when someone holds it; planned when every connection is still planned or under
+ * construction; otherwise connected.
  */
-export function portStatus(port: Pick<PanelPort, 'connections'>): PortStatus {
+export function portStatus(port: Pick<PanelPort, 'connections' | 'claims'>): PortStatus {
   const connections = port.connections;
-  if (connections.length === 0) {
-    return 'free';
-  }
   const kinds = connections.map((c) => c.kind);
-  if (new Set(kinds).size < kinds.length) {
+  if (new Set(kinds).size < kinds.length || port.claims?.conflict) {
     return 'conflict';
+  }
+  if (connections.length === 0) {
+    return port.claims?.reservation ? 'reserved' : 'free';
   }
   if (connections.every((c) => c.lifecycle === 'planned' || c.lifecycle === 'under_construction')) {
     return 'planned';

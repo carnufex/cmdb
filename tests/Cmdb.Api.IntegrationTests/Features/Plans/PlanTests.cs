@@ -191,6 +191,11 @@ public sealed class PlanTests(ApiFactory factory)
     {
         var db = await factory.NewDatabaseAsync();
         await Loader.LoadAsync(db, NetworkBuilder.Build(seed, Scale.Small, TypeCatalog.Embedded), reset: false, TextWriter.Null, ct: Ct);
+        // The generator's demo plans claim free ports too; these tests start without plans.
+        await using (var clear = db.CreateCommand("DELETE FROM plan_operation; DELETE FROM plan_dependency; DELETE FROM plan"))
+        {
+            await clear.ExecuteNonQueryAsync(Ct);
+        }
         var connectionString = new NpgsqlConnectionStringBuilder(factory.ConnectionString)
         {
             Database = new NpgsqlConnectionStringBuilder(db.ConnectionString).Database,

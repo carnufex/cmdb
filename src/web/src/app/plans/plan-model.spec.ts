@@ -25,6 +25,7 @@ const plan = (
   appliedAt: null,
   dependsOn: [],
   operations: 0,
+  conflicts: 0,
 });
 
 const op = (id: number, planId: number): PlanOperation => ({
@@ -41,6 +42,8 @@ const op = (id: number, planId: number): PlanOperation => ({
   problem: null,
   createdBy: 'test',
   createdAt: '',
+  conflicts: [],
+  blocked: false,
 });
 
 describe('plan model', () => {
@@ -49,6 +52,8 @@ describe('plan model', () => {
     expect(planLifecycle(plan(1, 'applied'))).toBe('in_service');
     expect(planLifecycle(plan(1, 'cancelled'))).toBe('removed');
     expect(planLifecycle(plan(1, 'draft', 'Beroendet avbröts.'))).toBe('conflict');
+    expect(planLifecycle({ ...plan(1), conflicts: 2 })).toBe('conflict');
+    expect(planLifecycle({ ...plan(1, 'applied'), conflicts: 2 })).toBe('in_service');
   });
 
   it('adds the plan to requests only when one is active', () => {

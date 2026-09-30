@@ -56,7 +56,19 @@ Uppmätt i full skala (7,6 M terminaler, 4,3 M kanter, 117 000 kretsar):
 - **Införande** (`POST /api/plans/{id}/apply`) kräver att beroendena redan är införda och att alla operationer passar produktion. Operationerna körs i en transaktion. En koppling blir en rad i `connection`, och en bortkoppling stänger raden (`valid_to`, livscykel *borttagen*). Ändringsflödet tar dem till grafen. Därefter kontrolleras alla utkast som bygger på planen, direkt eller indirekt, mot produktion som den blir, och de vars operationer inte längre passar flaggas.
 - **Avbrott** (`POST /api/plans/{id}/cancel`) flaggar alla utkast som bygger på planen. En ändring i en flaggad plan tar bort flaggan.
 - **Behörighet:** skrivningar kräver `cmdb-full`, som övriga skrivningar. Operationer får bara röra terminaler och objekt inom användarens omfång. En plan syns för omfång med `*` eller planens id i `access_scope.plans`; *Hela nätet* har `*`.
-- Datageneratorn lägger in tre syntetiska planer: en patchning på första navet, avveckling av en kabel och en andra etapp som bygger på den första.
+- Datageneratorn lägger in fem syntetiska planer: en patchning på första navet, avveckling av en kabel, en andra etapp som bygger på den första, och två planer som vill använda samma fiber (#25).
+
+### Reservationer och konflikter (#25)
+
+- **En terminal tar en koppling av varje slag:** en patch fram på en port, och en skarv eller terminering bak. En plan som lägger en andra koppling av samma slag får problemet *upptagen* i vyn (`GraphChangeProblem.Occupied`) och kan inte föras in.
+- **Reservationer** (`reservation`) håller en terminal, en ledare (fiber), en slot på utrustning eller en kanal åt en plan eller en tjänst. En resurs har en aktiv innehavare (unikt index där `released_at IS NULL`). En plans reservationer släpps när den förs in eller avbryts. `GET/POST /api/reservations` och `DELETE /api/reservations/{id}`.
+- **Anspråk:** ett utkast *önskar* terminalerna som dess kopplingar förbinder, och ledarna för de av dem som är ledarändar. Anspråken härleds ur operationerna, med uttrycksindex på `payload->>'a'` och `payload->>'b'`, så de kan aldrig glida isär.
+- **Konflikt:** två planer som inte bygger på varandra önskar samma resurs (varning), eller en plan önskar något som någon annan har reserverat (stoppar införandet). Planer i samma beroendekedja krockar aldrig. Konflikterna beräknas direkt när en operation läggs till. De syns:
+  - per operation i planen,
+  - som antal i planlistan (korall prick),
+  - som *anspråk* på portar (utrustningspanelen och frontpanelens status *reserverad* eller *konflikt*),
+  - och på fibrer i kabelpanelen.
+  Namn på planer och tjänster utanför användarens omfång visas inte.
 
 ## Behörighet
 

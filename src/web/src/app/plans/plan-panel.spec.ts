@@ -20,6 +20,7 @@ const summary = (id: number, name: string, extra: Partial<PlanSummary> = {}): Pl
   appliedAt: null,
   dependsOn: [],
   operations: 1,
+  conflicts: 0,
   ...extra,
 });
 
@@ -42,6 +43,8 @@ const operation = (
   problem,
   createdBy: 'cmdb-demo-full',
   createdAt: '2026-09-30T00:00:00Z',
+  conflicts: [],
+  blocked: false,
 });
 
 describe('PlanPanelComponent', () => {

@@ -82,6 +82,16 @@ export class ActivePlan {
     return op;
   }
 
+  /** Reserves a resource for the active plan (#25). */
+  async reserve(resourceKind: 'terminal' | 'conductor', resourceId: number): Promise<void> {
+    const planId = this.id();
+    if (planId === null) {
+      throw new Error('No active plan.');
+    }
+    await firstValueFrom(this.http.post('/api/reservations', { resourceKind, resourceId, planId }));
+    this.changed();
+  }
+
   changed(): void {
     this.revision.update((r) => r + 1);
   }

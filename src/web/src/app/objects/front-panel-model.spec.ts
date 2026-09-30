@@ -53,6 +53,35 @@ describe('portStatus', () => {
       ),
     ).toBe('conflict');
   });
+
+  it('shows reservations on free ports and conflicting claims from plans (#25)', () => {
+    const reservation = {
+      id: 1,
+      holderKind: 'plan' as const,
+      holderId: 5,
+      holder: 'Plan A',
+      reason: '',
+      createdBy: 'x',
+    };
+    const reserved = { ...port(1, 0, 0), claims: { reservation, wantedBy: [], conflict: false } };
+    expect(portStatus(reserved)).toBe('reserved');
+    const wanted = {
+      ...port(1, 0, 0, [{ kind: 'patch', lifecycle: 'in_service', peer }]),
+      claims: {
+        reservation: null,
+        wantedBy: [
+          { id: 5, name: 'A' },
+          { id: 6, name: 'B' },
+        ],
+        conflict: true,
+      },
+    };
+    expect(portStatus(wanted)).toBe('conflict');
+    // Plans in one chain want the same port without a conflict.
+    expect(portStatus({ ...wanted, claims: { ...wanted.claims, conflict: false } })).toBe(
+      'connected',
+    );
+  });
 });
 
 describe('portRange', () => {

@@ -75,3 +75,8 @@ Snabbsöket (Ctrl+K) hittar objekt på namn och kod. För frågor som *alla radi
   - *Koppla i planen…* väljer första änden. Välj sedan en port på valfri utrustning och *Koppla … hit*.
 - *För in i produktion* och *Avbryt planen* kräver en bekräftelse. Planer som bygger på planen och som påverkas flaggas, och det står i panelen vilka det gäller.
 - Detaljpanelerna (site, utrustning och kabel) visar produktion. Det som skiljer i planen syns i planpanelen, i spårning och i påverkan.
+- **Reservationer och konflikter (#25):**
+  - *Reservera för planen* finns på en port i utrustningspanelen, och *Reservera fibern för planen* med ledarnummer finns i kabelpanelen.
+  - Planpanelen listar planens reservationer, och de går att släppa.
+  - Anspråk visas där resursen finns: *Reserverad av …* och *Önskas av …*.
+  - En konflikt är korall, som all annan konflikt: på porten i frontpanelen, på planen i listan och på operationen, med skälet och om den stoppar införandet.

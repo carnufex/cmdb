@@ -39,6 +39,7 @@ public sealed class CmdbDbContext(DbContextOptions<CmdbDbContext> options) : DbC
     public DbSet<Plan> Plans => Set<Plan>();
     public DbSet<PlanDependency> PlanDependencies => Set<PlanDependency>();
     public DbSet<PlanOperation> PlanOperations => Set<PlanOperation>();
+    public DbSet<Reservation> Reservations => Set<Reservation>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

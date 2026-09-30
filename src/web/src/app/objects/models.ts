@@ -1,3 +1,4 @@
+import { ResourceClaims } from './claims';
 import { Lifecycle } from '../shell/status';
 
 export type ObjectType = 'site' | 'equipment' | 'cable' | 'service' | 'circuit';
@@ -81,6 +82,8 @@ export interface EquipmentDetail {
     column: number;
     connections: { kind: string; lifecycle: Lifecycle; peer: TerminalRef }[];
     circuits: number;
+    /** Reservation and plans wanting the port (#25); null when nobody claims it. */
+    claims?: ResourceClaims | null;
   }[];
 }
 
@@ -97,6 +100,8 @@ export interface CableDetail {
   a: ObjectRef;
   b: ObjectRef;
   circuits: ObjectRef[];
+  /** Fibres that are reserved or wanted by plans (#25). */
+  claims?: { conductorId: number; number: number; claims: ResourceClaims }[] | null;
 }
 
 /** What depends on a cable, equipment or site (GET /api/{cables|equipment|sites}/{id}/impact, #10). */

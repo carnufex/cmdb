@@ -8,8 +8,9 @@ namespace Cmdb.Api.Features.Equipment;
 
 public sealed record EquipmentRequest(long Id);
 
+/// <param name="Claims">Reservation and plans wanting the port (#25); null when nobody claims it.</param>
 public sealed record EquipmentPort(long TerminalId, string Name, string Type, string? Group, int Position, int Row, int Column,
-    IReadOnlyList<PortConnection> Connections, int Circuits);
+    IReadOnlyList<PortConnection> Connections, int Circuits, Cmdb.Api.Features.Reservations.ResourceClaims? Claims = null);
 
 public sealed record PortConnection(string Kind, string Lifecycle, TerminalRef Peer);
 
@@ -138,6 +139,7 @@ public sealed class GetEquipmentEndpoint(RequestDb db) : Endpoint<EquipmentReque
         var freeSlots = JsonDocument.Parse(slotTemplate!).RootElement.EnumerateArray()
             .Select(s => s.GetProperty("name").GetString()!).Where(s => !usedSlots.Contains(s)).ToList();
 
+        var claims = await Cmdb.Api.Features.Reservations.ClaimsSql.ForTerminalsAsync(db, [.. ports.Select(p => p.Terminal)], scope, ct);
         return detail with
         {
             FreeSlots = freeSlots,
@@ -147,7 +149,7 @@ public sealed class GetEquipmentEndpoint(RequestDb db) : Endpoint<EquipmentReque
                 var (row, column) = cells.GetValueOrDefault(p.Position);
                 return new EquipmentPort(p.Terminal, p.Name, p.Type, p.Group, p.Position, row, column,
                     [.. byPort[p.Terminal].Where(c => peers.ContainsKey(c.Peer)).Select(c => new PortConnection(c.Kind, c.Lifecycle, peers[c.Peer]))],
-                    p.Circuits);
+                    p.Circuits, claims.GetValueOrDefault(p.Terminal));
             })],
         };
     }

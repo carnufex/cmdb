@@ -11,11 +11,14 @@ namespace Cmdb.Api.Features.Plans;
 
 public sealed record PlanSummary(long Id, string Name, string Description, string Status, string? Flag, string CreatedBy,
     DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, string? AppliedBy, DateTimeOffset? AppliedAt, IReadOnlyList<long> DependsOn,
-    int Operations);
+    int Operations, int Conflicts = 0);
 
 /// <summary>An operation in words, with the objects it touches and, when it no longer fits, why.</summary>
+/// <param name="Conflicts">Claims on the same resources by others (#25): a reservation (blocking) or another plan.</param>
+/// <param name="Blocked">A reservation by someone else stops the plan from being applied.</param>
 public sealed record PlanOperationView(long Id, long PlanId, int Seq, string Kind, string Summary, IReadOnlyList<TraceHop> Terminals,
-    ObjectRef? Target, string? ConnectionKind, string? Lifecycle, string? Name, string? Problem, string CreatedBy, DateTimeOffset CreatedAt);
+    ObjectRef? Target, string? ConnectionKind, string? Lifecycle, string? Name, string? Problem, string CreatedBy, DateTimeOffset CreatedAt,
+    IReadOnlyList<string> Conflicts, bool Blocked);
 
 public sealed record PlanDetail(PlanSummary Plan, IReadOnlyList<PlanSummary> Dependencies, IReadOnlyList<PlanOperationView> Operations);
 

@@ -1,6 +1,8 @@
-import { httpResource } from '@angular/common/http';
+import { HttpClient, httpResource } from '@angular/common/http';
 import { DecimalPipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, effect, inject, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, effect, inject, input, signal } from '@angular/core';
+import { firstValueFrom } from 'rxjs';
+import { ClaimsComponent } from './claims';
 import { ActivePlan } from '../plans/active-plan';
 import { PanelStack } from '../shell/panels';
 import { StatusComponent } from '../shell/status';
@@ -10,7 +12,13 @@ import { ObjectLinkComponent } from './object-link';
 
 @Component({
   selector: 'cmdb-cable-panel',
-  imports: [ObjectLinkComponent, StatusComponent, ImpactListComponent, DecimalPipe],
+  imports: [
+    ObjectLinkComponent,
+    StatusComponent,
+    ImpactListComponent,
+    DecimalPipe,
+    ClaimsComponent,
+  ],
   template: `
     @if (cable.value(); as c) {
       <header class="header">
@@ -32,6 +40,39 @@ import { ObjectLinkComponent } from './object-link';
           <dd><cmdb-link [ref]="c.b" [showName]="true" /></dd>
         </dl>
       </section>
+      @if (c.claims?.length) {
+        <section>
+          <h3>Anspråk på fibrer ({{ c.claims!.length }})</h3>
+          <dl class="facts">
+            @for (k of c.claims!; track k.conductorId) {
+              <dt>Ledare {{ k.number }}</dt>
+              <dd><cmdb-claims [claims]="k.claims" /></dd>
+            }
+          </dl>
+        </section>
+      }
+      @if (plan.view.value()?.plan?.status === 'draft') {
+        <section>
+          <h3>I planen {{ plan.view.value()!.plan.name }}</h3>
+          <p class="reserve">
+            <label
+              >Ledare
+              <input
+                type="number"
+                min="1"
+                [max]="c.conductors"
+                [value]="conductor()"
+                (input)="conductor.set(+$any($event.target).value)"
+            /></label>
+            <button type="button" class="action" (click)="reserve(c.id)">
+              Reservera fibern för planen
+            </button>
+          </p>
+          @if (reserveError(); as err) {
+            <p class="error" role="alert">{{ err }}</p>
+          }
+        </section>
+      }
       <section>
         <cmdb-impact-list
           [impact]="impact.value()"
@@ -66,7 +107,31 @@ import { ObjectLinkComponent } from './object-link';
 })
 export class CablePanelComponent {
   private readonly panels = inject(PanelStack);
-  private readonly plan = inject(ActivePlan);
+  protected readonly plan = inject(ActivePlan);
+  private readonly http = inject(HttpClient);
+  protected readonly conductor = signal(1);
+  protected readonly reserveError = signal<string | null>(null);
+
+  /** Reserves fibre N of the cable for the active plan (#25). */
+  protected async reserve(cableId: number): Promise<void> {
+    this.reserveError.set(null);
+    try {
+      const fibre = await firstValueFrom(
+        this.http.get<{ id: number }>(`/api/cables/${cableId}/conductors/${this.conductor()}`),
+      );
+      await this.plan.reserve('conductor', fibre.id);
+      this.cable.reload();
+    } catch (e: unknown) {
+      const body = (e as { error?: { detail?: string; errors?: Record<string, string[]> } }).error;
+      this.reserveError.set(
+        body?.detail ??
+          (Object.values(body?.errors ?? {})
+            .flat()
+            .join(' ') ||
+            'Fibern kunde inte reserveras.'),
+      );
+    }
+  }
 
   readonly id = input.required<string>();
 

@@ -2,6 +2,7 @@ import { HttpClient, HttpErrorResponse, httpResource } from '@angular/common/htt
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
+import { ReservationView } from '../objects/claims';
 import { ObjectLinkComponent } from '../objects/object-link';
 import { StatusComponent } from '../shell/status';
 import { Tools } from '../shell/tools';
@@ -83,13 +84,18 @@ import {
                 </h4>
                 <ol class="ops">
                   @for (op of group.changes; track op.id) {
-                    <li [class.problem]="op.problem">
+                    <li [class.problem]="op.problem || op.conflicts.length">
                       <span>{{ op.summary }}</span>
                       @if (op.target) {
                         <cmdb-link [ref]="op.target" />
                       }
                       @if (op.problem) {
                         <span class="problem-text">{{ op.problem }}</span>
+                      }
+                      @for (c of op.conflicts; track c) {
+                        <span class="problem-text"
+                          >{{ c }}{{ op.blocked ? ' Stoppar införandet.' : '' }}</span
+                        >
                       }
                       @if (group.plan.id === d.plan.id && d.plan.status === 'draft') {
                         <button
@@ -109,6 +115,33 @@ import {
                   }
                 </ol>
               }
+              <h4>
+                Reservationer <span class="muted">({{ reservations.value()?.length ?? 0 }})</span>
+              </h4>
+              <ul class="ops">
+                @for (r of reservations.value() ?? []; track r.id) {
+                  <li>
+                    <span>{{ r.label }}</span>
+                    @if (r.reason) {
+                      <span class="muted"> – {{ r.reason }}</span>
+                    }
+                    @if (d.plan.status === 'draft') {
+                      <button
+                        type="button"
+                        class="remove"
+                        [attr.aria-label]="'Släpp reservationen av ' + r.label"
+                        (click)="release(r.id)"
+                      >
+                        ×
+                      </button>
+                    }
+                  </li>
+                } @empty {
+                  <li class="muted">
+                    Inga. Reservera portar och fibrer från utrustnings- och kabelpanelerna.
+                  </li>
+                }
+              </ul>
               <p class="muted">Vyn laddades på {{ v.elapsedMs }} ms.</p>
             }
 
@@ -417,6 +450,10 @@ export class PlanPanelComponent {
     const id = this.active.id();
     return id === null ? undefined : this.active.request(`/api/plans/${id}`);
   });
+  protected readonly reservations = httpResource<ReservationView[]>(() => {
+    const id = this.active.id();
+    return id === null ? undefined : this.active.request(`/api/reservations?plan=${id}`);
+  });
   protected readonly groups = computed(() => {
     const view = this.active.view.value();
     return view ? byPlan(view) : [];
@@ -460,6 +497,10 @@ export class PlanPanelComponent {
     await this.run(() =>
       firstValueFrom(this.http.delete(`/api/plans/${id}/operations/${operationId}`)),
     );
+  }
+
+  protected async release(reservationId: number): Promise<void> {
+    await this.run(() => firstValueFrom(this.http.delete(`/api/reservations/${reservationId}`)));
   }
 
   protected async apply(plan: PlanSummary): Promise<void> {
