@@ -21,6 +21,7 @@ Röstkanalen hade en agent, Driftagenten, som bara hanterar nätet. Samtal om an
 - **En MCP-ingång per agent** med bara den agentens verktyg: `/voice/mcp` för NOC, `/voice/servicedesk/mcp` och `/voice/it/mcp`.
   - En agent kan alltså inte anropa en annan agents verktyg, oavsett vad prompten säger.
   - Autentisering, verifiering och omfång är desamma som i ADR-0015.
+- **Överlämningar går bara från växeln** (#154). En väg tillbaka gav en loop där NOC-agenten lämnade tillbaka direkt och samtalet studsade tills talsyntesen föll. Specialisterna erbjuder uppringning för det som inte är deras.
 - **Samtals-id:t följer med vid överlämning.** En verifiering gäller därför i hela samtalet, och uppringaren behöver inte verifiera sig på nytt hos specialisten.
 - **Serviceärenden** (tagg, lösenord, utrustning, uppringning) sparas i en egen tabell med egna nummer (`SR-xxxxx`). Numren skickas med SMS och läses aldrig upp (#145).
 - **Allt versioneras i repot.** `agent/deploy.py` skapar och uppdaterar alla agenter och deras överlämningar.

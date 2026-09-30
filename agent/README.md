@@ -7,7 +7,7 @@ Tre agenter (ADR-0015, ADR-0016, #151). Här finns allt de består av: prompter,
   - IT (lösenord, konto, dator, utrustning) lämnas över till **IT-självhjälpen**.
   - Nätet (CMDB, fiber, stationer, larm) lämnas över till **NOC-agenten** (Driftagenten).
   - Allt annat: "Det kan jag tyvärr inte hjälpa dig med. Vill du att en människa ringer upp dig? Det är cirka X minuters kö."
-- **Överlämningen** sker med `transfer_to_agent`. Transkriptet och samtals-id:t följer med, så en verifiering gäller i hela samtalet. IT-självhjälpen och NOC kan lämna tillbaka till service desk.
+- **Överlämningen** sker med `transfer_to_agent`, bara från växeln. Transkriptet och samtals-id:t följer med, så en verifiering gäller i hela samtalet. IT-självhjälpen och NOC kan inte lämna tillbaka: med en väg tillbaka studsade ett samtal mellan växeln och NOC tills talsyntesen föll (#154). Gäller samtalet något annat erbjuder de uppringning.
 - **Varje agent har sin egen MCP-ingång** med bara sina verktyg: `/voice/servicedesk/mcp`, `/voice/it/mcp` och `/voice/mcp` (NOC).
 - **Utgående risksamtal** går direkt till NOC-agenten.
 
