@@ -40,9 +40,11 @@ internal static class DemoPlans
                           WHERE k.cable_id = c.id)
             ORDER BY c.id LIMIT 1
             """, ct);
+        long retiredCable = 0;
         if (cable is not null)
         {
             var (cableId, cableCode) = ((long)cable[0], (string)cable[1]);
+            retiredCable = cableId;
             var retire = await PlanAsync(conn, $"Avveckla {cableCode}", $"Kabeln {cableCode} tas ur drift och skarvarna i ändarna bryts.", ct);
             await OperationAsync(conn, retire, "set_lifecycle", $$"""{"type": "cable", "id": {{cableId}}, "lifecycle": "decommissioning"}""", ct);
             await using var cmd = new NpgsqlCommand($"""
@@ -71,26 +73,52 @@ internal static class DemoPlans
         {
             await OperationAsync(conn, stage2, "connect", $$"""{"a": {{free[8]}}, "b": {{free[9]}}, "kind": "patch"}""", ct);
         }
-        // Two plans that want the same fibre (#25): the first has reserved it, so the second is blocked.
-        var end = await RowAsync(conn, $"""
-            SELECT ce.terminal_id, ce.conductor_id, c.code, k.number FROM conductor_end ce
+        // Two plans that want the same fibre (#25): an ODF port where a fibre ends but nothing is patched yet. The first
+        // plan has reserved it, so the second is blocked. The patching ports are free ports at the same site that no
+        // other demo plan uses, and the fibre is not on the cable being decommissioned.
+        var odf = await RowAsync(conn, $"""
+            WITH used AS (
+                SELECT a_terminal_id AS t FROM connection WHERE valid_to IS NULL
+                UNION SELECT b_terminal_id FROM connection WHERE valid_to IS NULL
+            ), patched AS (
+                SELECT a_terminal_id AS t FROM connection WHERE valid_to IS NULL AND kind = 'patch'
+                UNION SELECT b_terminal_id FROM connection WHERE valid_to IS NULL AND kind = 'patch'
+            ), roomy AS (
+                SELECT e.site_id FROM port p JOIN equipment e ON e.id = p.equipment_id
+                WHERE NOT EXISTS (SELECT 1 FROM used WHERE used.t = p.terminal_id)
+                GROUP BY e.site_id HAVING count(*) >= 14
+            )
+            SELECT p.terminal_id, e.name, p.name, c.code, k.number, e.site_id
+            FROM port p JOIN equipment e ON e.id = p.equipment_id JOIN roomy r ON r.site_id = e.site_id
+            JOIN connection x ON x.valid_to IS NULL AND x.kind = 'splice' AND p.terminal_id IN (x.a_terminal_id, x.b_terminal_id)
+            JOIN conductor_end ce ON ce.terminal_id = CASE WHEN x.a_terminal_id = p.terminal_id THEN x.b_terminal_id ELSE x.a_terminal_id END
             JOIN conductor k ON k.id = ce.conductor_id JOIN cable c ON c.id = k.cable_id
-            WHERE {hubId} IN (c.a_site_id, c.b_site_id)
-              AND NOT EXISTS (SELECT 1 FROM connection x WHERE x.valid_to IS NULL AND ce.terminal_id IN (x.a_terminal_id, x.b_terminal_id))
-            ORDER BY ce.terminal_id LIMIT 1
+            WHERE NOT EXISTS (SELECT 1 FROM patched WHERE patched.t = p.terminal_id) AND c.id <> {retiredCable}
+            ORDER BY p.terminal_id LIMIT 1
             """, ct);
         var plans = 3;
-        if (end is not null && free.Count >= 12)
+        if (odf is not null)
         {
-            var (terminal, conductor, code, number) = ((long)end[0], (long)end[1], (string)end[2], (int)end[3]);
-            var customer = await PlanAsync(conn, $"Kundförbindelse via {code} fiber {number}", "Svartfiber till en företagskund.", ct);
-            await OperationAsync(conn, customer, "connect", $$"""{"a": {{free[10]}}, "b": {{terminal}}, "kind": "splice"}""", ct);
+            var (terminal, equipment, port, code, number, site) =
+                ((long)odf[0], (string)odf[1], (string)odf[2], (string)odf[3], (int)odf[4], (long)odf[5]);
+            var ports = await LongsAsync(conn, $"""
+                SELECT p.terminal_id FROM port p JOIN equipment e ON e.id = p.equipment_id
+                WHERE e.site_id = {site} AND p.terminal_id <> {terminal}
+                  AND NOT EXISTS (SELECT 1 FROM connection x WHERE x.valid_to IS NULL AND x.a_terminal_id = p.terminal_id)
+                  AND NOT EXISTS (SELECT 1 FROM connection x WHERE x.valid_to IS NULL AND x.b_terminal_id = p.terminal_id)
+                  AND NOT EXISTS (SELECT 1 FROM plan_operation o WHERE o.kind = 'connect'
+                                  AND p.terminal_id IN ((o.payload->>'a')::bigint, (o.payload->>'b')::bigint))
+                ORDER BY p.terminal_id LIMIT 2
+                """, ct);
+            var fibre = $"{code} fiber {number} ({equipment} port {port})";
+            var customer = await PlanAsync(conn, $"Kundförbindelse via {code} fiber {number}", $"Svartfiber till en företagskund över {fibre}.", ct);
+            await OperationAsync(conn, customer, "connect", $$"""{"a": {{ports[0]}}, "b": {{terminal}}, "kind": "patch"}""", ct);
             await ExecAsync(conn, $"""
                 INSERT INTO reservation (resource_kind, resource_id, holder_kind, holder_id, reason, created_by)
-                VALUES ('conductor', {conductor}, 'plan', {customer}, 'Kundorder, avtal tecknat', '{Author}')
+                VALUES ('terminal', {terminal}, 'plan', {customer}, 'Kundorder, avtal tecknat', '{Author}')
                 """, ct);
-            var backhaul = await PlanAsync(conn, $"Ny mobillänk via {code} fiber {number}", "Vill använda samma fiber som kundförbindelsen.", ct);
-            await OperationAsync(conn, backhaul, "connect", $$"""{"a": {{free[11]}}, "b": {{terminal}}, "kind": "splice"}""", ct);
+            var backhaul = await PlanAsync(conn, $"Ny mobillänk via {code} fiber {number}", $"Vill använda samma fiber: {fibre}.", ct);
+            await OperationAsync(conn, backhaul, "connect", $$"""{"a": {{ports[1]}}, "b": {{terminal}}, "kind": "patch"}""", ct);
             plans = 5;
         }
         log.WriteLine($"  plans   {plans} demo plans");

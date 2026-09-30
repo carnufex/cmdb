@@ -71,6 +71,21 @@ public sealed class LoaderTests(ApiFactory factory)
 
     }
 
+    [Fact]
+    public async Task Seeds_demo_plans_including_two_that_want_the_same_fibre_termination()
+    {
+        await using var db = await factory.NewDatabaseAsync();
+        await Loader.LoadAsync(db, NetworkBuilder.Build(1, Scale.Small, TypeCatalog.Embedded), reset: false, TextWriter.Null, ct: Ct);
+
+        (await Count(db, "plan")).ShouldBe(5);
+        (await Count(db, "reservation")).ShouldBe(1);
+        await using var cmd = db.CreateCommand("""
+            SELECT count(DISTINCT o.plan_id) FROM plan_operation o JOIN reservation r ON r.resource_kind = 'terminal'
+            WHERE o.kind = 'connect' AND (o.payload->>'b')::bigint = r.resource_id
+            """);
+        ((long)(await cmd.ExecuteScalarAsync(Ct))!).ShouldBe(2);
+    }
+
     [Theory]
     [InlineData(55.40, 13.35)]
     [InlineData(59.33, 18.07)]
