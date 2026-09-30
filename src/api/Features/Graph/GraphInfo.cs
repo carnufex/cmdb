@@ -15,10 +15,12 @@ public sealed record GraphInfoResponse(
     double LoadSeconds,
     DateTimeOffset? LoadedAt,
     string? Position,
+    int DeltaNodes,
     GraphChangeInfoResponse? LastChange);
 
-/// <param name="Milliseconds">Reading the changed rows, patching and rebuilding the graph.</param>
-public sealed record GraphChangeInfoResponse(int Changes, int Keys, double Milliseconds, DateTimeOffset AppliedAt);
+/// <param name="Milliseconds">Reading the changed rows and applying them, as a delta or by rebuilding the graph.</param>
+/// <param name="Mode">"delta", "rebuild" or "compaction" (#81).</param>
+public sealed record GraphChangeInfoResponse(int Changes, int Keys, double Milliseconds, DateTimeOffset AppliedAt, string Mode);
 
 /// <summary>What the in-memory graph holds, how it was loaded (#8) and how far it has followed the change stream (#11).</summary>
 public sealed class GraphInfoEndpoint(GraphHolder holder) : EndpointWithoutRequest<GraphInfoResponse>
@@ -41,6 +43,7 @@ public sealed class GraphInfoEndpoint(GraphHolder holder) : EndpointWithoutReque
             Math.Round(info?.Duration.TotalSeconds ?? 0, 2),
             info?.LoadedAt,
             holder.Position,
-            holder.LastChange is { } c ? new GraphChangeInfoResponse(c.Changes, c.Keys, Math.Round(c.Duration.TotalMilliseconds, 1), c.AppliedAt) : null), ct);
+            graph?.OverlayNodes ?? 0,
+            holder.LastChange is { } c ? new GraphChangeInfoResponse(c.Changes, c.Keys, Math.Round(c.Duration.TotalMilliseconds, 1), c.AppliedAt, c.Mode) : null), ct);
     }
 }

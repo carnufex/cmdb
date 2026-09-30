@@ -42,6 +42,13 @@ public sealed class GraphHolder
         _position = graph.Version;
     }
 
+    /// <summary>The same graph with its delta folded in (#81); the position stays, as it may be ahead of the graph.</summary>
+    public void Compacted(Graph graph, GraphChangeInfo info)
+    {
+        LastChange = info;
+        _current = graph;
+    }
+
     /// <summary>A batch without changes to the graph: only the position moves.</summary>
     public void Advance(string position) => _position = position;
 
@@ -55,6 +62,7 @@ public sealed record GraphLoadInfo(string Source, TimeSpan Duration, long Manage
 /// <param name="Changes">Outbox entries in the batch.</param>
 /// <param name="Keys">Distinct keys re-read.</param>
 /// <param name="Duration">Reading, patching and rebuilding.</param>
-public sealed record GraphChangeInfo(int Changes, int Keys, TimeSpan Duration, DateTimeOffset AppliedAt);
+/// <param name="Mode">"delta" (on top of the graph), "rebuild" (compacted with the batch) or "compaction" (#81).</param>
+public sealed record GraphChangeInfo(int Changes, int Keys, TimeSpan Duration, DateTimeOffset AppliedAt, string Mode = "rebuild");
 
 public sealed class GraphNotReadyException() : InvalidOperationException("The network graph is still loading.");

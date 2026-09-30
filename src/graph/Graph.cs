@@ -66,7 +66,9 @@ public sealed partial class Graph
     internal int[] SiteEquipment { get; private set; } = null!;
 
     /// <summary>The change stream position the graph reflects (see <see cref="IGraphChangeFeed"/>).</summary>
-    public required string Version { get; init; }
+    public required string Version { get => _version; init => _version = value; }
+
+    private string _version = null!;
 
     public int NodeCount => TerminalIds.Length + (_overlay?.TerminalIds.Count ?? 0);
 
@@ -111,7 +113,7 @@ public sealed partial class Graph
     /// <summary>Whether the node is a terminal planned in this view (#107), not in production.</summary>
     public bool IsPlanned(int node) => node >= TerminalIds.Length;
 
-    private int OwnerOf(int node) => node < TerminalIds.Length ? TerminalOwners[node] : _overlay!.Owners[node - TerminalIds.Length];
+    internal int OwnerOf(int node) => node < TerminalIds.Length ? TerminalOwners[node] : _overlay!.Owners[node - TerminalIds.Length];
 
     private int CableOfConductor(int conductor) =>
         conductor < ConductorIds.Length ? ConductorCables[conductor] : _overlay!.ConductorCables[conductor - ConductorIds.Length];

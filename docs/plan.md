@@ -26,6 +26,32 @@ En CMDB för en rikstäckande telekomanläggning som är snabbare, enklare och s
 
 Totalt cirka 5–10 miljoner noder och lika många kanter. Det ryms i minnet (~1–2 GB kompakt), och det är grunden för arkitekturen.
 
+### Tillväxt: 2× och 4× full skala (#81)
+
+Vid 25–50 % tillväxt per år är nätet dubbelt så stort om 2–3 år och fyra gånger så stort om 3–6 år. Datageneratorn tar `--scale 2x` och `--scale 4x` (80 000 respektive 160 000 siter). Uppmätt 2026-09-30 på en utvecklingsmaskin (32 kärnor), så tiderna är lägre än i demon:
+
+**Grafmotorn** (`dotnet run -c Release --project tests/Cmdb.Graph.Benchmarks -- scale full 2x 4x`, utan databas; topp = hur mycket den hanterade heapen växer under arbetet):
+
+| Skala | Terminaler | Kanter | Bygga | Minne i vila | Snapshot | Läsa snapshot | Delta 2 terminaler | Delta 100 terminaler | Kompaktering av delta | Topp | Ombyggnad från rader | Topp |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| full | 7,6 M | 4,3 M | 1,4 s | 265 MB | 234 MB | 0,1 s | < 0,01 ms | 0,06 ms | 0,20 s | +78 MB | 1,2 s | +755 MB |
+| 2× | 15,2 M | 8,6 M | 2,1 s | 529 MB | 467 MB | 0,2 s | < 0,01 ms | 0,05 ms | 0,38 s | +157 MB | 2,3 s | +1 501 MB |
+| 4× | 30,5 M | 17,3 M | 4,5 s | 1 060 MB | 935 MB | 0,4 s | < 0,01 ms | 0,07 ms | 0,44 s | +314 MB | 4,7 s | +3 004 MB |
+
+**API:t** (docker compose mot en databas i respektive skala; minne = containerns `memory.current`/`memory.peak`, med GC:ns marginal):
+
+| Skala | Laddning från databasen | Datageneratorns laddning | Minne i vila | Sats som delta (inkl. läsning) | Sats som ombyggnad | Topp vid ombyggnad | `scripts/perf.sh` |
+|---|---|---|---|---|---|---|---|
+| full | 8,3 s | – | 1,0 GB | 14 ms | 1,3 s | 1,6 GB | inom budget |
+| 2× | 16,2 s | 2,1 min | 1,8 GB | 10 ms | 2,7 s | 3,1 GB | inom budget, kartplatta p95 28 ms |
+| 4× | 32,3 s | 4,6 min | 3,9 GB | 10 ms | 5,4 s | 5,7 GB | inom budget, kartplatta p95 58 ms, snabbsök p95 19 ms |
+
+Slutsatser:
+
+- **Frågorna skalar.** Hela budgeten håller i 4×. Kartplattan är raden som växer (fler objekt per ruta).
+- **Ändringar skalar.** En sats som flyttar kopplingar eller ändrar objekt utan att ändra struktur blir ett delta (#81, se [arkitektur.md](arkitektur.md)): millisekunder oavsett nätets storlek. Deltat kompakteras in i nya kantarrayer vart tionde minut eller vid 50 000 noder, på under en halv sekund även i 4×.
+- **Strukturella ändringar skalar inte ännu.** Ny, borttagen eller flyttad utrustning eller kabel och ändrade kretsar byggs om från rader. Tiden och toppen växer linjärt, och toppen är ungefär tre gånger grafens storlek. I full skala räcker podgränsen 2 GiB (topp 1,6 GB). I 2× behövs cirka 4 GiB och i 4× cirka 7 GiB, om inte strukturella ändringar också görs inkrementella (#119).
+
 ## Prestandabudget
 
 | Interaktion | Mål (p95, full skala) |

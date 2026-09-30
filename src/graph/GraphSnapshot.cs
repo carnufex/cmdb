@@ -14,6 +14,11 @@ public static class GraphSnapshot
 
     public static void Write(Graph graph, Stream stream)
     {
+        // The arrays alone would lose the delta; compact first (#81).
+        if (graph.IsOverlay)
+        {
+            throw new ArgumentException("A graph with a delta cannot be written; compact it first.", nameof(graph));
+        }
         using var w = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true);
         w.Write(Magic);
         w.Write(Format);

@@ -11,9 +11,12 @@ namespace Cmdb.Api.Features.Graph;
 /// snapshot is written. Readiness waits for the first graph.
 /// </para>
 /// <para>
-/// Follow: woken by NOTIFY, or by the poll interval at the latest, each batch of changes is applied by rebuilding the
-/// graph from its own rows with the changed keys replaced, and swapped in atomically. Changes arriving meanwhile form
-/// the next batch. A bulk load, another database, or rows that do not fit together give a full reload instead.
+/// Follow: woken by NOTIFY, or by the poll interval at the latest, each batch of changes is applied and swapped in
+/// atomically. Changes arriving meanwhile form the next batch. A batch that moves connections, or touches objects
+/// without changing their structure, becomes a delta on the graph (#81), in time proportional to the batch. A delta past
+/// <c>Graph:DeltaMaxNodes</c>, or older than the snapshot interval, is folded into new adjacency arrays. Any other batch
+/// rebuilds: the base's rows with every batch since replaced, built once. A bulk load, another database, or rows that do
+/// not fit together give a full reload instead.
 /// </para>
 /// </summary>
 public sealed partial class GraphLoadingService(
@@ -21,6 +24,15 @@ public sealed partial class GraphLoadingService(
     ILogger<GraphLoadingService> logger) : BackgroundService
 {
     private DateTimeOffset _snapshotWritten = DateTimeOffset.MinValue;
+
+    /// <summary>The graph without delta, and the batches applied on top of it since (#81).</summary>
+    private Cmdb.Graph.Graph? _base;
+
+    private DateTimeOffset _baseAt;
+
+    private readonly List<GraphChangeBatch> _pending = [];
+
+    private int DeltaMaxNodes => config.GetValue("Graph:DeltaMaxNodes", 50_000);
 
     private string? SnapshotPath => config["Graph:SnapshotPath"];
 
@@ -71,6 +83,7 @@ public sealed partial class GraphLoadingService(
             return;
         }
         var bytes = GC.GetTotalMemory(forceFullCollection: true) - before;
+        SetBase(graph);
         holder.Set(graph, new GraphLoadInfo("snapshot", sw.Elapsed, bytes, DateTimeOffset.UtcNow));
         Loaded(logger, graph.NodeCount, graph.EdgeCount, graph.CircuitCount, "snapshot", sw.Elapsed.TotalSeconds, bytes / (1024 * 1024), graph.Version);
         await CatchUpAsync(ct);
@@ -83,6 +96,7 @@ public sealed partial class GraphLoadingService(
         var graph = await GraphLoader.LoadAsync(system.Source, ct);
         var duration = sw.Elapsed;
         var bytes = GC.GetTotalMemory(forceFullCollection: true) - before;
+        SetBase(graph);
         holder.Set(graph, new GraphLoadInfo(source, duration, bytes, DateTimeOffset.UtcNow));
         Loaded(logger, graph.NodeCount, graph.EdgeCount, graph.CircuitCount, source, duration.TotalSeconds, bytes / (1024 * 1024), graph.Version);
         WriteSnapshot(graph);
@@ -104,28 +118,75 @@ public sealed partial class GraphLoadingService(
             return;
         }
 
-        Cmdb.Graph.Graph next;
-        try
+        _pending.Add(batch);
+        var mode = "delta";
+        var next = GraphChanges.TryDelta(holder.Require(), batch);
+        if (next is null)
         {
-            next = GraphChanges.Apply(holder.Require(), batch);
+            mode = "rebuild";
+            next = Compact();
+            if (next is null)
+            {
+                await FullLoadAsync("reload", ct);
+                return;
+            }
         }
-        catch (InvalidOperationException ex)
+        else if (next.OverlayNodes > DeltaMaxNodes)
         {
-            // A change that is committed but not yet below the horizon left the rows inconsistent; start over.
-            PatchFailed(logger, ex);
-            await FullLoadAsync("reload", ct);
-            return;
+            next = Flatten(next);
         }
-        holder.Apply(next, new GraphChangeInfo(batch.Changes, batch.Keys.Count, sw.Elapsed, DateTimeOffset.UtcNow));
+        holder.Apply(next, new GraphChangeInfo(batch.Changes, batch.Keys.Count, sw.Elapsed, DateTimeOffset.UtcNow, mode));
         // New cables, circuits or equipment may change what access scopes show (#22).
         if (batch.Keys.Cables.Count + batch.Keys.Circuits.Count + batch.Keys.Equipment.Count > 0)
         {
             scopes.Request();
         }
-        Applied(logger, batch.Changes, batch.Keys.Count, sw.Elapsed.TotalMilliseconds, next.Version);
-        if (DateTimeOffset.UtcNow - _snapshotWritten >= SnapshotInterval)
+        Applied(logger, batch.Changes, batch.Keys.Count, mode, sw.Elapsed.TotalMilliseconds, next.OverlayNodes, next.Version);
+        var now = DateTimeOffset.UtcNow;
+        var snapshotDue = SnapshotPath is not null && now - _snapshotWritten >= SnapshotInterval;
+        // A snapshot holds arrays only, so the delta is folded in first; without snapshots, as often.
+        if (_pending.Count > 0 && (snapshotDue || now - _baseAt >= SnapshotInterval))
+        {
+            sw.Restart();
+            next = Flatten(next);
+            holder.Compacted(next, new GraphChangeInfo(0, 0, sw.Elapsed, DateTimeOffset.UtcNow, "compaction"));
+            Compacted(logger, sw.Elapsed.TotalMilliseconds, next.Version);
+        }
+        if (snapshotDue)
         {
             WriteSnapshot(next);
+        }
+    }
+
+    private void SetBase(Cmdb.Graph.Graph graph)
+    {
+        _base = graph;
+        _baseAt = DateTimeOffset.UtcNow;
+        _pending.Clear();
+    }
+
+    /// <summary>The delta folded into new adjacency arrays, which become the base.</summary>
+    private Cmdb.Graph.Graph Flatten(Cmdb.Graph.Graph graph)
+    {
+        var flat = GraphChanges.Flatten(graph, _pending);
+        SetBase(flat);
+        return flat;
+    }
+
+    /// <summary>The base with the pending batches, rebuilt once; null when the rows do not fit together.</summary>
+    private Cmdb.Graph.Graph? Compact()
+    {
+        try
+        {
+            var graph = GraphChanges.Compact(_base!, _pending);
+            SetBase(graph);
+            return graph;
+        }
+        catch (InvalidOperationException ex)
+        {
+            // A change that is committed but not yet below the horizon left the rows inconsistent; start over.
+            PatchFailed(logger, ex);
+            return null;
         }
     }
 
@@ -144,8 +205,11 @@ public sealed partial class GraphLoadingService(
     [LoggerMessage(Level = LogLevel.Information, Message = "Graph loaded: {Nodes} terminals, {Edges} edges, {Circuits} circuits from {Source} in {Seconds:0.0} s, {Megabytes} MB, position {Version}")]
     private static partial void Loaded(ILogger logger, int nodes, int edges, int circuits, string source, double seconds, long megabytes, string version);
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Graph changes applied: {Changes} changes, {Keys} keys in {Milliseconds:0} ms, position {Version}")]
-    private static partial void Applied(ILogger logger, int changes, int keys, double milliseconds, string version);
+    [LoggerMessage(Level = LogLevel.Information, Message = "Graph changes applied: {Changes} changes, {Keys} keys as {Mode} in {Milliseconds:0} ms, delta {DeltaNodes} nodes, position {Version}")]
+    private static partial void Applied(ILogger logger, int changes, int keys, string mode, double milliseconds, int deltaNodes, string version);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Graph compacted in {Milliseconds:0} ms, position {Version}")]
+    private static partial void Compacted(ILogger logger, double milliseconds, string version);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Graph reload requested by the change stream ({Changes} changes)")]
     private static partial void ReloadRequested(ILogger logger, int changes);
