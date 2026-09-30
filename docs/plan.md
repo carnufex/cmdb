@@ -26,17 +26,17 @@ En CMDB för en rikstäckande telekomanläggning som är snabbare, enklare och s
 
 Totalt cirka 5–10 miljoner noder och lika många kanter. Det ryms i minnet (~1–2 GB kompakt), och det är grunden för arkitekturen.
 
-### Tillväxt: 2× och 4× full skala (#81)
+### Tillväxt: 2× och 4× full skala (#81, #119)
 
 Vid 25–50 % tillväxt per år är nätet dubbelt så stort om 2–3 år och fyra gånger så stort om 3–6 år. Datageneratorn tar `--scale 2x` och `--scale 4x` (80 000 respektive 160 000 siter). Uppmätt 2026-09-30 på en utvecklingsmaskin (32 kärnor), så tiderna är lägre än i demon:
 
-**Grafmotorn** (`dotnet run -c Release --project tests/Cmdb.Graph.Benchmarks -- scale full 2x 4x`, utan databas; topp = hur mycket den hanterade heapen växer under arbetet):
+**Grafmotorn** (`dotnet run -c Release --project tests/Cmdb.Graph.Benchmarks -- scale full 2x 4x`, utan databas). Kompakteringen gäller ett delta med ny utrustning (24 portar, alla patchade), som är det dyraste fallet eftersom terminalarrayerna då växer. Ett delta med bara kopplingar kompakteras på 0,20–0,44 s med +78 till +314 MB. Topp = hur mycket den hanterade heapen växer under arbetet:
 
-| Skala | Terminaler | Kanter | Bygga | Minne i vila | Snapshot | Läsa snapshot | Delta 2 terminaler | Delta 100 terminaler | Kompaktering av delta | Topp | Ombyggnad från rader | Topp |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| full | 7,6 M | 4,3 M | 1,4 s | 265 MB | 234 MB | 0,1 s | < 0,01 ms | 0,06 ms | 0,20 s | +78 MB | 1,2 s | +755 MB |
-| 2× | 15,2 M | 8,6 M | 2,1 s | 529 MB | 467 MB | 0,2 s | < 0,01 ms | 0,05 ms | 0,38 s | +157 MB | 2,3 s | +1 501 MB |
-| 4× | 30,5 M | 17,3 M | 4,5 s | 1 060 MB | 935 MB | 0,4 s | < 0,01 ms | 0,07 ms | 0,44 s | +314 MB | 4,7 s | +3 004 MB |
+| Skala | Terminaler | Kanter | Bygga | Minne i vila | Snapshot | Läsa snapshot | Delta 2 terminaler | Delta 100 terminaler | Delta ny utrustning | Kompaktering av delta | Topp | Ombyggnad från rader | Topp |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| full | 7,6 M | 4,3 M | 1,4 s | 265 MB | 234 MB | 0,1 s | < 0,01 ms | 0,06 ms | 0,04 ms | 0,29 s | +325 MB | 1,2 s | +917 MB |
+| 2× | 15,2 M | 8,6 M | 2,1 s | 529 MB | 467 MB | 0,2 s | < 0,01 ms | 0,05 ms | 0,03 ms | 0,50 s | +650 MB | 2,3 s | +1 820 MB |
+| 4× | 30,5 M | 17,3 M | 4,5 s | 1 060 MB | 935 MB | 0,4 s | < 0,01 ms | 0,07 ms | 0,03 ms | 0,73 s | +1 301 MB | 4,9 s | +3 642 MB |
 
 **API:t** (docker compose mot en databas i respektive skala; minne = containerns `memory.current`/`memory.peak`, med GC:ns marginal):
 
@@ -49,8 +49,8 @@ Vid 25–50 % tillväxt per år är nätet dubbelt så stort om 2–3 år och fy
 Slutsatser:
 
 - **Frågorna skalar.** Hela budgeten håller i 4×. Kartplattan är raden som växer (fler objekt per ruta).
-- **Ändringar skalar.** En sats som flyttar kopplingar eller ändrar objekt utan att ändra struktur blir ett delta (#81, se [arkitektur.md](arkitektur.md)): millisekunder oavsett nätets storlek. Deltat kompakteras in i nya kantarrayer vart tionde minut eller vid 50 000 noder, på under en halv sekund även i 4×.
-- **Strukturella ändringar skalar inte ännu.** Ny, borttagen eller flyttad utrustning eller kabel och ändrade kretsar byggs om från rader. Tiden och toppen växer linjärt, och toppen är ungefär tre gånger grafens storlek. I full skala räcker podgränsen 2 GiB (topp 1,6 GB). I 2× behövs cirka 4 GiB och i 4× cirka 7 GiB, om inte strukturella ändringar också görs inkrementella (#119).
+- **Ändringar skalar.** Satser som flyttar kopplingar, ändrar objekt utan att ändra struktur eller lägger till utrustning och kablar blir ett delta (#81, #119, se [arkitektur.md](arkitektur.md)): millisekunder oavsett nätets storlek. Deltat kompakteras in i arrayerna vart tionde minut eller vid 50 000 noder. Det tar under en sekund även i 4×, och toppen är högst 1,25 gånger grafens storlek.
+- **Kretsar och borttagningar skalar inte ännu.** Satser som ändrar kretsar, eller tar bort eller flyttar utrustning och kablar, byggs om från rader. Tiden och toppen växer linjärt, och toppen är ungefär tre gånger grafens storlek. I full skala räcker podgränsen 2 GiB (topp 1,6 GB). I 2× behövs cirka 4 GiB och i 4× cirka 7 GiB, om inte även de görs inkrementella (#121).
 
 ## Prestandabudget
 
