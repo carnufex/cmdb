@@ -39,7 +39,11 @@
     },
     "it": {
       "mcp_server_id": "qmYWUx4CKc6AlQ7TSgbe",
-      "agent_id": "agent_8701m3szgwn9emh8237ccyhygr83"
+      "agent_id": "agent_8701m3szgwn9emh8237ccyhygr83",
+      "voice_id": "ycdKCM2Fj0Us7dTwCGoM"
+    },
+    "noc": {
+      "voice_id": "zA8eaG1JhG82rhuCip6v"
     }
   }
 }
