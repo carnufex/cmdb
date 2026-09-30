@@ -209,5 +209,19 @@
       86
     ],
     "published": false
+  },
+  {
+    "key": "2026-09-30-delta",
+    "version": "sha-1ad29b2",
+    "date": "2026-09-30",
+    "category": "förbättrat",
+    "title": "Ändringar syns i nätet på millisekunder",
+    "body": "Nya kopplingar, utrustning, kablar och kretsar och ändrade livscykler syns nu i spårning och påverkansanalys på några millisekunder efter att de sparats. Tidigare tog det ett par sekunder. Det fungerar lika snabbt även när nätet har blivit fyra gånger så stort.",
+    "issues": [
+      81,
+      119,
+      121
+    ],
+    "published": false
   }
 ]
