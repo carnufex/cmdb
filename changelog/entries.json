@@ -7,7 +7,10 @@
     "title": "Spåra tjänster och fibervägar",
     "body": "Du kan följa en tjänst ned genom lagren till kretsar och fiber, eller en port längs fibern genom patchar och skarvar till utrustningen i andra änden. Spårningen ritar också vägen i kartan.",
     "action": "Välj Spåra från porten i utrustningspanelen, eller öppna en tjänst.",
-    "issues": [9, 19],
+    "issues": [
+      9,
+      19
+    ],
     "published": true
   },
   {
@@ -18,7 +21,9 @@
     "title": "Se vad ett avbrott påverkar",
     "body": "För en kabel, utrustning eller site ser du vilka kretsar och tjänster som drabbas vid ett avbrott, och varför: kedjan av kretsar som når varje tjänst.",
     "action": null,
-    "issues": [10],
+    "issues": [
+      10
+    ],
     "published": true
   },
   {
@@ -29,7 +34,9 @@
     "title": "Ändringar syns i spårning direkt",
     "body": "När något kopplas om syns det i spårning och påverkan inom någon sekund, utan att appen behöver laddas om.",
     "action": null,
-    "issues": [11],
+    "issues": [
+      11
+    ],
     "published": true
   },
   {
@@ -40,7 +47,9 @@
     "title": "Prestandan mäts mot en budget",
     "body": "Sök, spårning, påverkan och kartan mäts automatiskt mot en fastställd svarstid, så att appen håller sig snabb när nätet växer. Resultatet syns under Prestanda.",
     "action": null,
-    "issues": [13],
+    "issues": [
+      13
+    ],
     "published": true
   },
   {
@@ -51,7 +60,10 @@
     "title": "Frontpaneler och kommandopalett",
     "body": "Utrustning visas som sin frontpanel, med portarnas status i färg och text. Med kommandopaletten når du det mesta från tangentbordet.",
     "action": "Tryck Ctrl+K för kommandopaletten.",
-    "issues": [18, 21],
+    "issues": [
+      18,
+      21
+    ],
     "published": true
   },
   {
@@ -62,7 +74,10 @@
     "title": "Grannskapsgraf och innehållsträd",
     "body": "Grannskapet visar hur siter hänger ihop, en nivå i taget. Innehållsträdet visar allt på en site, från rum och rack ned till portar.",
     "action": "Växla till Grannskap uppe till höger, eller öppna Innehåll i verktygsfältet.",
-    "issues": [17, 20],
+    "issues": [
+      17,
+      20
+    ],
     "published": true
   },
   {
@@ -73,7 +88,9 @@
     "title": "Du ser det du har behörighet till",
     "body": "Varje användare ser bara nätet inom sitt behörighetsomfång, till exempel en region eller ett projekt. Det som ligger utanför visas som en neutral platshållare, så att spårningar ändå går att förstå. Ditt omfång står i verktygsfältet.",
     "action": null,
-    "issues": [22],
+    "issues": [
+      22
+    ],
     "published": true
   },
   {
@@ -84,7 +101,9 @@
     "title": "Snabbsöket är dubbelt så snabbt",
     "body": "Sökningar på korta koder som K-000 eller SKP svarar nu på en bråkdel av tiden. Det ger marginal när nätet växer.",
     "action": null,
-    "issues": [100],
+    "issues": [
+      100
+    ],
     "published": false
   },
   {
@@ -95,7 +114,9 @@
     "title": "Planer: förbered ändringar innan de görs",
     "body": "Ändringar görs i en plan som kan bygga på andra planer. När du väljer en plan visar hela appen nätet som det blir: spårning, påverkan och kartan. När planen är klar förs den in i produktion, och planer som påverkas flaggas.",
     "action": "Öppna Planer i verktygsfältet och välj eller skapa en plan.",
-    "issues": [24],
+    "issues": [
+      24
+    ],
     "published": false
   },
   {
@@ -106,7 +127,9 @@
     "title": "Reservationer och krockar mellan planer",
     "body": "Portar och fibrer kan reserveras åt en plan eller tjänst. När två planer vill använda samma resurs syns det direkt, i korall, på planen och på porten. En reservation stoppar den andra planen från att föras in.",
     "action": null,
-    "issues": [25],
+    "issues": [
+      25
+    ],
     "published": false
   },
   {
@@ -117,7 +140,9 @@
     "title": "Nya siter, utrustning och kablar i planer",
     "body": "En plan kan skapa nya siter, utrustning och kablar och koppla dem. De ritas streckat i violett i kartan och syns i spårningen som planerade, tills planen förs in.",
     "action": null,
-    "issues": [107],
+    "issues": [
+      107
+    ],
     "published": false
   },
   {
@@ -128,7 +153,9 @@
     "title": "Hela siter från mall och fiber i ett svep",
     "body": "Lägg ut en hel site med utrustning och kabeldragning från en mall. Rita en kabel mellan två siter i kartan och låt den termineras på lediga ODF-portar, eller skarva ett portintervall mot fibrer med förskjutning och steg.",
     "action": "Under Planer, välj Nytt i planen.",
-    "issues": [26],
+    "issues": [
+      26
+    ],
     "published": false
   },
   {
@@ -139,7 +166,9 @@
     "title": "Kalkylark för många objekt samtidigt",
     "body": "Ett urval från sökningen eller en lasso i kartan blir ett rutnät där du ändrar namn, livscykel och attribut. Klistra in från Excel och fyll nedåt. Ändringarna kontrolleras mot typkatalogen och läggs i planen.",
     "action": "Öppna Kalkylark i verktygsfältet.",
-    "issues": [27],
+    "issues": [
+      27
+    ],
     "published": false
   },
   {
@@ -150,7 +179,35 @@
     "title": "Agenter föreslår ändringar som planer",
     "body": "AI-agenter kan föreslå ändringar, till exempel att patcha 24 portar, som en plan. Planen märks med agentens namn, och bara en människa kan föra in den.",
     "action": null,
-    "issues": [64],
+    "issues": [
+      64
+    ],
+    "published": false
+  },
+  {
+    "key": "2026-09-30-nyheter",
+    "version": "sha-abfdce8",
+    "date": "2026-09-30",
+    "category": "nytt",
+    "title": "Nyheter i appen",
+    "body": "Under Nyheter i verktygsfältet ser du vad som är nytt eller ändrat, med länkar till bakgrunden. En siffra visar hur många nyheter du inte har läst.",
+    "action": null,
+    "issues": [
+      82
+    ],
+    "published": false
+  },
+  {
+    "key": "2026-09-30-cli",
+    "version": "sha-0389625",
+    "date": "2026-09-30",
+    "category": "nytt",
+    "title": "CMDB:n från kommandoraden",
+    "body": "Kommandot cmdb söker, hämtar objekt, spårar och visar påverkan och planer direkt i terminalen, för skript och AI-agenter. Det finns för Windows, Linux och macOS.",
+    "action": "Ladda ned cmdb från releasen cli-v0.1.0 och kör cmdb login.",
+    "issues": [
+      86
+    ],
     "published": false
   }
 ]
