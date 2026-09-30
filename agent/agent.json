@@ -25,5 +25,21 @@
     "02-verifiering-fore-detaljer.json": "test_4201m3smb425fctraaqdfg53hn9m",
     "03-ingen-kod-ingen-injektion.json": "test_5001m3smb4aee00vsrm2m9eyrjey",
     "04-utgaende-verifierar-forst.json": "test_5901m3smb4jpefatkbv5ca4gmfs8"
+  },
+  "agents": {
+    "servicedesk": {
+      "mcp_server_id": "nCr4hf80igd2CXDCftu0",
+      "tests": {
+        "01-it-till-it-sjalvhjalp.json": "test_5301m3szgqszfm1vk94gxk8tfjm4",
+        "02-natet-till-noc.json": "test_5701m3szgr1zfs9tdcb3624hqh9c",
+        "03-tagg-stannar-pa-service-desk.json": "test_0101m3szgra0fa38qa622k5n4tp7",
+        "04-ovrigt-erbjuder-uppringning.json": "test_8201m3szgrh8eqtt761kvjhm1nmf"
+      },
+      "agent_id": "agent_4901m3szgyjwexwsqjxav28bnrnt"
+    },
+    "it": {
+      "mcp_server_id": "qmYWUx4CKc6AlQ7TSgbe",
+      "agent_id": "agent_8701m3szgwn9emh8237ccyhygr83"
+    }
   }
 }
