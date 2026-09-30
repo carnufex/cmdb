@@ -67,7 +67,7 @@ ws.send(
       ...(risk
         ? {
             agent: {
-              first_message: `Hej ${risk.responsibleName}, det här är Driftagenten. Jag ringer om en risk i nätet som du ansvarar för. Innan jag berättar mer behöver jag verifiera dig. Vad är ditt anställningsnummer?`,
+              first_message: `Hej ${risk.responsibleName}, det här är Sebastian på NOC. Jag ringer om en risk i nätet som du ansvarar för. Innan jag berättar mer behöver jag verifiera dig. Vad är ditt anställningsnummer?`,
             },
           }
         : {}),
