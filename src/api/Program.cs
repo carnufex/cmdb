@@ -34,7 +34,8 @@ var connectionString = builder.Configuration.GetConnectionString("Cmdb")
 // Row-level security only applies to roles reading the database directly (ADR-0012). NpgsqlDataSource itself is not
 // registered, so code that has not chosen fails at startup.
 var dataSource = CmdbDatabase.CreateDataSource(connectionString);
-builder.Services.AddSingleton(new Cmdb.Api.Auth.SystemDb(dataSource));
+// Created by a factory so the container disposes it, and the pool with it, on shutdown.
+builder.Services.AddSingleton(_ => new Cmdb.Api.Auth.SystemDb(dataSource));
 builder.Services.AddSingleton(new Cmdb.Api.Auth.RequestDb(dataSource));
 builder.Services.AddDbContext<CmdbDbContext>((sp, o) => o.UseCmdb(sp.GetRequiredService<Cmdb.Api.Auth.RequestDb>().Source));
 builder.Services.AddSingleton(TypeCatalog.Embedded);
@@ -46,6 +47,7 @@ builder.Services.AddSingleton<Cmdb.Graph.GraphHolder>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton<Cmdb.Api.Auth.ScopeRegistry>();
 builder.Services.AddSingleton<Cmdb.Api.Auth.ScopeMasks>();
+builder.Services.AddSingleton<Cmdb.Api.Features.Plans.PlanViews>();
 builder.Services.AddSingleton<Cmdb.Api.Auth.ScopeRefreshService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<Cmdb.Api.Auth.ScopeRefreshService>());
 builder.Services.AddScoped(sp => sp.GetRequiredService<IHttpContextAccessor>().HttpContext?.User is { Identity.IsAuthenticated: true } user

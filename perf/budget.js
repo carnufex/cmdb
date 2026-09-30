@@ -20,7 +20,7 @@ export const ROWS = [
   { key: 'trace', label: 'Spåra tjänst ände till ände', budget: 50 },
   { key: 'impact', label: 'Påverkansanalys för en kabelsträcka', budget: 200 },
   { key: 'tiles', label: 'Kartplatta per omfång', budget: 100 },
-  { key: 'plan', label: 'Växla vy mellan produktion och plan', budget: 100, pending: 'finns inte ännu (#24)' },
+  { key: 'plan', label: 'Växla vy mellan produktion och plan', budget: 100 },
 ];
 const MEASURED = ROWS.filter((r) => !r.pending);
 
@@ -73,7 +73,13 @@ export function setup() {
     ...sites.slice(16, 20).map((s) => s.name ?? s.code),
     'SKP', 'HUB', 'Radiosite 12', 'K-000', 'xyzzy', 'nod', '42', String(sites[0].id), 'ODF', 'BB-6',
   ];
-  return { sites, cables, services, terms };
+  // Plans (#24): switching the view is loading the plan's diff against production.
+  const plansRes = get('/api/plans', 'setup');
+  const plans = plansRes.status === 200 ? plansRes.json().filter((p) => p.status === 'draft') : [];
+  if (!plans.length) {
+    throw new Error(`No draft plans to switch to (${plansRes.status}); the data generator seeds three.`);
+  }
+  return { sites, cables, services, terms, plans };
 }
 
 // Tiles over Sweden at zoom 0–8 in the API's grid (map-grid.ts, Tiles.cs).
@@ -104,6 +110,7 @@ export default function (data) {
     trace: () => `/api/trace?service=${pick(data.services, n).id}`,
     impact: () => `/api/cables/${pick(data.cables, n).id}/impact`,
     tiles: () => `/api/tiles/${randomTile()}`,
+    plan: () => `/api/plans/${pick(data.plans, n).id}/view`,
   }[row.key]();
 
   const res = get(path, row.key);

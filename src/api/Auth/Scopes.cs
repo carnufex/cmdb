@@ -19,8 +19,13 @@ namespace Cmdb.Api.Auth;
 /// A granted scope clips cables at its edge (<c>crossing_mode = 'clip'</c>): geometry outside the scope's area is cut
 /// away in tiles and trace routes, unless another granted scope shows the cable whole.
 /// </param>
-public sealed record UserScope(string[] Keys, IReadOnlySet<string> HiddenAttributes, bool Unrestricted = false, bool Clips = false)
+/// <param name="Plans">Plans (#24) the scopes show, by id as text; "*" is every plan.</param>
+public sealed record UserScope(string[] Keys, IReadOnlySet<string> HiddenAttributes, bool Unrestricted = false, bool Clips = false,
+    IReadOnlySet<string>? Plans = null)
 {
+    /// <summary>Whether the plan is visible: production is always, a plan only when a scope names it or all plans.</summary>
+    public bool SeesPlan(long id) => Plans is { } plans && (plans.Contains("*") || plans.Contains(id.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+
     public static UserScope None { get; } = new([], new HashSet<string>());
 
     public bool IsEmpty => Keys.Length == 0;
@@ -58,7 +63,8 @@ public sealed record UserScope(string[] Keys, IReadOnlySet<string> HiddenAttribu
     }
 }
 
-public sealed record ScopeDefinition(string Key, string Name, string[] Groups, string[] HiddenAttributes, DateTimeOffset? ValidTo, bool Unrestricted = false, bool Clips = false);
+public sealed record ScopeDefinition(string Key, string Name, string[] Groups, string[] HiddenAttributes, DateTimeOffset? ValidTo, bool Unrestricted = false, bool Clips = false,
+    string[]? Plans = null);
 
 /// <summary>The scope definitions, reloaded after every refresh of what they show.</summary>
 public sealed class ScopeRegistry(SystemDb system)
@@ -77,7 +83,7 @@ public sealed class ScopeRegistry(SystemDb system)
         await using var cmd = system.Source.CreateCommand(
             """
             SELECT key, name, groups, hidden_attributes, valid_to, area IS NULL AND cardinality(site_types) = 0,
-                   area IS NOT NULL AND crossing_mode = 'clip'
+                   area IS NOT NULL AND crossing_mode = 'clip', plans
             FROM access_scope ORDER BY key
             """);
         await using var reader = await cmd.ExecuteReaderAsync(ct);
@@ -85,7 +91,7 @@ public sealed class ScopeRegistry(SystemDb system)
         {
             scopes.Add(new ScopeDefinition(reader.GetString(0), reader.GetString(1), reader.GetFieldValue<string[]>(2),
                 reader.GetFieldValue<string[]>(3), reader.IsDBNull(4) ? null : reader.GetFieldValue<DateTimeOffset>(4), reader.GetBoolean(5),
-                reader.GetBoolean(6)));
+                reader.GetBoolean(6), reader.GetFieldValue<string[]>(7)));
         }
         _scopes = scopes;
         Interlocked.Increment(ref _version);
@@ -101,7 +107,8 @@ public sealed class ScopeRegistry(SystemDb system)
             : new UserScope([.. granted.Select(s => s.Key).Order(StringComparer.Ordinal)],
                 granted.SelectMany(s => s.HiddenAttributes).ToHashSet(StringComparer.Ordinal),
                 granted.Any(s => s.Unrestricted),
-                !granted.Any(s => s.Unrestricted) && granted.Any(s => s.Clips));
+                !granted.Any(s => s.Unrestricted) && granted.Any(s => s.Clips),
+                granted.SelectMany(s => s.Plans ?? []).ToHashSet(StringComparer.Ordinal));
     }
 }
 
@@ -192,6 +199,8 @@ public sealed class ScopeMasks(SystemDb system, ScopeRegistry registry)
 
     public Task<GraphMask> GetAsync(Cmdb.Graph.Graph g, UserScope scope, CancellationToken ct)
     {
+        // A plan view (#24) shares every object index with its base, so it shares the base's masks too.
+        g = g.Base;
         lock (_gate)
         {
             if (!ReferenceEquals(_for.Graph, g) || _for.Version != registry.Version)

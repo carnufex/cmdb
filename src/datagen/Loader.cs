@@ -36,7 +36,8 @@ internal static class Loader
         await Exec(conn, "SET cmdb.scopes = '*'", ct);
         if (reset)
         {
-            await Exec(conn, $"TRUNCATE {string.Join(", ", NetworkTables)}, graph_change RESTART IDENTITY", ct);
+            // Plans (#24) refer to terminals and objects by id, so they go with the network.
+            await Exec(conn, $"TRUNCATE {string.Join(", ", NetworkTables)}, graph_change, plan_operation, plan_dependency, plan RESTART IDENTITY", ct);
         }
         else if (await Scalar<bool>(conn, "SELECT EXISTS (SELECT 1 FROM site)", ct))
         {
@@ -250,6 +251,7 @@ internal static class Loader
         var sw = Stopwatch.StartNew();
         await Cmdb.Database.Scopes.ScopeVisibility.RefreshAsync(db, ct);
         log.WriteLine($"  scopes  {sw.Elapsed.TotalSeconds,6:0.0} s");
+        await DemoPlans.SeedAsync(conn, log, ct);
         sw.Restart();
         await Exec(conn, "ANALYZE", ct);
         log.WriteLine($"  analyze {sw.Elapsed.TotalSeconds,6:0.0} s");

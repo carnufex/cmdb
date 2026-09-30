@@ -22,6 +22,7 @@ public static class ScopeCatalog
             Key = "hela-natet",
             Name = "Hela nätet",
             Groups = ["cmdb-full", "cmdb-agents"],
+            Plans = ["*"],
             Reason = "Drift och förvaltning av hela nätet (demo).",
             GrantedBy = "demo-behorighetsagare",
             ApprovedBy = "demo-sakerhetschef",
