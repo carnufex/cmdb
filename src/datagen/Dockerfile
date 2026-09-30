@@ -9,6 +9,7 @@ COPY src/catalog/Cmdb.Catalog.csproj src/catalog/
 COPY src/graph/Cmdb.Graph.csproj src/graph/
 RUN dotnet restore src/datagen/Cmdb.DataGen.csproj
 COPY catalog/ catalog/
+COPY changelog/ changelog/
 COPY src/database/ src/database/
 COPY src/catalog/ src/catalog/
 COPY src/graph/ src/graph/
