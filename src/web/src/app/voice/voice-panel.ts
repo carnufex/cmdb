@@ -9,6 +9,7 @@ import {
 } from '@angular/core';
 import { PanelStack } from '../shell/panels';
 import { Tools } from '../shell/tools';
+import { VoiceRoiComponent } from './roi';
 
 /** GET /api/incidents (#135) */
 export interface Incident {
@@ -61,6 +62,7 @@ const POLL_MS = 3000;
 @Component({
   selector: 'cmdb-voice-panel',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [VoiceRoiComponent],
   template: `
     <header class="head">
       <h2>Driftagent</h2>
@@ -96,6 +98,11 @@ const POLL_MS = 3000;
           <p class="muted">Inga ärenden ännu.</p>
         }
       </section>
+
+      <details>
+        <summary>ROI-modell</summary>
+        <cmdb-voice-roi />
+      </details>
 
       @if (activity(); as a) {
         <section aria-labelledby="sms">
@@ -235,6 +242,11 @@ const POLL_MS = 3000;
       font-size: var(--text-sm);
       font-weight: 600;
       cursor: pointer;
+    }
+    summary {
+      font-weight: 600;
+      cursor: pointer;
+      margin-bottom: var(--space-2);
     }
     .sms {
       padding: var(--space-2);
