@@ -26,6 +26,8 @@ const plan = (
   dependsOn: [],
   operations: 0,
   conflicts: 0,
+  createdVia: 'api',
+  client: null,
 });
 
 const op = (id: number, planId: number): PlanOperation => ({

@@ -8,7 +8,8 @@ namespace Cmdb.Api.Features.Plans;
 
 /// <summary>A plan as stored, with the ids of the plans it builds on.</summary>
 public sealed record PlanRow(long Id, string Name, string Description, string Status, string? Flag, int Version, string CreatedBy,
-    DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, string? AppliedBy, DateTimeOffset? AppliedAt, long[] DependsOn);
+    DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, string? AppliedBy, DateTimeOffset? AppliedAt, long[] DependsOn,
+    string CreatedVia = "api", string? Client = null);
 
 /// <summary>One operation of a plan. <see cref="Payload"/> is the stored JSON arguments.</summary>
 public sealed record PlanOp(long Id, long PlanId, int Seq, string Kind, JsonElement Payload, string CreatedBy, DateTimeOffset CreatedAt)
@@ -178,13 +179,15 @@ public sealed class PlanViews(SystemDb system)
 
     internal const string Columns = """
         p.id, p.name, p.description, p.status, p.flag, p.version, p.created_by, p.created_at, p.updated_at, p.applied_by, p.applied_at,
-        ARRAY(SELECT d.depends_on_id FROM plan_dependency d WHERE d.plan_id = p.id ORDER BY d.depends_on_id)
+        ARRAY(SELECT d.depends_on_id FROM plan_dependency d WHERE d.plan_id = p.id ORDER BY d.depends_on_id),
+        p.created_via, p.client
         """;
 
     internal static PlanRow ReadPlan(NpgsqlDataReader r) => new(
         r.GetInt64(0), r.GetString(1), r.GetString(2), r.GetString(3), r.IsDBNull(4) ? null : r.GetString(4), r.GetInt32(5),
         r.GetString(6), r.GetFieldValue<DateTimeOffset>(7), r.GetFieldValue<DateTimeOffset>(8), r.IsDBNull(9) ? null : r.GetString(9),
-        r.IsDBNull(10) ? null : r.GetFieldValue<DateTimeOffset>(10), r.GetFieldValue<long[]>(11));
+        r.IsDBNull(10) ? null : r.GetFieldValue<DateTimeOffset>(10), r.GetFieldValue<long[]>(11), r.GetString(12),
+        r.IsDBNull(13) ? null : r.GetString(13));
 
     internal static PlanOp ReadOperation(NpgsqlDataReader r) => new(
         r.GetInt64(0), r.GetInt64(1), r.GetInt32(2), r.GetString(3), JsonDocument.Parse(r.GetString(4)).RootElement.Clone(),

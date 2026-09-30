@@ -19,6 +19,9 @@ export interface PlanSummary {
   operations: number;
   /** Operations whose resources others have reserved or want too (#25). */
   conflicts: number;
+  /** api (web and REST) or mcp: proposed by an agent (#64), to be reviewed and applied by a person. */
+  createdVia: 'api' | 'mcp';
+  client: string | null;
 }
 
 /** One operation in words, with what it touches and, when it no longer fits production, why. */

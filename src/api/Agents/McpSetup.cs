@@ -59,7 +59,10 @@ public static class McpSetup
         attribute values, services passing through), `get_object` for details, `impact` for what a cable or site cut
         affects, `trace` to follow a service down its layers or a port along the fibre, and `neighbourhood` for nearby
         sites. `describe_catalog` lists equipment models, categories and attributes.
-        The tools are read-only; changes will be proposed as plans that a human applies.
+        Nothing you do changes production. To propose a change, `create_plan`, then `add_to_plan` or `connect_ports` (e.g. patch
+        ports 1-24 on one switch to an ODF), and `preview_plan` to check it: each change is checked against production and against
+        other plans' claims and reservations. Give the plan's url to the person who asked; a person reviews and applies it in the
+        web app. `list_plans` shows existing plans. Agents cannot apply plans.
         """;
 }
 

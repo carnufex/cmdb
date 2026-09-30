@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Cmdb.Api.Auth;
 using Cmdb.Api.Features.Reservations;
 using Cmdb.Graph;
@@ -13,7 +14,8 @@ public sealed record ApplyResult(PlanSummary Plan, IReadOnlyList<PlanSummary> Fl
 /// carries them into the graph, and draft plans building on it are checked against the new production. Those whose
 /// operations no longer fit are flagged. Every dependency must be in production first, and every operation must fit.
 /// </summary>
-public sealed partial class ApplyPlanEndpoint(RequestDb db, GraphHolder holder, PlanViews views, ILogger<ApplyPlanEndpoint> logger)
+public sealed partial class ApplyPlanEndpoint(RequestDb db, GraphHolder holder, PlanViews views, TrustedApplications trust,
+    ILogger<ApplyPlanEndpoint> logger)
     : Endpoint<PlanIdRequest, ApplyResult>
 {
     public override void Configure()
@@ -24,6 +26,13 @@ public sealed partial class ApplyPlanEndpoint(RequestDb db, GraphHolder holder, 
 
     public override async Task HandleAsync(PlanIdRequest req, CancellationToken ct)
     {
+        // Agents propose, people decide (#64, ADR-0011): no agent client may bring a plan into production.
+        if (User.FindFirstValue(CmdbClaims.Client) is { } client && trust.AgentClients.Contains(client))
+        {
+            await Send.ResultAsync(TypedResults.Problem("Agenter kan inte föra in planer. En människa granskar och för in dem.",
+                statusCode: StatusCodes.Status403Forbidden));
+            return;
+        }
         var scope = HttpContext.Scope();
         var graph = holder.Require();
         if (await views.GetAsync(graph, req.Id, scope, ct) is not { } view)

@@ -21,6 +21,8 @@ const summary = (id: number, name: string, extra: Partial<PlanSummary> = {}): Pl
   dependsOn: [],
   operations: 1,
   conflicts: 0,
+  createdVia: 'api',
+  client: null,
   ...extra,
 });
 

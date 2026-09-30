@@ -26,6 +26,16 @@ public class Plan
     public int Version { get; set; } = 1;
 
     public required string CreatedBy { get; set; }
+
+    /// <summary>
+    /// How the plan was made: api (the web and REST) or mcp (an agent, #64). A plan from an agent is only ever brought
+    /// into production by a person.
+    /// </summary>
+    public string CreatedVia { get; set; } = "api";
+
+    /// <summary>The OAuth client that created it (azp), e.g. cmdb-web, cmdb-mcp or cmdb-agents.</summary>
+    public string? Client { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
     public string? AppliedBy { get; set; }
@@ -59,7 +69,12 @@ internal sealed class PlanConfiguration : IEntityTypeConfiguration<Plan>
 {
     public void Configure(EntityTypeBuilder<Plan> e)
     {
-        e.ToTable("plan", t => t.HasCheckConstraint("ck_plan_status", "status IN ('draft', 'applied', 'cancelled')"));
+        e.ToTable("plan", t =>
+        {
+            t.HasCheckConstraint("ck_plan_status", "status IN ('draft', 'applied', 'cancelled')");
+            t.HasCheckConstraint("ck_plan_created_via", "created_via IN ('api', 'mcp')");
+        });
+        e.Property(x => x.CreatedVia).HasDefaultValue("api").HasSentinel("");
         e.Property(x => x.Status).HasDefaultValue("draft").HasSentinel("");
         e.Property(x => x.Version).HasDefaultValue(1).HasSentinel(0);
         e.Property(x => x.CreatedAt).HasDefaultValueSql("now()");
