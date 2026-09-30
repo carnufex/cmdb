@@ -7,9 +7,9 @@ namespace Cmdb.Graph.Benchmarks;
 
 /// <summary>
 /// How the graph grows with the network (#81, #119): build time, memory at rest, snapshot size and read time, change
-/// batches as a delta (patches, and new equipment with 24 patched ports), folding the delta with the new equipment into
-/// the arrays, and a rebuild from rows, with how far the managed heap rises (garbage included) while folding and
-/// rebuilding.
+/// batches as a delta (patches, and an installation: new equipment with 24 patched ports and a circuit over them that
+/// rides on an existing one and carries a service), folding the installation into the arrays, and a rebuild from rows,
+/// with how far the managed heap rises (garbage included) while folding and rebuilding.
 /// <c>dotnet run -c Release --project tests/Cmdb.Graph.Benchmarks -- scale full 2x 4x</c>
 /// </summary>
 internal static class ScaleReport
@@ -17,7 +17,7 @@ internal static class ScaleReport
     public static void Run(IReadOnlyList<string> scales)
     {
         Console.OutputEncoding = System.Text.Encoding.UTF8;
-        Console.WriteLine("| Skala | Terminaler | Kanter | Bygga | Minne i vila | Snapshot | Läsa snapshot | Delta 2 terminaler | Delta 100 terminaler | Delta ny utrustning | Kompaktering av delta | Topp | Ombyggnad från rader | Topp |");
+        Console.WriteLine("| Skala | Terminaler | Kanter | Bygga | Minne i vila | Snapshot | Läsa snapshot | Delta 2 terminaler | Delta 100 terminaler | Delta installation | Kompaktering av delta | Topp | Ombyggnad från rader | Topp |");
         Console.WriteLine("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|");
         foreach (var scale in scales)
         {
@@ -100,7 +100,8 @@ internal static class ScaleReport
 
     /// <summary>
     /// New equipment at the first equipment's site, with 24 ports above every terminal id, each patched to one of
-    /// <paramref name="free"/>, as the change feed would read it.
+    /// <paramref name="free"/>, and a new circuit over the ports riding on the first circuit and carrying the first
+    /// service, as the change feed would read it.
     /// </summary>
     private static GraphChangeBatch Installation(Graph graph, long[] free)
     {
@@ -121,6 +122,16 @@ internal static class ScaleReport
             rows.ConnectionKinds.Add((byte)EdgeKind.Patch);
             rows.ConnectionLifecycles.Add((byte)Lifecycle.Planned);
         }
+        var circuit = graph.CircuitIds[^1] + 1;
+        keys.Circuits.Add(circuit);
+        rows.CircuitIds.Add(circuit);
+        rows.CircuitLayers.Add((byte)CircuitLayer.Transmission);
+        rows.HopCircuits.AddRange(rows.PortTerminals.Select(_ => circuit));
+        rows.HopTerminals.AddRange(rows.PortTerminals);
+        rows.DependencyCircuits.Add(circuit);
+        rows.DependencyCarriers.Add(graph.CircuitIds[0]);
+        rows.ServiceCircuitServices.Add(graph.ServiceIds[0]);
+        rows.ServiceCircuitCircuits.Add(circuit);
         return new GraphChangeBatch("1", false, keys, rows, keys.Count);
     }
 

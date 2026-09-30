@@ -39,8 +39,8 @@ public interface IGraphChangeFeed
 
 /// <summary>
 /// Applying a batch, in one of two ways (#81). A batch that moves connections, touches equipment and cables without
-/// changing their structure, or adds equipment and cables (#119) becomes a delta on the current graph: its cost follows
-/// the batch, not the network.
+/// changing their structure, adds equipment and cables (#119) or changes circuits (#121) becomes a delta on the current
+/// graph: its cost follows the batch, not the network.
 /// A delta is folded into the arrays now and then (<see cref="Flatten"/>). Anything else rebuilds from rows: the base's
 /// rows with every batch since replaced in order (<see cref="Compact"/>).
 /// </summary>
@@ -73,8 +73,8 @@ public static class GraphChanges
 
     /// <summary>
     /// The graph after the batch as a delta, or null when it has to be rebuilt from rows: removed, moved or rebuilt
-    /// equipment and cables, changed circuits, or connections that do not fit. New equipment and cables (#119) join the
-    /// delta like a plan's planned objects, with indexes after the base's own.
+    /// equipment and cables, or rows that do not fit. New equipment and cables (#119) join the delta like a plan's
+    /// planned objects, with indexes after the base's own; new, changed and removed circuits (#121) replace theirs.
     /// </summary>
     public static Graph? TryDelta(Graph graph, GraphChangeBatch batch)
     {
@@ -82,16 +82,60 @@ public static class GraphChanges
         var rows = batch.Rows;
         var changes = new List<GraphChange>();
         var added = new HashSet<long>();
-        if (keys.Circuits.Count > 0
-            || !Equipment(graph, keys.Equipment, rows, changes, added)
+        if (!Equipment(graph, keys.Equipment, rows, changes, added)
             || !Cables(graph, keys.Cables, rows, changes, added)
             || ConnectionChanges(graph, keys.Terminals, rows, added) is not { } connections)
         {
             return null;
         }
         changes.AddRange(connections);
+        if (keys.Circuits.Count > 0)
+        {
+            changes.Add(Circuits(graph, keys.Circuits, rows));
+        }
         var (view, issues) = graph.WithChanges(changes);
         return issues.Count > 0 ? null : view.AsProduction(batch.Watermark);
+    }
+
+    /// <summary>The changed circuits as their rows say now; a circuit without a row is removed.</summary>
+    private static GraphCircuitsChange Circuits(Graph graph, HashSet<long> keys, GraphData rows)
+    {
+        var layers = new Dictionary<long, CircuitLayer>();
+        for (var i = 0; i < rows.CircuitIds.Count; i++)
+        {
+            layers[rows.CircuitIds[i]] = (CircuitLayer)rows.CircuitLayers[i];
+        }
+        // Hops arrive ordered by circuit and sequence.
+        var hops = new Dictionary<long, List<long>>();
+        for (var i = 0; i < rows.HopCircuits.Count; i++)
+        {
+            Group(hops, rows.HopCircuits[i]).Add(rows.HopTerminals[i]);
+        }
+        var carriers = new Dictionary<long, List<long>>();
+        for (var i = 0; i < rows.DependencyCircuits.Count; i++)
+        {
+            Group(carriers, rows.DependencyCircuits[i]).Add(rows.DependencyCarriers[i]);
+        }
+        var services = new Dictionary<long, List<long>>();
+        for (var i = 0; i < rows.ServiceCircuitCircuits.Count; i++)
+        {
+            Group(services, rows.ServiceCircuitCircuits[i]).Add(rows.ServiceCircuitServices[i]);
+        }
+        var set = new List<GraphCircuit>();
+        var removed = new List<long>();
+        foreach (var id in keys.Order())
+        {
+            if (layers.TryGetValue(id, out var layer))
+            {
+                set.Add(new GraphCircuit(id, layer, hops.GetValueOrDefault(id) ?? [], carriers.GetValueOrDefault(id) ?? [],
+                    services.GetValueOrDefault(id) ?? []));
+            }
+            else if (graph.TryGetCircuit(id, out _))
+            {
+                removed.Add(id);
+            }
+        }
+        return new GraphCircuitsChange(set, removed);
     }
 
     /// <summary>

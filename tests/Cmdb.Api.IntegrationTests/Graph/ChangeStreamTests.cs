@@ -115,7 +115,7 @@ public sealed class ChangeStreamTests(ApiFactory factory)
     }
 
     [Fact]
-    public async Task Connections_and_new_equipment_become_deltas_and_folding_them_in_gives_a_fresh_load()
+    public async Task Connections_equipment_and_circuits_become_deltas_and_folding_them_in_gives_a_fresh_load()
     {
         await using var db = await SmallNetworkAsync(8);
         var feed = new PostgresGraphChangeFeed(db);
@@ -144,6 +144,29 @@ public sealed class ChangeStreamTests(ApiFactory factory)
             """);
         var equipment = await Scalar(db, "SELECT id FROM equipment WHERE name = 'Delta test'");
 
+        // Circuits (#121): a service link dropped, a circuit removed with its rows, and a new one riding on a physical
+        // circuit and carrying a service.
+        await Exec(db, "DELETE FROM service_circuit WHERE (service_id, circuit_id) = (SELECT service_id, circuit_id FROM service_circuit ORDER BY 1, 2 LIMIT 1)");
+        var removed = await Scalar(db, """
+            SELECT c.id FROM circuit c
+            WHERE NOT EXISTS (SELECT 1 FROM circuit_dependency d WHERE d.carrier_id = c.id)
+            ORDER BY c.id DESC LIMIT 1
+            """);
+        await Exec(db, $"""
+            DELETE FROM service_circuit WHERE circuit_id = {removed};
+            DELETE FROM circuit_dependency WHERE circuit_id = {removed};
+            DELETE FROM circuit_hop WHERE circuit_id = {removed};
+            DELETE FROM circuit WHERE id = {removed};
+            """);
+        await Exec(db, """
+            WITH ends AS (SELECT min(terminal_id) AS a, max(terminal_id) AS b FROM (SELECT terminal_id FROM port ORDER BY terminal_id LIMIT 2) x),
+            c AS (INSERT INTO circuit (code, layer, a_terminal_id, b_terminal_id) SELECT 'DELTA-121', 'transmission', a, b FROM ends RETURNING id, a_terminal_id, b_terminal_id),
+            h AS (INSERT INTO circuit_hop (circuit_id, seq, terminal_id) SELECT id, 0, a_terminal_id FROM c UNION ALL SELECT id, 1, b_terminal_id FROM c),
+            d AS (INSERT INTO circuit_dependency (circuit_id, carrier_id) SELECT c.id, (SELECT min(id) FROM circuit WHERE layer = 'physical') FROM c)
+            INSERT INTO service_circuit (service_id, circuit_id) SELECT (SELECT min(id) FROM service), id FROM c
+            """);
+        var circuit = await Scalar(db, "SELECT id FROM circuit WHERE code = 'DELTA-121'");
+
         var target = await Scalar(db, "SELECT pg_snapshot_xmax(pg_current_snapshot())::text::bigint");
         var graph = before;
         var watermark = before.Version;
@@ -165,6 +188,12 @@ public sealed class ChangeStreamTests(ApiFactory factory)
         var ports = graph.PortsOf(added).ToArray();
         ports.Length.ShouldBe(2);
         graph.Neighbours(ports[0]).ToArray().ShouldBe([ports[1]]);
+        graph.TryGetCircuit(removed, out _).ShouldBeFalse();
+        graph.TryGetCircuit(circuit, out var newCircuit).ShouldBeTrue();
+        graph.HopsOf(newCircuit).Length.ShouldBe(2);
+        graph.CarriersOf(newCircuit).Length.ShouldBe(1);
+        graph.DependentsOf(graph.CarriersOf(newCircuit)[0]).ToArray().ShouldContain(newCircuit);
+        graph.ServicesOf(newCircuit).Length.ShouldBe(1);
 
         var fresh = GraphBuilder.Build(GraphData.From(await GraphLoader.LoadAsync(db, Ct)), graph.Version);
         Bytes(GraphChanges.Compact(before, batches)).ShouldBe(Bytes(fresh));

@@ -13,10 +13,11 @@ namespace Cmdb.Api.Features.Graph;
 /// <para>
 /// Follow: woken by NOTIFY, or by the poll interval at the latest, each batch of changes is applied and swapped in
 /// atomically. Changes arriving meanwhile form the next batch. A batch that moves connections, touches objects without
-/// changing their structure, or adds equipment and cables becomes a delta on the graph (#81, #119), in time proportional
-/// to the batch. A delta past <c>Graph:DeltaMaxNodes</c>, or older than the snapshot interval, is folded into the arrays.
-/// Any other batch (circuits, removed or moved objects) rebuilds: the base's rows with every batch since replaced, built
-/// once. A bulk load, another database, or rows that do not fit together give a full reload instead.
+/// changing their structure, adds equipment and cables, or changes circuits becomes a delta on the graph (#81, #119,
+/// #121), in time proportional to the batch. A delta past <c>Graph:DeltaMaxNodes</c>, or older than the snapshot
+/// interval, is folded into the arrays. Any other batch (removed or moved objects) rebuilds: the base's rows with every
+/// batch since replaced, built once. A bulk load, another database, or rows that do not fit together give a full reload
+/// instead.
 /// </para>
 /// </summary>
 public sealed partial class GraphLoadingService(

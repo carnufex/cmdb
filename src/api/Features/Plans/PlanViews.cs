@@ -116,6 +116,7 @@ internal static class PlanKinds
         GraphChangeProblem.NotConnected => "Terminalerna är inte kopplade.",
         GraphChangeProblem.Occupied => "Porten eller fibern är redan upptagen av en koppling av samma slag.",
         GraphChangeProblem.InvalidObject => "Objektet finns redan.",
+        GraphChangeProblem.UnknownCircuit => "Kretsen finns inte.",
         _ => "En terminal kan inte kopplas till sig själv.",
     };
 }

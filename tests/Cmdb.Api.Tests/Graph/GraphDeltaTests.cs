@@ -247,13 +247,10 @@ public sealed class GraphDeltaTests
         movedKeys.Equipment.Add(100);
         GraphChanges.TryDelta(production, new GraphChangeBatch("3", false, movedKeys, moved, 1)).ShouldBeNull();
 
-        // A removed cable and a changed circuit are structure too.
+        // A removed cable is structure too; circuits are a delta (#121, GraphCircuitDeltaTests).
         var removed = new GraphKeys();
         removed.Cables.Add(501);
         GraphChanges.TryDelta(production, new GraphChangeBatch("5", false, removed, new GraphData(), 1)).ShouldBeNull();
-        var circuit = new GraphKeys();
-        circuit.Circuits.Add(1);
-        GraphChanges.TryDelta(production, new GraphChangeBatch("6", false, circuit, new GraphData(), 1)).ShouldBeNull();
 
         // A connection to a terminal that is neither in the graph nor new in the batch waits for the rebuild.
         connections.Add((3, 77777, EdgeKind.Patch));
@@ -275,7 +272,8 @@ public sealed class GraphDeltaTests
     /// <summary>
     /// A batch as the feed reads it when equipment 200 is installed at site 0 (older than every site in the graph) with
     /// <paramref name="ports"/>, cable 900 is pulled with conductor 950 between <paramref name="ends"/>, and the first
-    /// new port is patched to port 5 and the second spliced to the cable.
+    /// new port is patched to port 5 and the second spliced to the cable, and circuit 7000 runs from the second port
+    /// through the cable, carrying service 800 (#121).
     /// </summary>
     private static (GraphChangeBatch Batch, GraphData Rows) Installation(long[] ports, long[] ends)
     {
@@ -298,7 +296,14 @@ public sealed class GraphDeltaTests
         rows.ConnectionB.AddRange([5, ends[0]]);
         rows.ConnectionKinds.AddRange([(byte)EdgeKind.Patch, (byte)EdgeKind.Splice]);
         rows.ConnectionLifecycles.AddRange([(byte)Lifecycle.Planned, (byte)Lifecycle.Planned]);
-        return (new GraphChangeBatch("2", false, keys, rows, 6), rows);
+        keys.Circuits.Add(7000);
+        rows.CircuitIds.Add(7000);
+        rows.CircuitLayers.Add((byte)CircuitLayer.Physical);
+        rows.HopCircuits.AddRange([7000, 7000, 7000]);
+        rows.HopTerminals.AddRange([ports[1], ends[0], ends[1]]);
+        rows.ServiceCircuitServices.Add(800);
+        rows.ServiceCircuitCircuits.Add(7000);
+        return (new GraphChangeBatch("2", false, keys, rows, 7), rows);
     }
 
     private static GraphData With(GraphData data, GraphData rows)
@@ -317,6 +322,12 @@ public sealed class GraphDeltaTests
         data.ConnectionB.AddRange(rows.ConnectionB);
         data.ConnectionKinds.AddRange(rows.ConnectionKinds);
         data.ConnectionLifecycles.AddRange(rows.ConnectionLifecycles);
+        data.CircuitIds.AddRange(rows.CircuitIds);
+        data.CircuitLayers.AddRange(rows.CircuitLayers);
+        data.HopCircuits.AddRange(rows.HopCircuits);
+        data.HopTerminals.AddRange(rows.HopTerminals);
+        data.ServiceCircuitServices.AddRange(rows.ServiceCircuitServices);
+        data.ServiceCircuitCircuits.AddRange(rows.ServiceCircuitCircuits);
         return data;
     }
 
@@ -339,6 +350,8 @@ public sealed class GraphDeltaTests
         GraphTrace.Physical(delta, port).Nodes.Select(delta.TerminalId).ShouldBe([20001, 20005, 20006]);
         delta.TryGetCable(900, out _).ShouldBeTrue();
         delta.CableCount.ShouldBe(production.CableCount + 1);
+        delta.TryGetCircuit(7000, out var circuit).ShouldBeTrue();
+        delta.HopsOf(circuit).ToArray().Select(delta.TerminalId).ShouldBe([20001, 20005, 20006]);
         delta.SiteCount.ShouldBe(production.SiteCount + 1);
 
         // A plan's planned objects come after the delta's new ones.
@@ -357,6 +370,10 @@ public sealed class GraphDeltaTests
         flat.EquipmentAt(flat.SiteIndexOfEquipment(equipment)).ToArray().ShouldBe([equipment]);
         flat.TryGetCable(900, out var cable).ShouldBeTrue();
         flat.EndsOf(cable).ToArray().Select(flat.TerminalId).ShouldBe([20005, 20006]);
+        flat.TryGetNode(20005, out var end).ShouldBeTrue();
+        flat.CircuitsThrough(end).ToArray().Select(flat.CircuitId).ShouldBe([7000]);
+        flat.TryGetService(800, out var service).ShouldBeTrue();
+        flat.CircuitsOf(service).ToArray().Select(flat.CircuitId).ShouldBe([7000]);
     }
 
     [Fact]
