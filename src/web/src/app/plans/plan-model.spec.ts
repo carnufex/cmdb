@@ -6,6 +6,7 @@ import {
   PlanSummary,
   planLifecycle,
   planParam,
+  resolveSite,
 } from './plan-model';
 
 const plan = (
@@ -85,5 +86,19 @@ describe('plan model', () => {
       [2, [10, 12]],
       [5, [11]],
     ]);
+  });
+
+  it('finds a site by code among the planned ones first, then by exact code in the search (#107)', async () => {
+    const planned = [{ id: -4, code: 'RAD-NY-1', name: 'Ny' }];
+    const search = vi.fn(async () => [
+      { type: 'equipment', id: 9, code: 'SKP-000001' },
+      { type: 'site', id: 12, code: 'SKP-000001' },
+      { type: 'site', id: 13, code: 'SKP-0000012' },
+    ]);
+
+    expect(await resolveSite('rad-ny-1', planned, search)).toBe(-4);
+    expect(search).not.toHaveBeenCalled();
+    expect(await resolveSite(' skp-000001 ', planned, search)).toBe(12);
+    expect(await resolveSite('SKP-0', planned, search)).toBeNull();
   });
 });

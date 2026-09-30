@@ -24,7 +24,11 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
     public const string PostGisImage = "postgis/postgis:17-3.5";
 
-    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder(PostGisImage).Build();
+    // Many tests start their own API over their own database (plans, the change stream), each with its pools and a
+    // listening connection; the default of 100 connections runs out when they run in parallel.
+    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder(PostGisImage)
+        .WithCommand("-c", "max_connections=500")
+        .Build();
     private int _databases;
 
     public string ConnectionString => _container.GetConnectionString();

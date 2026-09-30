@@ -29,7 +29,14 @@ public sealed record PlanSite(long Id, double X, double Y);
 /// the order they apply, with the sites they touch for the map.
 /// </summary>
 public sealed record PlanDiff(PlanSummary Plan, IReadOnlyList<PlanSummary> Plans, IReadOnlyList<PlanOperationView> Changes,
-    IReadOnlyList<PlanSite> Sites, double[]? Extent, int Problems, double ElapsedMs);
+    IReadOnlyList<PlanSite> Sites, double[]? Extent, int Problems, double ElapsedMs, PlannedMap? Planned = null);
+
+/// <summary>What the plan creates (#107), for the map: planned sites and cables with their geometry.</summary>
+public sealed record PlannedMap(IReadOnlyList<PlannedSite> Sites, IReadOnlyList<PlannedCable> Cables);
+
+public sealed record PlannedSite(long Id, string Code, string Name, string SiteType, double X, double Y);
+
+public sealed record PlannedCable(long Id, string Code, double[][] Coordinates);
 
 public sealed record PlanIdRequest(long Id);
 
@@ -67,6 +74,20 @@ public sealed class AddOperationRequest
     public long? ObjectId { get; set; }
     public string? Lifecycle { get; set; }
     public string? Name { get; set; }
+
+    // create_site, create_equipment and create_cable (#107).
+    public string? Code { get; set; }
+    public string? SiteType { get; set; }
+    public double? X { get; set; }
+    public double? Y { get; set; }
+    public string? TypeKey { get; set; }
+
+    /// <summary>create_equipment: the site, existing or planned (negative id).</summary>
+    public long? SiteId { get; set; }
+
+    /// <summary>create_cable: the sites at the two ends, existing or planned.</summary>
+    public long? ASiteId { get; set; }
+    public long? BSiteId { get; set; }
 }
 
 public sealed class AddOperationValidator : Validator<AddOperationRequest>
@@ -88,6 +109,27 @@ public sealed class AddOperationValidator : Validator<AddOperationRequest>
             RuleFor(r => r.Type).Must(t => t is "site" or "equipment" or "cable").WithMessage("type is site, equipment or cable.");
             RuleFor(r => r.ObjectId).NotNull();
             RuleFor(r => r.Lifecycle).Must(l => Lifecycles.Contains(l)).WithMessage("Unknown lifecycle.");
+        });
+        When(r => r.Kind == "create_site", () =>
+        {
+            RuleFor(r => r.Code).NotEmpty().MaximumLength(50);
+            RuleFor(r => r.Name).NotEmpty().MaximumLength(200);
+            RuleFor(r => r.SiteType).Must(t => PlanKinds.SiteTypes.Contains(t)).WithMessage("siteType is hub, aggregation, radio, cabinet or splice.");
+            RuleFor(r => r.X).NotNull().InclusiveBetween(Map.TileGrid.MinX, Map.TileGrid.MaxX);
+            RuleFor(r => r.Y).NotNull().InclusiveBetween(Map.TileGrid.MinY, Map.TileGrid.MaxY);
+        });
+        When(r => r.Kind == "create_equipment", () =>
+        {
+            RuleFor(r => r.SiteId).NotNull().NotEqual(0);
+            RuleFor(r => r.Name).NotEmpty().MaximumLength(200);
+            RuleFor(r => r.TypeKey).Must(k => k is not null && Cmdb.Catalog.TypeCatalog.Embedded.Find(k) is { Category: not "card" })
+                .WithMessage("typeKey is an equipment model that is not a card (describe_catalog lists them).");
+        });
+        When(r => r.Kind == "create_cable", () =>
+        {
+            RuleFor(r => r.ASiteId).NotNull().NotEqual(0);
+            RuleFor(r => r.BSiteId).NotNull().NotEqual(0).NotEqual(r => r.ASiteId).WithMessage("A cable joins two different sites.");
+            RuleFor(r => r.TypeKey).Must(k => Planned.ConductorCount(k ?? "") > 0).WithMessage("typeKey is a cable type in the catalog.");
         });
         When(r => r.Kind == "rename", () =>
         {
@@ -158,7 +200,7 @@ public sealed class GetPlanEndpoint(RequestDb db, GraphHolder holder, PlanViews 
         var summaries = await PlanSql.SummariesAsync(db, [req.Id, .. view.Chain.Plan.DependsOn], ct);
         var own = await PlanSql.OperationsAsync(db, req.Id, ct);
         var mask = await masks.GetAsync(graph, scope, ct);
-        var operations = await PlanSql.DescribeAsync(db, graph, mask, scope, own, view.Problems, ct);
+        var operations = await PlanSql.DescribeAsync(db, graph, mask, scope, own, view.Problems, ct, view.Chain.Operations);
         await Send.OkAsync(new PlanDetail(
             summaries.Single(s => s.Id == req.Id),
             [.. summaries.Where(s => s.Id != req.Id && scope.SeesPlan(s.Id))],
@@ -313,7 +355,9 @@ public sealed class PlanViewEndpoint(RequestDb db, GraphHolder holder, PlanViews
         var siteIds = changes.SelectMany(c => c.Terminals.Select(t => t.Site?.Id ?? 0))
             .Concat(changes.Where(c => c.Target?.Type == "site").Select(c => c.Target!.Id))
             .Where(id => id != 0).Distinct().ToArray();
-        var sites = scope.HidesCoordinates ? [] : await PlanSql.SitePositionsAsync(db, siteIds, ct);
+        var planned = scope.HidesCoordinates ? null : await PlannedMapAsync(view.Chain.Operations, ct);
+        List<PlanSite> sites = scope.HidesCoordinates ? [] : [.. await PlanSql.SitePositionsAsync(db, [.. siteIds.Where(id => id > 0)], ct),
+            .. planned!.Sites.Select(s => new PlanSite(s.Id, s.X, s.Y))];
         double[]? extent = sites.Count == 0 ? null : [sites.Min(s => s.X), sites.Min(s => s.Y), sites.Max(s => s.X), sites.Max(s => s.Y)];
         await Send.OkAsync(new PlanDiff(
             summaries.Single(s => s.Id == req.Id),
@@ -322,6 +366,33 @@ public sealed class PlanViewEndpoint(RequestDb db, GraphHolder holder, PlanViews
             sites,
             extent,
             changes.Count(c => c.Problem is not null),
-            Math.Round(sw.Elapsed.TotalMilliseconds, 1)), ct);
+            Math.Round(sw.Elapsed.TotalMilliseconds, 1),
+            planned), ct);
+    }
+
+    /// <summary>Planned sites from their operations, and planned cables as a line between their two sites.</summary>
+    private async Task<PlannedMap> PlannedMapAsync(IReadOnlyList<PlanOp> operations, CancellationToken ct)
+    {
+        var sites = operations.Where(o => o.Kind == "create_site").Select(o => new PlannedSite(Planned.ObjectId(o.Id),
+            o.Payload.GetProperty("code").GetString()!, o.Payload.GetProperty("name").GetString()!, o.Payload.GetProperty("siteType").GetString()!,
+            o.Payload.GetProperty("x").GetDouble(), o.Payload.GetProperty("y").GetDouble())).ToList();
+        var cables = operations.Where(o => o.Kind == "create_cable").ToList();
+        if (cables.Count == 0)
+        {
+            return new PlannedMap(sites, []);
+        }
+        var ends = cables.SelectMany(c => new[] { c.Payload.GetProperty("a").GetInt64(), c.Payload.GetProperty("b").GetInt64() }).ToHashSet();
+        var positions = (await PlanSql.SitePositionsAsync(db, [.. ends.Where(id => id > 0)], ct)).ToDictionary(s => s.Id, s => (s.X, s.Y));
+        foreach (var s in sites)
+        {
+            positions[s.Id] = (s.X, s.Y);
+        }
+        return new PlannedMap(sites, [.. cables
+            .Where(c => positions.ContainsKey(c.Payload.GetProperty("a").GetInt64()) && positions.ContainsKey(c.Payload.GetProperty("b").GetInt64()))
+            .Select(c =>
+            {
+                var (a, b) = (positions[c.Payload.GetProperty("a").GetInt64()], positions[c.Payload.GetProperty("b").GetInt64()]);
+                return new PlannedCable(Planned.ObjectId(c.Id), $"NY-K{c.Id}", [[a.X, a.Y], [b.X, b.Y]]);
+            })]);
     }
 }

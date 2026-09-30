@@ -48,8 +48,10 @@ export class ActivePlan {
       const diff = this.view.value();
       if (this.id() === null) {
         this.mapView.clearMarks();
+        this.mapView.planned.set(null);
       } else if (diff) {
         this.mapView.mark(diffPoints(diff), diff.extent);
+        this.mapView.planned.set(diff.planned);
       }
     });
   }

@@ -68,35 +68,53 @@ public sealed partial class Graph
     /// <summary>The change stream position the graph reflects (see <see cref="IGraphChangeFeed"/>).</summary>
     public required string Version { get; init; }
 
-    public int NodeCount => TerminalIds.Length;
+    public int NodeCount => TerminalIds.Length + (_overlay?.TerminalIds.Count ?? 0);
 
     /// <summary>Undirected edges; each is stored once per direction.</summary>
     public int EdgeCount => EdgeTargets.Length / 2;
 
     public int CircuitCount => CircuitIds.Length;
 
-    public int SiteCount => SiteIds.Length;
+    public int SiteCount => SiteIds.Length + (_overlay?.SiteIds.Count ?? 0);
 
-    public int CableCount => CableIds.Length;
+    public int CableCount => CableIds.Length + (_overlay?.CableIds.Count ?? 0);
 
     public int ServiceCount => ServiceIds.Length;
 
     /// <summary>The site index of an equipment index.</summary>
-    public int SiteIndexOfEquipment(int equipment) => EquipmentSites[equipment];
+    public int SiteIndexOfEquipment(int equipment) =>
+        equipment < EquipmentIds.Length ? EquipmentSites[equipment] : _overlay!.EquipmentSites[equipment - EquipmentIds.Length];
 
     /// <summary>The site index of a port's equipment, or -1 for a conductor end.</summary>
-    public int SiteIndexOfNode(int node) => TerminalKinds[node] == TerminalKind.Port ? EquipmentSites[TerminalOwners[node]] : -1;
+    public int SiteIndexOfNode(int node) => KindOf(node) == TerminalKind.Port ? SiteIndexOfEquipment(OwnerOf(node)) : -1;
 
     /// <summary>The cable index of a conductor end, or -1 for a port.</summary>
-    public int CableIndexOfNode(int node) => TerminalKinds[node] == TerminalKind.ConductorEnd ? ConductorCables[TerminalOwners[node]] : -1;
+    public int CableIndexOfNode(int node) => KindOf(node) == TerminalKind.ConductorEnd ? CableOfConductor(OwnerOf(node)) : -1;
 
     public bool TryGetNode(long terminalId, out int node)
     {
         node = Array.BinarySearch(TerminalIds, terminalId);
-        return node >= 0;
+        if (node >= 0)
+        {
+            return true;
+        }
+        if (_overlay is not null && _overlay.NodeById.TryGetValue(terminalId, out var planned))
+        {
+            node = TerminalIds.Length + planned;
+            return true;
+        }
+        return false;
     }
 
-    public long TerminalId(int node) => TerminalIds[node];
+    public long TerminalId(int node) => node < TerminalIds.Length ? TerminalIds[node] : _overlay!.TerminalIds[node - TerminalIds.Length];
+
+    /// <summary>Whether the node is a terminal planned in this view (#107), not in production.</summary>
+    public bool IsPlanned(int node) => node >= TerminalIds.Length;
+
+    private int OwnerOf(int node) => node < TerminalIds.Length ? TerminalOwners[node] : _overlay!.Owners[node - TerminalIds.Length];
+
+    private int CableOfConductor(int conductor) =>
+        conductor < ConductorIds.Length ? ConductorCables[conductor] : _overlay!.ConductorCables[conductor - ConductorIds.Length];
 
     public bool TryGetCircuit(long circuitId, out int circuit)
     {
@@ -113,30 +131,64 @@ public sealed partial class Graph
     public bool TryGetEquipment(long equipmentId, out int equipment)
     {
         equipment = Array.BinarySearch(EquipmentIds, equipmentId);
-        return equipment >= 0;
+        if (equipment >= 0)
+        {
+            return true;
+        }
+        if (_overlay is not null && _overlay.EquipmentById.TryGetValue(equipmentId, out var planned))
+        {
+            equipment = EquipmentIds.Length + planned;
+            return true;
+        }
+        return false;
     }
 
     public bool TryGetCable(long cableId, out int cable)
     {
         cable = Array.BinarySearch(CableIds, cableId);
-        return cable >= 0;
+        if (cable >= 0)
+        {
+            return true;
+        }
+        if (_overlay is not null && _overlay.CableById.TryGetValue(cableId, out var planned))
+        {
+            cable = CableIds.Length + planned;
+            return true;
+        }
+        return false;
     }
 
     /// <summary>Only sites with equipment are in the graph.</summary>
     public bool TryGetSite(long siteId, out int site)
     {
         site = Array.BinarySearch(SiteIds, siteId);
-        return site >= 0;
+        if (site >= 0)
+        {
+            return true;
+        }
+        if (_overlay is not null && _overlay.SiteById.TryGetValue(siteId, out var planned))
+        {
+            site = SiteIds.Length + planned;
+            return true;
+        }
+        return false;
     }
 
     /// <summary>The equipment's ports, as nodes.</summary>
-    public ReadOnlySpan<int> PortsOf(int equipment) => Slice(EquipmentPorts, EquipmentPortStart, equipment);
+    public ReadOnlySpan<int> PortsOf(int equipment) => equipment < EquipmentIds.Length
+        ? Slice(EquipmentPorts, EquipmentPortStart, equipment)
+        : _overlay!.EquipmentPorts[equipment - EquipmentIds.Length];
 
     /// <summary>The conductor ends of the cable, as nodes.</summary>
-    public ReadOnlySpan<int> EndsOf(int cable) => Slice(CableEnds, CableEndStart, cable);
+    public ReadOnlySpan<int> EndsOf(int cable) => cable < CableIds.Length
+        ? Slice(CableEnds, CableEndStart, cable)
+        : _overlay!.CableEnds[cable - CableIds.Length];
 
-    /// <summary>The equipment at the site, as equipment indexes.</summary>
-    public ReadOnlySpan<int> EquipmentAt(int site) => Slice(SiteEquipment, SiteEquipmentStart, site);
+    /// <summary>The equipment at the site, as equipment indexes; in a plan view with planned equipment added.</summary>
+    public ReadOnlySpan<int> EquipmentAt(int site) =>
+        _overlay is not null && _overlay.SiteEquipment.TryGetValue(site, out var all) ? all
+        : site < SiteIds.Length ? Slice(SiteEquipment, SiteEquipmentStart, site)
+        : [];
 
     /// <summary>Builds the derived ownership indexes; called once by the builder and the snapshot reader.</summary>
     internal Graph IndexOwners()
@@ -183,8 +235,8 @@ public sealed partial class Graph
     /// <summary>The circuit's path, in order.</summary>
     public ReadOnlySpan<int> HopsOf(int circuit) => Slice(HopNodes, HopStart, circuit);
 
-    /// <summary>Circuits whose path passes the node.</summary>
-    public ReadOnlySpan<int> CircuitsThrough(int node) => Slice(NodeCircuits, NodeCircuitStart, node);
+    /// <summary>Circuits whose path passes the node. Planned terminals carry none.</summary>
+    public ReadOnlySpan<int> CircuitsThrough(int node) => node < TerminalIds.Length ? Slice(NodeCircuits, NodeCircuitStart, node) : [];
 
     /// <summary>Circuits riding on this one (upwards).</summary>
     public ReadOnlySpan<int> DependentsOf(int circuit) => Slice(Dependents, DependentStart, circuit);
@@ -200,7 +252,7 @@ public sealed partial class Graph
 
     private static ReadOnlySpan<int> Slice(int[] values, int[] start, int key) => values.AsSpan(start[key], start[key + 1] - start[key]);
 
-    public TerminalKind KindOf(int node) => TerminalKinds[node];
+    public TerminalKind KindOf(int node) => node < TerminalIds.Length ? TerminalKinds[node] : _overlay!.Kinds[node - TerminalIds.Length];
 
     public ReadOnlySpan<int> Neighbours(int node) =>
         _overlay is not null && _overlay.Edges.TryGetValue(node, out var edges)
@@ -213,13 +265,20 @@ public sealed partial class Graph
             : EdgeKinds.AsSpan(EdgeStart[node], EdgeStart[node + 1] - EdgeStart[node]);
 
     /// <summary>Equipment id of a port, or null for a conductor end.</summary>
-    public long? EquipmentOf(int node) => TerminalKinds[node] == TerminalKind.Port ? EquipmentIds[TerminalOwners[node]] : null;
+    public long? EquipmentOf(int node) => KindOf(node) == TerminalKind.Port ? EquipmentId(OwnerOf(node)) : null;
 
     /// <summary>Cable id of a conductor end, or null for a port.</summary>
-    public long? CableOf(int node) => TerminalKinds[node] == TerminalKind.ConductorEnd ? CableIds[ConductorCables[TerminalOwners[node]]] : null;
+    public long? CableOf(int node) => KindOf(node) == TerminalKind.ConductorEnd ? CableId(CableOfConductor(OwnerOf(node))) : null;
 
     /// <summary>Site of a port's equipment, or null for a conductor end.</summary>
-    public long? SiteOf(int node) => TerminalKinds[node] == TerminalKind.Port ? SiteIds[EquipmentSites[TerminalOwners[node]]] : null;
+    public long? SiteOf(int node) => KindOf(node) == TerminalKind.Port ? SiteId(SiteIndexOfEquipment(OwnerOf(node))) : null;
+
+    public long EquipmentId(int equipment) =>
+        equipment < EquipmentIds.Length ? EquipmentIds[equipment] : _overlay!.EquipmentIds[equipment - EquipmentIds.Length];
+
+    public long CableId(int cable) => cable < CableIds.Length ? CableIds[cable] : _overlay!.CableIds[cable - CableIds.Length];
+
+    public long SiteId(int site) => site < SiteIds.Length ? SiteIds[site] : _overlay!.SiteIds[site - SiteIds.Length];
 
     /// <summary>Rough size of the arrays in bytes, for diagnostics.</summary>
     public long ApproximateBytes =>

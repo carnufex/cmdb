@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { ReservationView } from '../objects/claims';
 import { ObjectLinkComponent } from '../objects/object-link';
+import { PlanCreateComponent } from './plan-create';
 import { StatusComponent } from '../shell/status';
 import { Tools } from '../shell/tools';
 import { ActivePlan } from './active-plan';
@@ -24,7 +25,7 @@ import {
  */
 @Component({
   selector: 'cmdb-plan-panel',
-  imports: [FormsModule, StatusComponent, ObjectLinkComponent],
+  imports: [FormsModule, StatusComponent, ObjectLinkComponent, PlanCreateComponent],
   template: `
     <header class="head">
       <h2>Planer</h2>
@@ -117,6 +118,10 @@ import {
                     </li>
                   }
                 </ol>
+              }
+              @if (d.plan.status === 'draft') {
+                <h4>Nytt i planen</h4>
+                <cmdb-plan-create />
               }
               <h4>
                 Reservationer <span class="muted">({{ reservations.value()?.length ?? 0 }})</span>

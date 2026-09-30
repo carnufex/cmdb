@@ -29,7 +29,14 @@ export interface PlanOperation {
   id: number;
   planId: number;
   seq: number;
-  kind: 'connect' | 'disconnect' | 'set_lifecycle' | 'rename';
+  kind:
+    | 'connect'
+    | 'disconnect'
+    | 'set_lifecycle'
+    | 'rename'
+    | 'create_site'
+    | 'create_equipment'
+    | 'create_cable';
   summary: string;
   terminals: TraceHop[];
   target: ObjectRef | null;
@@ -62,6 +69,11 @@ export interface PlanDiff {
   extent: number[] | null;
   problems: number;
   elapsedMs: number;
+  /** What the plan creates (#107), for the map. */
+  planned: {
+    sites: { id: number; code: string; name: string; siteType: string; x: number; y: number }[];
+    cables: { id: number; code: string; coordinates: number[][] }[];
+  } | null;
 }
 
 /** POST /api/plans/{id}/apply and /cancel */
@@ -85,7 +97,10 @@ export type NewOperation =
       objectId: number;
       lifecycle: string;
     }
-  | { kind: 'rename'; type: 'site' | 'equipment'; objectId: number; name: string };
+  | { kind: 'rename'; type: 'site' | 'equipment'; objectId: number; name: string }
+  | { kind: 'create_site'; code: string; name: string; siteType: string; x: number; y: number }
+  | { kind: 'create_equipment'; siteId: number; typeKey: string; name: string }
+  | { kind: 'create_cable'; aSiteId: number; bSiteId: number; typeKey: string };
 
 export const planStatusLabels: Record<PlanSummary['status'], string> = {
   draft: 'Utkast',
@@ -126,4 +141,29 @@ export function byPlan(
     plan,
     changes: diff.changes.filter((c) => c.planId === plan.id),
   }));
+}
+
+/** A site the user can pick by code: planned in the plan (negative id) or found in production. */
+export interface SiteChoice {
+  id: number;
+  code: string;
+  name: string;
+}
+
+/**
+ * The site with this code (#107): planned in the plan first, otherwise an exact code match among the quick search's
+ * hits; null when there is none.
+ */
+export async function resolveSite(
+  code: string,
+  planned: readonly SiteChoice[],
+  search: (q: string) => Promise<{ type: string; id: number; code: string }[]>,
+): Promise<number | null> {
+  const wanted = code.trim().toUpperCase();
+  const own = planned.find((s) => s.code.toUpperCase() === wanted);
+  if (own) {
+    return own.id;
+  }
+  const hits = await search(code.trim());
+  return hits.find((h) => h.type === 'site' && h.code.toUpperCase() === wanted)?.id ?? null;
 }

@@ -21,6 +21,19 @@ export interface Route {
   seq: number;
 }
 
+/** What the active plan creates (#107), drawn in its own layer: planned sites and cables. */
+export interface PlannedObjects {
+  sites: readonly {
+    id: number;
+    code: string;
+    name: string;
+    siteType: string;
+    x: number;
+    y: number;
+  }[];
+  cables: readonly { id: number; code: string; coordinates: readonly (readonly number[])[] }[];
+}
+
 /**
  * What the map is looking at, shared with other parts of the app: search ranks hits near the centre, and
  * anything can ask the map to go somewhere or mark a set of sites.
@@ -31,6 +44,7 @@ export class MapView {
   readonly focusRequest = signal<(Point & { seq: number }) | null>(null);
   readonly highlight = signal<Highlight | null>(null);
   readonly route = signal<Route | null>(null);
+  readonly planned = signal<PlannedObjects | null>(null);
 
   /**
    * Set by the map while it is shown: animates the view over the country and returns frame times in ms.

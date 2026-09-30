@@ -182,8 +182,16 @@ public sealed class GraphMask
     public bool NodeVisible(Cmdb.Graph.Graph g, int node)
     {
         var site = g.SiteIndexOfNode(node);
-        return site >= 0 ? Sites[site] : Cables[g.CableIndexOfNode(node)];
+        return site >= 0 ? SiteVisible(site) : CableVisible(g.CableIndexOfNode(node));
     }
+
+    /// <summary>
+    /// Masks are built for production. Planned objects (#107) have indexes after production's and are visible to
+    /// whoever sees the plan; which plans a caller sees is itself decided by the scopes.
+    /// </summary>
+    public bool SiteVisible(int site) => site >= Sites.Length || Sites[site];
+
+    public bool CableVisible(int cable) => cable >= Cables.Length || Cables[cable];
 
     public bool CircuitVisible(int circuit) => Circuits[circuit];
 

@@ -66,7 +66,7 @@ public sealed class SiteGraphEndpoint(GraphHolder holder, RequestDb db, ScopeMas
         }
 
         // Circuits above the physical layer that end at the site, counted per far site and layer, from the graph.
-        if (g is not null && mask is not null && g.TryGetSite(siteId, out var site) && mask.Sites[site])
+        if (g is not null && mask is not null && g.TryGetSite(siteId, out var site) && mask.SiteVisible(site))
         {
             var counts = new Dictionary<(long Other, CircuitLayer Layer), int>();
             var seen = new HashSet<int>();
@@ -86,7 +86,7 @@ public sealed class SiteGraphEndpoint(GraphHolder holder, RequestDb db, ScopeMas
                         var b = g.SiteOf(hops[^1]);
                         var other = a == siteId ? b : a;
                         if (other is { } o && o != siteId && (a == siteId || b == siteId)
-                            && g.TryGetSite(o, out var otherIndex) && mask.Sites[otherIndex])
+                            && g.TryGetSite(o, out var otherIndex) && mask.SiteVisible(otherIndex))
                         {
                             counts[(o, layer)] = counts.GetValueOrDefault((o, layer)) + 1;
                         }

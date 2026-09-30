@@ -76,9 +76,9 @@ public sealed class ImpactEndpoint(GraphHolder holder, RequestDb db, ScopeMasks 
         var sw = Stopwatch.StartNew();
         ImpactResult? result = type switch
         {
-            "site" when g.TryGetSite(id, out var site) && mask.Sites[site] => GraphImpact.OfSite(g, site),
-            "equipment" when g.TryGetEquipment(id, out var equipment) && mask.Sites[g.SiteIndexOfEquipment(equipment)] => GraphImpact.OfEquipment(g, equipment),
-            "cable" when g.TryGetCable(id, out var cable) && mask.Cables[cable] => GraphImpact.OfCable(g, cable),
+            "site" when g.TryGetSite(id, out var site) && mask.SiteVisible(site) => GraphImpact.OfSite(g, site),
+            "equipment" when g.TryGetEquipment(id, out var equipment) && mask.SiteVisible(g.SiteIndexOfEquipment(equipment)) => GraphImpact.OfEquipment(g, equipment),
+            "cable" when g.TryGetCable(id, out var cable) && mask.CableVisible(cable) => GraphImpact.OfCable(g, cable),
             _ => null,
         };
         if (result is null)

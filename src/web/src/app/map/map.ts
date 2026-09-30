@@ -43,7 +43,7 @@ import {
 } from './map-grid';
 import { createBasemap, esriTileUrl, parseBasemap } from './map-basemap';
 import { createStyler, Palette, readPalette } from './map-style';
-import { MapView, Route } from './map-view';
+import { MapView, PlannedObjects, Route } from './map-view';
 
 interface Hover {
   x: number;
@@ -82,6 +82,7 @@ export class MapComponent {
   private basemap?: TileLayer<XYZ>;
   private marks?: VectorLayer<VectorSource<Feature<OlPoint>>>;
   private route?: VectorLayer<VectorSource<Feature<Geometry>>>;
+  private planned?: VectorLayer<VectorSource<Feature<Geometry>>>;
   private palette?: Palette;
 
   constructor() {
@@ -117,6 +118,13 @@ export class MapComponent {
         this.showRoute(route);
       }
     });
+    // What the active plan creates (#107): planned sites and cables, dashed in the planned colour.
+    effect(() => {
+      const planned = this.mapView.planned();
+      if (this.planned && this.map) {
+        this.showPlanned(planned);
+      }
+    });
     // Other parts of the app (search, panels) ask the map to go somewhere.
     effect(() => {
       const focus = this.mapView.focusRequest();
@@ -142,6 +150,7 @@ export class MapComponent {
       this.network?.changed();
       this.marks?.changed();
       this.route?.changed();
+      this.planned?.changed();
     };
 
     this.network = new VectorTileLayer({
@@ -168,9 +177,15 @@ export class MapComponent {
       style: (f) => this.routeStyle(f),
       zIndex: 20,
     });
+    this.planned = new VectorLayer({
+      source: new VectorSource<Feature<Geometry>>(),
+      style: (f) => this.plannedStyle(f),
+      zIndex: 15,
+    });
     const layers: (TileLayer | VectorTileLayer | VectorLayer)[] = [
       this.network,
       this.marks,
+      this.planned,
       this.route,
     ];
     if (parseBasemap(this.config.basemap) === 'esri') {
@@ -196,6 +211,7 @@ export class MapComponent {
       this.showMarks(pending.points, pending.extent);
     }
     this.showRoute(this.mapView.route());
+    this.showPlanned(this.mapView.planned());
     const reportCenter = () => {
       const [x, y] = this.map!.getView().getCenter() ?? [0, 0];
       this.mapView.center.set({ x, y });
@@ -219,14 +235,17 @@ export class MapComponent {
               x: e.pixel[0],
               y: e.pixel[1],
               code: String(feature.get('code')),
-              name: feature.get('name') ?? null,
+              name: feature.get('planned') ? 'Planerad' : (feature.get('name') ?? null),
             }
           : null,
       );
     });
     this.map.on('click', (e) => {
       const feature = this.map!.forEachFeatureAtPixel(e.pixel, (f) => f, { hitTolerance: 4 });
-      if (feature?.get('route')) {
+      if (feature?.get('planned')) {
+        // Planned in the active plan (#107): nothing in production to open; the plan panel lists it.
+        return;
+      } else if (feature?.get('route')) {
         // Part of an open trace: stack it on the trace instead of starting over.
         this.panels.open({ type: feature.get('route'), id: String(feature.getId()) });
       } else if (feature?.get('mark')) {
@@ -302,6 +321,56 @@ export class MapComponent {
       };
     }
     return this.markStyleCache.style;
+  }
+
+  private plannedStyleCache?: { key: string; line: Style[]; point: Style };
+
+  private plannedStyle(feature: FeatureLike): Style | Style[] {
+    const palette = (this.palette ??= readPalette(this.host.nativeElement));
+    const key = `${palette.planned}|${palette.bg}`;
+    if (this.plannedStyleCache?.key !== key) {
+      this.plannedStyleCache = {
+        key,
+        line: [
+          new Style({ stroke: new Stroke({ color: palette.bg, width: 6 }) }),
+          new Style({ stroke: new Stroke({ color: palette.planned, width: 3, lineDash: [8, 6] }) }),
+        ],
+        point: new Style({
+          image: new Circle({
+            radius: 6,
+            fill: new Fill({ color: palette.bg }),
+            stroke: new Stroke({ color: palette.planned, width: 3 }),
+          }),
+          zIndex: 1,
+        }),
+      };
+    }
+    return feature.get('planned') === 'site'
+      ? this.plannedStyleCache.point
+      : this.plannedStyleCache.line;
+  }
+
+  /** Draws what the active plan creates; nothing to open, since planned objects have no panel yet. */
+  private showPlanned(planned: PlannedObjects | null): void {
+    const source = this.planned!.getSource()!;
+    source.clear(true);
+    if (!planned) {
+      return;
+    }
+    source.addFeatures([
+      ...planned.cables.map((c) => {
+        const f = new Feature<Geometry>(new LineString(c.coordinates.map((p) => [p[0], p[1]])));
+        f.set('planned', 'cable');
+        f.set('code', c.code);
+        return f;
+      }),
+      ...planned.sites.map((s) => {
+        const f = new Feature<Geometry>(new OlPoint([s.x, s.y]));
+        f.set('planned', 'site');
+        f.set('code', s.code);
+        return f;
+      }),
+    ]);
   }
 
   private routeStyleCache?: { key: string; line: Style[]; point: Style };
