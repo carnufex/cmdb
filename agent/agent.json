@@ -1,0 +1,23 @@
+{
+  "voice_id": "4xkUqaR9MYOJHoaC1Nak",
+  "secret_id": "nSDMggYqX8k1bL1rtJKj",
+  "mcp_server_id": "0xlRUZKkOFszZ29EOACs",
+  "knowledge_base": {
+    "fiberbrott.md": {
+      "id": "UIzsIJE0jdM4GCn1Pfoi",
+      "sha": "c22b90890477737b",
+      "name": "Runbook: misstänkt fiberbrott (syntetisk)"
+    },
+    "lank-nere.md": {
+      "id": "4en74TRwDwOWPdaqJ4gD",
+      "sha": "0be074dd68d3703d",
+      "name": "Runbook: länk nere på en station (syntetisk)"
+    },
+    "stromavbrott.md": {
+      "id": "QztDUpiXeCyRgz6BICrp",
+      "sha": "e84f4bf93af20b11",
+      "name": "Runbook: strömavbrott eller reservkraft (syntetisk)"
+    }
+  },
+  "agent_id": "agent_5601m3sj3df0f6jvg4w1bj13m92g"
+}
