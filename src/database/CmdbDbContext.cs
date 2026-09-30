@@ -36,6 +36,9 @@ public sealed class CmdbDbContext(DbContextOptions<CmdbDbContext> options) : DbC
     public DbSet<ScopeCable> ScopeCables => Set<ScopeCable>();
     public DbSet<ScopeCircuit> ScopeCircuits => Set<ScopeCircuit>();
     public DbSet<ScopeService> ScopeServices => Set<ScopeService>();
+    public DbSet<Plan> Plans => Set<Plan>();
+    public DbSet<PlanDependency> PlanDependencies => Set<PlanDependency>();
+    public DbSet<PlanOperation> PlanOperations => Set<PlanOperation>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

@@ -22,7 +22,7 @@ public class AccessScope
     /// <summary>Attribute keys removed from answers, e.g. serialNumber; "coordinates" hides positions.</summary>
     public string[] HiddenAttributes { get; set; } = [];
 
-    /// <summary>Plans (#24) the scope may see; empty means production only.</summary>
+    /// <summary>Plans (#24) the scope may see, by id; "*" is every plan and empty means production only.</summary>
     public string[] Plans { get; set; } = [];
 
     /// <summary>

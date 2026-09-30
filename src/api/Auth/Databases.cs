@@ -6,9 +6,12 @@ namespace Cmdb.Api.Auth;
 /// Connections for the system's own work, which sees everything: graph loading, the change stream, pruning, scope
 /// refresh and migrations. Never used for a request.
 /// </summary>
-public sealed class SystemDb(NpgsqlDataSource source)
+public sealed class SystemDb(NpgsqlDataSource source) : IAsyncDisposable
 {
     public NpgsqlDataSource Source => source;
+
+    /// <summary>The pool is shared with <see cref="RequestDb"/>; it closes with the container.</summary>
+    public ValueTask DisposeAsync() => source.DisposeAsync();
 }
 
 /// <summary>

@@ -10,6 +10,10 @@ namespace Cmdb.Api.Features.Trace;
 
 public sealed class TraceRequest
 {
+    /// <summary>Trace in a plan's view (#24) instead of production.</summary>
+    [QueryParam]
+    public long? Plan { get; set; }
+
     [QueryParam]
     public long? Terminal { get; set; }
 
@@ -68,7 +72,7 @@ public sealed class TraceValidator : Validator<TraceRequest>
 /// both ends, or a service or circuit down through the layers it rides on. The walk is in memory (ADR-0002); only the
 /// names of the few terminals involved come from the database.
 /// </summary>
-public sealed class TraceEndpoint(GraphHolder holder, RequestDb db, ScopeMasks masks) : Endpoint<TraceRequest, TraceResult>
+public sealed class TraceEndpoint(GraphHolder holder, RequestDb db, ScopeMasks masks, Cmdb.Api.Features.Plans.PlanViews plans) : Endpoint<TraceRequest, TraceResult>
 {
     public override void Configure() => Get("/trace");
 
@@ -78,6 +82,15 @@ public sealed class TraceEndpoint(GraphHolder holder, RequestDb db, ScopeMasks m
         {
             await Send.ResultAsync(TypedResults.Problem("The network graph is still loading; try again shortly.", statusCode: StatusCodes.Status503ServiceUnavailable));
             return;
+        }
+        if (req.Plan is { } planId)
+        {
+            if (await plans.GetAsync(graph, planId, HttpContext.Scope(), ct) is not { } view)
+            {
+                await Send.NotFoundAsync(ct);
+                return;
+            }
+            graph = view.Graph;
         }
         var mask = await masks.GetAsync(graph, HttpContext.Scope(), ct);
         var result = await RunAsync(graph, mask, db, req.Terminal, req.Service, req.Circuit, ct);

@@ -19,7 +19,11 @@
 - Hela grafen laddas i varje API-podd i kompakt form (`src/graph`, #8). Noderna är terminalerna, med täta heltalsindex. Kanterna är kopplingar plus en kant per ledare, lagrade i CSR-format i sammanhängande arrayer. Utrustning, siter, kablar, kretsar (hopp, beroenden) och tjänster ligger i parallella arrayer.
 - Grafen är oföränderlig. Läsare tar den aktuella instansen en gång per operation, och en ny version byts in atomiskt.
 - Vid start läses en ögonblicksbild (fil) om dess dataversion stämmer med databasen, annars laddas grafen med binär `COPY` och en ny ögonblicksbild skrivs. `/health/ready` svarar först när grafen finns, och `GET /api/graph` visar storlek, version och laddtid.
-- Planer är tunna lager ovanpå basgrafen, och att visa en plan är basgraf plus delta.
+- **Planer (#24, ADR-0005)** är tunna lager ovanpå basgrafen.
+  - Att visa en plan är basgraf plus delta. `Graph.WithChanges` ger en vy som delar alla basens arrayer och bara ersätter grannlistan för de noder planen kopplar eller kopplar bort. En plan kostar alltså minne i proportion till sin storlek, inte till nätets. En kopia per plan (605 MB) ryms inte i podden.
+  - Vyn är produktion, plus planens utkast till beroenden i beroendeordning, plus planen själv. Den cachas per produktionsgraf och planinnehåll (`PlanViews`). Omfångsmasker delas med basen.
+  - Operationer som inte längre passar produktion (terminalen finns inte, redan kopplad, inte kopplad) hoppas över i vyn och rapporteras per operation.
+  - Spårning och påverkan tar `?plan=<id>`. `GET /api/plans/{id}/view` ger diffen mot produktion med de siter den rör. Den är budgetraden *Växla vy mellan produktion och plan*.
 - Alla traverseringar (spårning, påverkan, grannskap) sker i minnet. Databasen används för detaljer, skrivningar och geografiska frågor.
 - Påverkansanalys (`GET /api/{cables|equipment|sites}/{id}/impact`, `src/graph/GraphImpact.cs`, #10): objektets terminaler ger de direkt drabbade kretsarna, och bredden först uppåt via beroenden nås kretsarna som rider på dem och deras tjänster. Varje tjänst får den kortaste kedjan av kretsar som når den. Grafen har härledda index utrustning → portar, kabel → ledarändar och site → utrustning; de byggs vid laddning och lagras inte i ögonblicksbilden.
 - Ändringsström (#11): radtriggers på tabellerna grafen byggs av skriver den ändrade *nyckeln* (utrustning, kabel, terminal eller krets) till outboxen `graph_change` i samma transaktion, och en satsvis trigger gör `NOTIFY graph_change`, som levereras vid commit. Varje API-instans följer outboxen själv (`GraphLoadingService`, `PostgresGraphChangeFeed`): väckt av NOTIFY, eller efter högst `Graph:PollSeconds` (5 s), läser den nycklarnas aktuella rader i en REPEATABLE READ-transaktion, lappar grafens rader (`GraphData.From`, `Replace`), bygger om grafen deterministiskt och byter den atomärt. Ändringar under ombyggnaden blir nästa sats. I full skala tar en sats cirka 1,3 s och minnestoppen är cirka 1,1 GiB.
@@ -45,6 +49,14 @@ Uppmätt i full skala (7,6 M terminaler, 4,3 M kanter, 117 000 kretsar):
 - Tillståndstabellerna är bitemporala. Operationsloggen kan hashkedjas för manipulationsskydd.
 - Ingen ren event sourcing: tillstånd och logg lever sida vid sida för enklare schemaändringar och felsökning.
 - Läsningar loggas: fråga, omfång och hash av resultatet. Tillsammans med den bitemporala modellen kan man återskapa vad en användare såg vid en viss tidpunkt.
+
+### Planer: tabeller och införande
+
+- `plan` (utkast, införd eller avbruten, flagga med skäl, version), `plan_dependency` (DAG; en cykel nekas när beroenden sätts) och `plan_operation` (ordnade operationer med jsonb: `connect`, `disconnect`, `set_lifecycle`, `rename`). Ny utrustning och nya kablar i planer kommer i ett senare steg.
+- **Införande** (`POST /api/plans/{id}/apply`) kräver att beroendena redan är införda och att alla operationer passar produktion. Operationerna körs i en transaktion. En koppling blir en rad i `connection`, och en bortkoppling stänger raden (`valid_to`, livscykel *borttagen*). Ändringsflödet tar dem till grafen. Därefter kontrolleras alla utkast som bygger på planen, direkt eller indirekt, mot produktion som den blir, och de vars operationer inte längre passar flaggas.
+- **Avbrott** (`POST /api/plans/{id}/cancel`) flaggar alla utkast som bygger på planen. En ändring i en flaggad plan tar bort flaggan.
+- **Behörighet:** skrivningar kräver `cmdb-full`, som övriga skrivningar. Operationer får bara röra terminaler och objekt inom användarens omfång. En plan syns för omfång med `*` eller planens id i `access_scope.plans`; *Hela nätet* har `*`.
+- Datageneratorn lägger in tre syntetiska planer: en patchning på första navet, avveckling av en kabel och en andra etapp som bygger på den första.
 
 ## Behörighet
 

@@ -7,7 +7,14 @@ using Npgsql;
 
 namespace Cmdb.Api.Features.Objects;
 
-public sealed record ImpactRequest(long Id);
+public sealed class ImpactRequest
+{
+    public long Id { get; set; }
+
+    /// <summary>Impact in a plan's view (#24) instead of production.</summary>
+    [QueryParam]
+    public long? Plan { get; set; }
+}
 
 /// <param name="Path">How the outage reaches the service: the service's circuit first, down to the circuit hit directly.</param>
 public sealed record ImpactedService(ObjectRef Service, IReadOnlyList<ImpactCircuit> Path);
@@ -27,7 +34,7 @@ public sealed record Impact(int Circuits, int Direct, IReadOnlyList<ImpactedServ
 /// path of circuits that reaches it. The walk is in memory (ADR-0002); only names come from the database.
 /// Budget: 200 ms for a cable span (docs/plan.md).
 /// </summary>
-public sealed class ImpactEndpoint(GraphHolder holder, RequestDb db, ScopeMasks masks) : Endpoint<ImpactRequest, Impact>
+public sealed class ImpactEndpoint(GraphHolder holder, RequestDb db, ScopeMasks masks, Cmdb.Api.Features.Plans.PlanViews plans) : Endpoint<ImpactRequest, Impact>
 {
     public override void Configure() => Get("/cables/{id}/impact", "/sites/{id}/impact", "/equipment/{id}/impact");
 
@@ -42,6 +49,15 @@ public sealed class ImpactEndpoint(GraphHolder holder, RequestDb db, ScopeMasks 
         var type = path.Contains("/sites/", StringComparison.Ordinal) ? "site"
             : path.Contains("/equipment/", StringComparison.Ordinal) ? "equipment"
             : "cable";
+        if (req.Plan is { } planId)
+        {
+            if (await plans.GetAsync(graph, planId, HttpContext.Scope(), ct) is not { } view)
+            {
+                await Send.NotFoundAsync(ct);
+                return;
+            }
+            graph = view.Graph;
+        }
         var mask = await masks.GetAsync(graph, HttpContext.Scope(), ct);
         await Send.OkAsync(await RunAsync(graph, mask, db, type, req.Id, ct), ct);
     }

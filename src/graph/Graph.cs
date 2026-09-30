@@ -202,9 +202,15 @@ public sealed partial class Graph
 
     public TerminalKind KindOf(int node) => TerminalKinds[node];
 
-    public ReadOnlySpan<int> Neighbours(int node) => EdgeTargets.AsSpan(EdgeStart[node], EdgeStart[node + 1] - EdgeStart[node]);
+    public ReadOnlySpan<int> Neighbours(int node) =>
+        _overlay is not null && _overlay.Edges.TryGetValue(node, out var edges)
+            ? edges.Targets
+            : EdgeTargets.AsSpan(EdgeStart[node], EdgeStart[node + 1] - EdgeStart[node]);
 
-    public ReadOnlySpan<EdgeKind> NeighbourKinds(int node) => EdgeKinds.AsSpan(EdgeStart[node], EdgeStart[node + 1] - EdgeStart[node]);
+    public ReadOnlySpan<EdgeKind> NeighbourKinds(int node) =>
+        _overlay is not null && _overlay.Edges.TryGetValue(node, out var edges)
+            ? edges.Kinds
+            : EdgeKinds.AsSpan(EdgeStart[node], EdgeStart[node + 1] - EdgeStart[node]);
 
     /// <summary>Equipment id of a port, or null for a conductor end.</summary>
     public long? EquipmentOf(int node) => TerminalKinds[node] == TerminalKind.Port ? EquipmentIds[TerminalOwners[node]] : null;
