@@ -49,6 +49,7 @@ services:
       MAP_BASEMAP: ${MAP_BASEMAP:-esri}
       # The operations agent in ElevenLabs (ADR-0015); empty hides the call buttons.
       VOICE_AGENT_ID: ${VOICE_AGENT_ID:-}
+      VOICE_NOC_AGENT_ID: ${VOICE_NOC_AGENT_ID:-}
     ports:
       - "${CMDB_WEB_PORT:-8480}:8080"
     depends_on:

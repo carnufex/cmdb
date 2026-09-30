@@ -29,8 +29,8 @@ server {
     proxy_set_header X-Forwarded-Proto $forwarded_proto;
   }
 
-  # The operations agent's voice channel (ADR-0015): the voice platform's MCP client, with its own secret.
-  location = /voice/mcp {
+  # The voice agents' channels (ADR-0015, ADR-0016): NOC, service desk and IT self-service, with their own secret.
+  location ~ ^/voice/(servicedesk/|it/)?mcp$ {
     proxy_pass ${API_UPSTREAM};
     proxy_http_version 1.1;
     proxy_buffering off;
@@ -51,7 +51,7 @@ server {
   location = /config.json {
     default_type application/json;
     add_header Cache-Control "no-store";
-    return 200 '{"oidcAuthority":"${OIDC_AUTHORITY}","oidcClientId":"${OIDC_CLIENT_ID}","basemap":"${MAP_BASEMAP}","voiceAgentId":"${VOICE_AGENT_ID}"}';
+    return 200 '{"oidcAuthority":"${OIDC_AUTHORITY}","oidcClientId":"${OIDC_CLIENT_ID}","basemap":"${MAP_BASEMAP}","voiceAgentId":"${VOICE_AGENT_ID}","voiceNocAgentId":"${VOICE_NOC_AGENT_ID}"}';
   }
 
   location / {

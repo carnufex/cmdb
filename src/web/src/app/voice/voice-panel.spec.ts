@@ -118,6 +118,8 @@ describe('operations agent panel', () => {
     ring.click();
     expect(start).toHaveBeenCalledWith(
       expect.objectContaining({
+        // A risk call goes straight to the NOC agent, not through the service desk (ADR-0016).
+        agent: 'noc',
         variables: expect.objectContaining({
           risk_id: 'dig-1-4711',
           responsible_employee_id: '1001',

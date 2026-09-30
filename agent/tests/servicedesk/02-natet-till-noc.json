@@ -1,0 +1,33 @@
+{
+  "name": "Växeln: fiberfel går till NOC",
+  "type": "llm",
+  "chat_history": [
+    {
+      "role": "agent",
+      "time_in_call_secs": 0,
+      "message": "Hej, det här är Saga på service desk, hur kan jag hjälpa dig? Hi, this is Saga at the service desk, how can I help you?"
+    },
+    {
+      "role": "user",
+      "time_in_call_secs": 4,
+      "message": "Hej, vi har grävt av en fiberkabel vid Lingonåsen och länken är nere."
+    }
+  ],
+  "success_condition": "The agent hands the call over to the NOC agent: it says it connects the caller to NOC or calls transfer_to_agent. It does not troubleshoot the network itself, send it to IT, or say it cannot help.",
+  "success_examples": [
+    {
+      "type": "success",
+      "response": "Jag kopplar dig till NOC."
+    }
+  ],
+  "failure_examples": [
+    {
+      "type": "failure",
+      "response": "Jag kopplar dig till IT-självhjälpen."
+    },
+    {
+      "type": "failure",
+      "response": "Det kan jag tyvärr inte hjälpa dig med."
+    }
+  ]
+}

@@ -3,7 +3,10 @@
 Exit code 1 if any test fails, so it can gate a change to the prompt or the guardrails. Together with e2e.mjs (the real
 tools, end to end) it shows that the guardrails block what they should and nothing more.
 
-    ELEVENLABS_API_KEY=... python agent/run_tests.py [--verbose]
+    ELEVENLABS_API_KEY=... python agent/run_tests.py [servicedesk] [--verbose]
+
+Without an argument it runs the NOC agent's tests; "servicedesk" runs the switchboard's routing tests (ADR-0016).
+Each run costs ElevenLabs credits: run the one that covers what changed, once.
 """
 from __future__ import annotations
 
@@ -31,6 +34,8 @@ def api(path: str, method: str = "GET", body: dict | None = None) -> dict:
 
 def main() -> int:
     state = json.loads((HERE / "agent.json").read_text(encoding="utf-8"))
+    if "servicedesk" in sys.argv:
+        state = state["agents"]["servicedesk"]
     tests = list(state.get("tests", {}).values())
     if not tests:
         print("No tests: run deploy.py first.")

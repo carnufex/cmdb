@@ -6,8 +6,10 @@ export interface RuntimeConfig {
   oidcClientId: string;
   /** Map background: `esri` (default) or `none` for environments without internet access (ADR-0010). */
   basemap?: string;
-  /** The operations agent in ElevenLabs (ADR-0015); empty hides the call buttons. */
+  /** The voice switchboard (service desk, ADR-0016) in ElevenLabs; empty hides the call buttons. */
   voiceAgentId?: string;
+  /** The NOC agent, called directly for a proactive call about a risk (#137); falls back to voiceAgentId. */
+  voiceNocAgentId?: string;
 }
 
 export const RUNTIME_CONFIG = new InjectionToken<RuntimeConfig>('RUNTIME_CONFIG');

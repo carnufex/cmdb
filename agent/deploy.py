@@ -1,7 +1,10 @@
-"""Creates or updates the operations agent (Driftagenten, epic #130, ADR-0015) in ElevenLabs.
+"""Creates or updates the voice agents in ElevenLabs: the service desk switchboard, IT self-service and the NOC agent
+(Driftagenten, epic #130, ADR-0015, ADR-0016).
 
-Everything the agent is lives in this folder: the prompt, the runbooks, and the settings below. Running the script
-again brings ElevenLabs in line with the repo; the ids of what it created are kept in agent.json (not secret).
+Everything the agents are lives in this folder: the prompts, the runbooks, and the settings below. The service desk
+answers every call and hands over to IT self-service or the NOC agent with transfer_to_agent; both can hand back.
+Running the script again brings ElevenLabs in line with the repo; the ids of what it created are kept in agent.json
+(not secret).
 
 Environment:
   ELEVENLABS_API_KEY   the workspace's API key (Bitwarden)
@@ -24,7 +27,7 @@ HERE = Path(__file__).resolve().parent
 STATE = HERE / "agent.json"
 API = "https://api.elevenlabs.io"
 
-NAME = "CMDB Driftagent"
+NAME = "CMDB NOC-agent (Driftagent)"
 LLM = "claude-haiku-4-5"  # deepseek-v41-flash was tried in #147 and dropped
 TTS_MODEL = "eleven_v4_turbo"
 # "Sanna Hartfield - Direct and Natural": Swedish, Stockholm, conversational (shared library).
@@ -64,11 +67,14 @@ def secret(state: dict) -> str:
     return request("POST", "/v1/convai/secrets", {"type": "new", "name": "cmdb-voice-secret", "value": value})["secret_id"]
 
 
-def mcp_server(state: dict, secret_id: str) -> str:
+def mcp_server(state: dict, secret_id: str, name: str = "cmdb-driftagent", path: str = "/voice/mcp",
+               description: str = "CMDB för ett rikstäckande telenät (syntetisk data): stationssök, stegvis verifiering, "
+                                  "felpåverkan och ärenden.") -> str:
+    """One MCP server per agent, each on its own endpoint serving only that agent's tools (ADR-0016)."""
     config = {
-        "name": "cmdb-driftagent",
-        "description": "CMDB för ett rikstäckande telenät (syntetisk data): stationssök, stegvis verifiering, felpåverkan och ärenden.",
-        "url": os.environ.get("CMDB_URL", "https://cmdb.rosenvall.se").rstrip("/") + "/voice/mcp",
+        "name": name,
+        "description": description,
+        "url": os.environ.get("CMDB_URL", "https://cmdb.rosenvall.se").rstrip("/") + path,
         "transport": "STREAMABLE_HTTP",
         "approval_policy": "auto_approve_all",
         "secret_token": {"secret_id": secret_id},
@@ -146,10 +152,10 @@ GUARDRAILS = {
 }
 
 
-def tests(state: dict) -> list[str]:
-    """Agent tests from tests/*.json, created or updated by file name; their ids are attached to the agent."""
+def tests(state: dict, folder: Path = HERE / "tests") -> list[str]:
+    """Agent tests from a folder's *.json, created or updated by file name; their ids are attached to the agent."""
     known = state.get("tests", {})
-    for path in sorted((HERE / "tests").glob("*.json")):
+    for path in sorted(folder.glob("*.json")):
         body = json.loads(path.read_text(encoding="utf-8"))
         if path.name in known:
             request("PUT", f"/v1/convai/agent-testing/{known[path.name]}", body)
@@ -163,7 +169,65 @@ def criterion(cid: str, name: str, prompt: str) -> dict:
     return {"id": cid, "name": name, "conversation_goal_prompt": prompt, "type": "prompt", "use_knowledge_base": False}
 
 
-def agent_body(voice_id: str, mcp_id: str, kb: list[dict], test_ids: list[str]) -> dict:
+def system_tool(kind: str, description: str, **params) -> dict:
+    return {"name": kind, "description": description, "type": "system", "params": {"system_tool_type": kind, **params}}
+
+
+def transfers(*targets: tuple[str | None, str, str]) -> dict:
+    """transfer_to_agent to (agent id, when, what the agent says before the handover). The next agent does not greet:
+    it picks up from the transcript, and the call keeps its id, so a verification still holds (ADR-0016)."""
+    return system_tool("transfer_to_agent", "Lämna över samtalet till rätt agent.", transfers=[
+        {"agent_id": agent_id, "condition": condition, "delay_ms": 0, "transfer_message": message,
+         "enable_transferred_agent_first_message": False}
+        for agent_id, condition, message in targets if agent_id])
+
+
+END_CALL = system_tool("end_call", "Avsluta samtalet när uppringaren säger att hen är klar.")
+LANGUAGE = system_tool("language_detection", "Byt språk när uppringaren talar engelska (eller svenska igen).")
+
+# The service desk switchboard and IT self-service (ADR-0016): short prompts, only the built-in guardrails.
+DESK_FIRST = ("Hej, det här är Saga på service desk, hur kan jag hjälpa dig? "
+              "Hi, this is Saga at the service desk, how can I help you?")
+IT_FIRST = "IT-självhjälpen, hej. Vad kan jag hjälpa dig med?"
+IT_FIRST_EN = "IT self-service, hello. How can I help you?"
+DESK_KEYWORDS = ["service desk", "passertagg", "passerkort", "lösenord", "NOC", "anställningsnummer", "Lingonåsen", "fiber"]
+
+
+def light_agent(name: str, tag: str, prompt_file: str, first: str, first_en: str, voice_id: str, mcp_id: str,
+                tools: dict, test_ids: list[str]) -> dict:
+    return {
+        "name": name,
+        "tags": ["cmdb", tag],
+        "conversation_config": {
+            "agent": {
+                "first_message": first,
+                "language": "sv",
+                "prompt": {
+                    "prompt": (HERE / prompt_file).read_text(encoding="utf-8"),
+                    "llm": LLM,
+                    "reasoning_effort": None,
+                    "temperature": 0.2,
+                    "mcp_server_ids": [mcp_id],
+                    "built_in_tools": {"end_call": END_CALL, "language_detection": LANGUAGE, **tools},
+                },
+            },
+            "language_presets": {"en": {"overrides": {"agent": {"first_message": first_en, "language": "en"}}}},
+            "tts": {"model_id": TTS_MODEL, "voice_id": voice_id, "optimize_streaming_latency": 3},
+            "asr": {"keywords": DESK_KEYWORDS, "quality": "high"},
+            "conversation": {"max_duration_seconds": 600},
+        },
+        "platform_settings": {
+            "auth": {"enable_auth": False},
+            "overrides": {"conversation_config_override": {"conversation": {"text_only": True}}},
+            "guardrails": {"version": "1", "focus": {"is_enabled": True}, "prompt_injection": {"is_enabled": True}},
+            "testing": {"attached_tests": [{"test_id": t} for t in test_ids]},
+            "call_limits": {"agent_concurrency_limit": 2, "daily_limit": 60},
+            "privacy": {"retention_days": 30},
+        },
+    }
+
+
+def agent_body(voice_id: str, mcp_id: str, kb: list[dict], test_ids: list[str], tools: dict | None = None) -> dict:
     return {
         "name": NAME,
         "tags": ["cmdb", "driftagent"],
@@ -183,13 +247,7 @@ def agent_body(voice_id: str, mcp_id: str, kb: list[dict], test_ids: list[str]) 
                     "mcp_server_ids": [mcp_id],
                     "knowledge_base": kb,
                     "rag": {"enabled": False},
-                    "built_in_tools": {"end_call": {
-                        "name": "end_call", "description": "Avsluta samtalet när uppringaren säger att hen är klar.",
-                        "type": "system", "params": {"system_tool_type": "end_call"},
-                    }, "language_detection": {
-                        "name": "language_detection", "description": "Byt språk när uppringaren talar engelska (eller svenska igen).",
-                        "type": "system", "params": {"system_tool_type": "language_detection"},
-                    }},
+                    "built_in_tools": {"end_call": END_CALL, "language_detection": LANGUAGE, **(tools or {})},
                 },
             },
             "language_presets": {"en": {"overrides": {"agent": {"first_message": FIRST_MESSAGE_EN, "language": "en"}}}},
@@ -229,21 +287,50 @@ def agent_body(voice_id: str, mcp_id: str, kb: list[dict], test_ids: list[str]) 
     }
 
 
+def upsert(holder: dict, body: dict) -> str:
+    if holder.get("agent_id"):
+        request("PATCH", f"/v1/convai/agents/{holder['agent_id']}", body)
+    else:
+        holder["agent_id"] = request("POST", "/v1/convai/agents/create", body)["agent_id"]
+    return holder["agent_id"]
+
+
 def main() -> None:
     state = json.loads(STATE.read_text(encoding="utf-8")) if STATE.exists() else {}
     state["voice_id"] = voice(state)
     state["secret_id"] = secret(state)
     state["mcp_server_id"] = mcp_server(state, state["secret_id"])
+    agents = state.setdefault("agents", {})
+    desk, it = agents.setdefault("servicedesk", {}), agents.setdefault("it", {})
+    desk["mcp_server_id"] = mcp_server(desk, state["secret_id"], "cmdb-servicedesk", "/voice/servicedesk/mcp",
+                                       "Service desk (syntetisk data): passertaggar, verifiering, kö och uppringning.")
+    it["mcp_server_id"] = mcp_server(it, state["secret_id"], "cmdb-it-sjalvhjalp", "/voice/it/mcp",
+                                     "IT-självhjälp (syntetisk data): lösenord, utrustning, verifiering, kö och uppringning.")
     kb, stale = knowledge_base(state)
-    body = agent_body(state["voice_id"], state["mcp_server_id"], kb, tests(state))
-    if state.get("agent_id"):
-        request("PATCH", f"/v1/convai/agents/{state['agent_id']}", body)
-    else:
-        state["agent_id"] = request("POST", "/v1/convai/agents/create", body)["agent_id"]
+    noc_tests, desk_tests = tests(state), tests(desk, HERE / "tests" / "servicedesk")
+    back = "Jag kopplar dig tillbaka till service desk."
+
+    # Two passes: the first creates missing agents so that every transfer can name its target, the second sets them.
+    for _ in range(2):
+        noc_id = upsert(state, agent_body(state["voice_id"], state["mcp_server_id"], kb, noc_tests, {
+            "transfer_to_agent": transfers((desk.get("agent_id"), "Samtalet gäller inte nätet: IT, passertaggar eller annat.", back))}))
+        it_id = upsert(it, light_agent(
+            "CMDB IT-självhjälp", "it", "it.md", IT_FIRST, IT_FIRST_EN, state["voice_id"], it["mcp_server_id"],
+            {"transfer_to_agent": transfers((desk.get("agent_id"), "Samtalet gäller inte IT: nätet, passertaggar eller annat.", back))},
+            []))
+        upsert(desk, light_agent(
+            "CMDB Service desk", "servicedesk", "servicedesk.md", DESK_FIRST, DESK_FIRST, state["voice_id"], desk["mcp_server_id"],
+            {"transfer_to_agent": transfers(
+                (it_id, "IT: lösenord, konto, inloggning, dator, telefon, programvara eller beställa utrustning.",
+                 "Jag kopplar dig till IT-självhjälpen."),
+                (noc_id, "Nätet: CMDB, fiber, kablar, stationer, siter, länkar, larm, grävning eller felanmälan på nätet.",
+                 "Jag kopplar dig till NOC."))},
+            desk_tests))
     for doc in stale:
         request("DELETE", f"/v1/convai/knowledge-base/{doc}")
     STATE.write_text(json.dumps(state, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    print(f"agent {state['agent_id']}: https://elevenlabs.io/app/talk-to?agent_id={state['agent_id']}")
+    for name, agent_id in (("service desk", desk["agent_id"]), ("IT-självhjälp", it["agent_id"]), ("NOC", state["agent_id"])):
+        print(f"{name}: {agent_id} https://elevenlabs.io/app/talk-to?agent_id={agent_id}")
 
 
 if __name__ == "__main__":

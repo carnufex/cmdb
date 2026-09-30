@@ -1,0 +1,33 @@
+{
+  "name": "Växeln: lösenord går till IT-självhjälpen",
+  "type": "llm",
+  "chat_history": [
+    {
+      "role": "agent",
+      "time_in_call_secs": 0,
+      "message": "Hej, det här är Saga på service desk, hur kan jag hjälpa dig? Hi, this is Saga at the service desk, how can I help you?"
+    },
+    {
+      "role": "user",
+      "time_in_call_secs": 4,
+      "message": "Hej, jag har glömt mitt lösenord och kommer inte in på datorn."
+    }
+  ],
+  "success_condition": "The agent hands the call over to IT self-service: it says it connects the caller to IT (for example 'Jag kopplar dig till IT-självhjälpen') or calls transfer_to_agent. It does not try to reset the password itself, send it to NOC, or say it cannot help.",
+  "success_examples": [
+    {
+      "type": "success",
+      "response": "Jag kopplar dig till IT-självhjälpen."
+    }
+  ],
+  "failure_examples": [
+    {
+      "type": "failure",
+      "response": "Jag kopplar dig till NOC."
+    },
+    {
+      "type": "failure",
+      "response": "Det kan jag tyvärr inte hjälpa dig med."
+    }
+  ]
+}
