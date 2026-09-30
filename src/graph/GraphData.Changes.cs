@@ -8,6 +8,10 @@ public sealed partial class GraphData
     /// </summary>
     public static GraphData From(Graph g)
     {
+        if (g.IsOverlay)
+        {
+            throw new ArgumentException("A graph with a delta has no rows of its own; compact it first.", nameof(g));
+        }
         var d = new GraphData();
         // Sized up front: at full scale these are millions of rows, and growing by doubling would double the peak.
         var ports = 0;

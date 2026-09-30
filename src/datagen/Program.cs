@@ -42,7 +42,7 @@ internal static class Cli
                     dryRun = true;
                     break;
                 default:
-                    Console.Error.WriteLine($"Unknown argument '{args[i]}'. Usage: --scale small|medium|full --seed N [--reset] [--dry-run] [--connection CS]");
+                    Console.Error.WriteLine($"Unknown argument '{args[i]}'. Usage: --scale small|medium|full|2x|4x --seed N [--reset] [--dry-run] [--connection CS]");
                     return 1;
             }
         }

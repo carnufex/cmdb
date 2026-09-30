@@ -99,11 +99,27 @@ public sealed partial class Graph
     /// <summary>The production graph a plan view was made from, or this graph itself.</summary>
     public Graph Base => _base ?? this;
 
-    /// <summary>Whether this is a plan view (base + delta).</summary>
+    /// <summary>Whether this graph is its arrays plus a delta: a plan view, or production between compactions (#81).</summary>
     public bool IsOverlay => _overlay is not null;
 
     /// <summary>Nodes whose connections differ from the base, for diagnostics.</summary>
     public int OverlayNodes => _overlay?.Edges.Count ?? 0;
+
+    /// <summary>
+    /// This view as production (#81): changes from the change stream applied as a delta, at a new position. It is its
+    /// own <see cref="Base"/>, so plan views are made on top of it. A delta with new objects does not qualify.
+    /// </summary>
+    internal Graph AsProduction(string version)
+    {
+        if (_overlay is { } o && o.TerminalIds.Count + o.EquipmentIds.Count + o.CableIds.Count + o.SiteIds.Count > 0)
+        {
+            throw new InvalidOperationException("A production delta cannot hold new objects.");
+        }
+        var graph = (Graph)MemberwiseClone();
+        graph._base = null;
+        graph._version = version;
+        return graph;
+    }
 
     /// <summary>
     /// A view of this graph with the plan's changes applied in order (ADR-0005, #24, #107): all arrays are shared, only

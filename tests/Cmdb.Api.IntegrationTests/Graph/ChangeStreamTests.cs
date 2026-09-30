@@ -115,6 +115,44 @@ public sealed class ChangeStreamTests(ApiFactory factory)
     }
 
     [Fact]
+    public async Task Connection_changes_become_deltas_and_compacting_them_gives_a_fresh_load()
+    {
+        await using var db = await SmallNetworkAsync(8);
+        var feed = new PostgresGraphChangeFeed(db);
+        var before = await GraphLoader.LoadAsync(db, Ct);
+        var (a, b) = await FreePortsAsync(db);
+
+        // Patching, a removed splice and a renamed cable: no structure changes, so every batch is a delta (#81).
+        await Exec(db, $"INSERT INTO connection (a_terminal_id, b_terminal_id, kind, lifecycle) VALUES ({a}, {b}, 'patch', 'planned')");
+        await Exec(db, "DELETE FROM connection WHERE id = (SELECT id FROM connection WHERE kind = 'splice' ORDER BY id LIMIT 1)");
+        await Exec(db, "UPDATE cable SET lifecycle = 'decommissioning' WHERE id = (SELECT min(id) FROM cable)");
+
+        var target = await Scalar(db, "SELECT pg_snapshot_xmax(pg_current_snapshot())::text::bigint");
+        var graph = before;
+        var watermark = before.Version;
+        var batches = new List<GraphChangeBatch>();
+        while ((long)PostgresGraphChangeFeed.Xid(watermark)!.Value < target)
+        {
+            var batch = await feed.ReadAsync(watermark, Ct);
+            if (batch.Keys.Count > 0)
+            {
+                graph = GraphChanges.TryDelta(graph, batch).ShouldNotBeNull();
+                batches.Add(batch);
+            }
+            watermark = batch.Watermark;
+            await Task.Delay(20, Ct);
+        }
+        graph.IsOverlay.ShouldBeTrue();
+        graph.OverlayNodes.ShouldBeGreaterThanOrEqualTo(4);
+
+        var compacted = GraphChanges.Compact(before, batches);
+        var fresh = GraphBuilder.Build(GraphData.From(await GraphLoader.LoadAsync(db, Ct)), compacted.Version);
+        Bytes(compacted).ShouldBe(Bytes(fresh));
+        graph.TryGetNode(a, out var node).ShouldBeTrue();
+        graph.Neighbours(node).ToArray().Select(graph.TerminalId).ShouldContain(b);
+    }
+
+    [Fact]
     public async Task Two_api_instances_follow_the_same_changes()
     {
         await using var db = await SmallNetworkAsync(6);
@@ -140,7 +178,9 @@ public sealed class ChangeStreamTests(ApiFactory factory)
             await ApiFactory.GraphCaughtUpAsync(api.Services, db);
             var trace = await TraceAsync(api, circuit.A);
             trace.Physical!.Hops.Select(h => h.TerminalId).ShouldBe(hops);
-            api.Services.GetRequiredService<GraphHolder>().LastChange.ShouldNotBeNull().Keys.ShouldBe(2);
+            var change = api.Services.GetRequiredService<GraphHolder>().LastChange.ShouldNotBeNull();
+            change.Keys.ShouldBe(2);
+            change.Mode.ShouldBe("delta");
         }
     }
 

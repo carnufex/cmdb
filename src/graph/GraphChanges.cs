@@ -37,17 +37,226 @@ public interface IGraphChangeFeed
     Task WaitAsync(TimeSpan timeout, CancellationToken ct);
 }
 
-/// <summary>Applying a batch: the graph's rows with the changed keys' rows replaced, rebuilt deterministically.</summary>
+/// <summary>
+/// Applying a batch, in one of two ways (#81). A batch that only moves connections, or touches equipment and cables
+/// without changing their structure, becomes a delta on the current graph: its cost follows the batch, not the network.
+/// A delta is folded into the arrays now and then (<see cref="Flatten"/>). Anything else rebuilds from rows: the base's
+/// rows with every batch since replaced in order (<see cref="Compact"/>).
+/// </summary>
 public static class GraphChanges
 {
     /// <summary>
-    /// The graph after the batch. Throws <see cref="InvalidOperationException"/> when the patched rows do not fit
-    /// together (a later change is not visible yet); the caller then reloads in full.
+    /// The graph after the batch, rebuilt. Throws <see cref="InvalidOperationException"/> when the patched rows do not
+    /// fit together (a later change is not visible yet); the caller then reloads in full.
     /// </summary>
-    public static Graph Apply(Graph graph, GraphChangeBatch batch)
+    public static Graph Apply(Graph graph, GraphChangeBatch batch) => Compact(graph, [batch]);
+
+    /// <summary>A graph without delta with the batches applied in order, rebuilt once.</summary>
+    public static Graph Compact(Graph baseGraph, IReadOnlyList<GraphChangeBatch> batches)
     {
-        var data = GraphData.From(graph);
-        data.Replace(batch.Keys, batch.Rows);
-        return GraphBuilder.Build(data, batch.Watermark);
+        ArgumentOutOfRangeException.ThrowIfZero(batches.Count);
+        var data = GraphData.From(baseGraph);
+        foreach (var batch in batches)
+        {
+            data.Replace(batch.Keys, batch.Rows);
+        }
+        return GraphBuilder.Build(data, batches[^1].Watermark);
+    }
+
+    /// <summary>
+    /// A production graph's delta folded into its arrays: only the adjacency is rebuilt, the rest is shared.
+    /// <paramref name="batches"/> are the batches applied as the delta since the arrays were built, in order.
+    /// </summary>
+    public static Graph Flatten(Graph graph, IReadOnlyList<GraphChangeBatch> batches) => graph.Flatten(batches);
+
+    /// <summary>
+    /// The graph after the batch as a delta, or null when the batch changes structure (new, removed or moved
+    /// equipment, cables or circuits) or its connections do not fit; then <see cref="Compact"/> is the way.
+    /// </summary>
+    public static Graph? TryDelta(Graph graph, GraphChangeBatch batch)
+    {
+        var keys = batch.Keys;
+        var rows = batch.Rows;
+        if (keys.Circuits.Count > 0
+            || graph.NodeCount != graph.TerminalIds.Length
+            || !SameEquipment(graph, keys.Equipment, rows)
+            || !SameCables(graph, keys.Cables, rows)
+            || ConnectionChanges(graph, keys.Terminals, rows) is not { } changes)
+        {
+            return null;
+        }
+        var (view, issues) = graph.WithChanges(changes);
+        return issues.Count > 0 ? null : view.AsProduction(batch.Watermark);
+    }
+
+    /// <summary>Every changed equipment still stands at the same site with the same ports, or was never in the graph.</summary>
+    private static bool SameEquipment(Graph graph, HashSet<long> keys, GraphData rows)
+    {
+        if (keys.Count == 0)
+        {
+            return true;
+        }
+        var sites = new Dictionary<long, long>();
+        for (var i = 0; i < rows.EquipmentIds.Count; i++)
+        {
+            sites[rows.EquipmentIds[i]] = rows.EquipmentSites[i];
+        }
+        var ports = new Dictionary<long, HashSet<long>>();
+        for (var i = 0; i < rows.PortTerminals.Count; i++)
+        {
+            Group(ports, rows.PortEquipment[i]).Add(rows.PortTerminals[i]);
+        }
+        foreach (var id in keys)
+        {
+            if (!graph.TryGetEquipment(id, out var equipment))
+            {
+                // Not in the graph and not in the rows: nothing to do. New equipment is structure.
+                if (sites.ContainsKey(id))
+                {
+                    return false;
+                }
+                continue;
+            }
+            if (!sites.TryGetValue(id, out var site) || graph.SiteId(graph.SiteIndexOfEquipment(equipment)) != site)
+            {
+                return false;
+            }
+            var now = graph.PortsOf(equipment);
+            var then = ports.GetValueOrDefault(id) ?? [];
+            if (now.Length != then.Count)
+            {
+                return false;
+            }
+            foreach (var node in now)
+            {
+                if (!then.Contains(graph.TerminalId(node)))
+                {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    /// <summary>Every changed cable still has the same conductors and ends, or was never in the graph.</summary>
+    private static bool SameCables(Graph graph, HashSet<long> keys, GraphData rows)
+    {
+        if (keys.Count == 0)
+        {
+            return true;
+        }
+        var cables = new HashSet<long>(rows.CableIds);
+        var conductorCable = new Dictionary<long, long>();
+        for (var i = 0; i < rows.ConductorIds.Count; i++)
+        {
+            conductorCable[rows.ConductorIds[i]] = rows.ConductorCables[i];
+        }
+        var ends = new Dictionary<long, HashSet<(long Terminal, long Conductor)>>();
+        for (var i = 0; i < rows.EndTerminals.Count; i++)
+        {
+            var conductor = rows.EndConductors[i];
+            if (conductorCable.TryGetValue(conductor, out var owner))
+            {
+                Group(ends, owner).Add((rows.EndTerminals[i], conductor));
+            }
+        }
+        foreach (var id in keys)
+        {
+            if (!graph.TryGetCable(id, out var cable))
+            {
+                if (cables.Contains(id))
+                {
+                    return false;
+                }
+                continue;
+            }
+            if (!cables.Contains(id))
+            {
+                return false;
+            }
+            var now = graph.EndsOf(cable);
+            var then = ends.GetValueOrDefault(id) ?? [];
+            if (now.Length != then.Count)
+            {
+                return false;
+            }
+            foreach (var node in now)
+            {
+                if (!then.Contains((graph.TerminalId(node), graph.ConductorIds[graph.OwnerOf(node)])))
+                {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// The connection changes that take the graph to the rows for the changed terminals: each pair whose connections
+    /// differ is removed and added again as the rows say. Null when a terminal is not in the graph.
+    /// </summary>
+    private static List<GraphChange>? ConnectionChanges(Graph graph, HashSet<long> keys, GraphData rows)
+    {
+        var wanted = new Dictionary<(long, long), List<EdgeKind>>();
+        for (var i = 0; i < rows.ConnectionA.Count; i++)
+        {
+            var (a, b) = (rows.ConnectionA[i], rows.ConnectionB[i]);
+            if (keys.Contains(a) || keys.Contains(b))
+            {
+                Group(wanted, Pair(a, b)).Add((EdgeKind)rows.ConnectionKinds[i]);
+            }
+        }
+        var current = new Dictionary<(long, long), List<EdgeKind>>();
+        foreach (var id in keys)
+        {
+            if (!graph.TryGetNode(id, out var node))
+            {
+                return null;
+            }
+            var targets = graph.Neighbours(node);
+            var kinds = graph.NeighbourKinds(node);
+            for (var i = 0; i < targets.Length; i++)
+            {
+                var other = graph.TerminalId(targets[i]);
+                // Both ends may be keys; count each connection once, from the lower one.
+                if (kinds[i] != EdgeKind.Conductor && (id < other || !keys.Contains(other)))
+                {
+                    Group(current, Pair(id, other)).Add(kinds[i]);
+                }
+            }
+        }
+
+        var removes = new List<GraphChange>();
+        var adds = new List<GraphChange>();
+        foreach (var pair in current.Keys.Union(wanted.Keys))
+        {
+            var now = current.GetValueOrDefault(pair) ?? [];
+            var then = wanted.GetValueOrDefault(pair) ?? [];
+            now.Sort();
+            then.Sort();
+            if (now.SequenceEqual(then))
+            {
+                continue;
+            }
+            if (now.Count > 0)
+            {
+                removes.Add(new GraphEdgeChange(pair.Item1, pair.Item2, now[0], Add: false));
+            }
+            adds.AddRange(then.Select(kind => new GraphEdgeChange(pair.Item1, pair.Item2, kind, Add: true)));
+        }
+        return [.. removes, .. adds];
+    }
+
+    private static (long, long) Pair(long a, long b) => a < b ? (a, b) : (b, a);
+
+    private static TValue Group<TKey, TValue>(Dictionary<TKey, TValue> groups, TKey key)
+        where TKey : notnull
+        where TValue : new()
+    {
+        if (!groups.TryGetValue(key, out var group))
+        {
+            groups[key] = group = new();
+        }
+        return group;
     }
 }
