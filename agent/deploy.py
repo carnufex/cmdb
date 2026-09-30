@@ -102,18 +102,21 @@ def knowledge_base(state: dict) -> tuple[list[dict], list[str]]:
     return entries, stale
 
 
-def guardrail(name: str, prompt: str, feedback: str) -> dict:
-    """A custom guardrail: a small model judges each reply before it is spoken. Blocking with retry, so the agent
-    rephrases instead of the call ending; agent/tests and agent/e2e.mjs check that legitimate replies still pass."""
+def guardrail(name: str, prompt: str) -> dict:
+    """A custom guardrail: a small model judges each reply while it is spoken. Streaming, not blocking: a blocking
+    guardrail held every reply back about 2.5 s (#145), and ElevenLabs only allows end_call in streaming mode, so a
+    violation ends the call. agent/tests and agent/e2e.mjs check that legitimate replies still pass."""
     return {
-        "is_enabled": True, "name": name, "prompt": prompt, "execution_mode": "blocking", "model": "gemini-3.1-flash-lite",
+        "is_enabled": True, "name": name, "prompt": prompt, "execution_mode": "streaming", "model": "gemini-3.1-flash-lite",
         "history_message_count": 8, "history_include_tool_calls": True, "evaluate_full_response_only": False,
-        "trigger_action": {"type": "retry", "feedback": feedback + " Reason: {{trigger_reason}}"},
+        "trigger_action": {"type": "end_call"},
     }
 
 
-# Built in: stay on topic and resist prompt injection. Custom: the three things that must never happen, judged on
-# every reply. The server enforces access regardless; these keep the agent from even saying the wrong thing.
+# Built in: stay on topic and resist prompt injection (no measurable latency). Custom: the one thing that must never
+# happen, details before verification. The server enforces access regardless (ADR-0015); this keeps the agent from even
+# saying the wrong thing. The incident number is no longer spoken (SMS, #145) and the code is covered by the prompt and
+# e2e.mjs, so those two guardrails were dropped rather than paid for on every reply.
 GUARDRAILS = {
     "version": "1",
     "focus": {"is_enabled": True},
@@ -129,22 +132,6 @@ GUARDRAILS = {
             "station, asking for the employee id or the code; saying that a code was sent; explaining that verification is needed; "
             "an opening that only says there is a risk to talk about without saying what it is; anything after a verify_caller "
             "result with status verified.",
-            "Your reply disclosed network details before the caller was verified. Ask for the employee id and verify first.",
-        ),
-        guardrail(
-            "Inga ärenden eller prioriteter utan verktygssvar",
-            "Evaluate only the agent's current reply. Block it if it states, as a fact about this call, an incident number, that an "
-            "incident was created, a priority, or that the on-call engineer was notified, while no create_incident or fault_impact "
-            "tool result in the conversation history gives it. Do NOT block: offers to create an incident, questions, plans, "
-            "numbers and priorities that a tool result in the history gives, or reports of tool errors.",
-            "Your reply claimed an incident, a priority or an on-call notification that no tool result confirms. Say only what the tools returned.",
-        ),
-        guardrail(
-            "Aldrig verifieringskoden",
-            "Evaluate only the agent's current reply. Block it if it contains a six-digit number or repeats the verification code "
-            "the caller read out. Do NOT block: asking the caller to read the code, saying that the code was right or wrong, or "
-            "saying how many attempts are left.",
-            "Never repeat the verification code. Only say whether it was right.",
         ),
     ]}},
 }

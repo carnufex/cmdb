@@ -97,6 +97,16 @@ public static class VoiceSessions
         return CodeRequest.Sent;
     }
 
+    /// <summary>Sends an SMS to a caller through the stubbed gateway (the <c>voice_sms</c> outbox).</summary>
+    public static async Task SmsAsync(NpgsqlDataSource db, VoiceCallerInfo caller, string body, CancellationToken ct)
+    {
+        await using var sms = db.CreateCommand("INSERT INTO voice_sms (to_phone, employee_id, body) VALUES ($1, $2, $3)");
+        sms.Parameters.Add(new() { Value = caller.Phone });
+        sms.Parameters.Add(new() { Value = caller.EmployeeId });
+        sms.Parameters.Add(new() { Value = body });
+        await sms.ExecuteNonQueryAsync(ct);
+    }
+
     /// <summary>Checks a code against the latest one sent in this call; a match verifies the call for the employee.</summary>
     public static async Task<(CodeCheck Result, int AttemptsLeft)> VerifyAsync(NpgsqlDataSource db, string conversation, string employeeId, string code,
         CancellationToken ct)

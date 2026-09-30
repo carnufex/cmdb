@@ -29,7 +29,7 @@ Röstagenten för felanmälan i ett rikstäckande telenät (epic #130, ADR-0015)
 - Poäng: **falsk redundans.** CMDB:n säger att tjänsten har två vägar, men grafen ser att båda går via samma nod. Det är just den risken som gör att man sätter fel prioritet i dag.
 
 **5. Ärende (1 min).** Säg: "Skapa ett ärende. Det lyser rött på ODF:en."
-- Agenten läser upp ärendenumret och prioriteten. Ärendet syns direkt i panelen med berikningen: påverkade tjänster, falsk redundans och uppringarens observationer.
+- Agenten säger prioriteten och "Jag smsar dig ärendenumret efter samtalet. Kan jag hjälpa dig med något mer?". Numret syns i SMS-utkorgen, och ärendet syns direkt i panelen med berikningen: påverkade tjänster, falsk redundans och uppringarens observationer.
 - Poäng: **prioriteten sätts av regler i servern.**
   - P1 betyder att en kritisk tjänst saknar fungerande väg, och då larmas jouren.
   - Agenten kan inte ändra prioriteten, inte heller om uppringaren ber om det.

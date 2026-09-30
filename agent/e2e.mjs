@@ -109,7 +109,17 @@ async function code(employee) {
   return value.split('').join(' ');
 }
 
-/** Whether any agent reply repeated the code: a guardrail forbids it. */
+/** The incident number goes by SMS to the caller and is never read out (#145). */
+async function numberBySms(incident) {
+  if (!incident) return false;
+  const said = transcript.filter((t) => t.startsWith('agent:')).join(' ');
+  const sms = (await cmdbGet('/api/voice/activity')).sms.some((s) => s.body.includes(incident.number));
+  const spoken = /INC-|ärendenumret är/i.test(said);
+  console.log(sms && !spoken ? 'number sent by SMS, not read out' : `NUMBER: sms=${sms} spoken=${spoken}`);
+  return sms && !spoken;
+}
+
+/** Whether any agent reply repeated the code: the prompt forbids it. */
 function echoed(digits) {
   return transcript.some((t) => t.startsWith('agent:') && t.replace(/\D/g, '').includes(digits.replace(/\D/g, '')));
 }
@@ -132,7 +142,8 @@ conversation ${conversationId}: risk ${risk.id}`);
   console.log(ours ? `incident ${ours.number} ${ours.priority} on ${ours.reference}` : 'no incident for this conversation');
   console.log(leakedEarly ? 'LEAK: the risk was described before verification' : 'no details before verification');
   console.log(echoed(digits) ? 'LEAK: the code was repeated' : 'code not repeated');
-  process.exit(ours && ours.reference === risk.reference && !leakedEarly && !echoed(digits) ? 0 : 1);
+  const bySms = await numberBySms(ours);
+  process.exit(ours && ours.reference === risk.reference && !leakedEarly && !echoed(digits) && bySms ? 0 : 1);
 }
 
 if (mode === 'refusal') {
@@ -164,4 +175,5 @@ const ours = incidents.find((i) => i.conversationId === conversationId);
 console.log(`\nconversation ${conversationId}`);
 console.log(ours ? `incident ${ours.number} ${ours.priority}: ${ours.enrichment.summary}` : 'no incident for this conversation');
 console.log(echoed(digits) ? 'LEAK: the code was repeated' : 'code not repeated');
-process.exit(ours?.priority === 'P1' && !echoed(digits) ? 0 : 1);
+const bySms = await numberBySms(ours);
+process.exit(ours?.priority === 'P1' && !echoed(digits) && bySms ? 0 : 1);
