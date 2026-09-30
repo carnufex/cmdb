@@ -34,6 +34,9 @@ public enum GraphChangeProblem
 
     /// <summary>A planned object's id is taken.</summary>
     InvalidObject,
+
+    /// <summary>A circuit rides on one that does not exist, or a removed one still carries others (#121).</summary>
+    UnknownCircuit,
 }
 
 public sealed record GraphChangeIssue(int Index, GraphChange Change, GraphChangeProblem Problem);
@@ -69,8 +72,12 @@ internal sealed class GraphOverlay
     public List<int[]> CableEnds { get; init; } = [];
     public Dictionary<long, int> CableById { get; init; } = [];
 
+    /// <summary>Circuits changed by the change stream (#121); null until one is.</summary>
+    public CircuitOverlay? Circuits { get; set; }
+
     public GraphOverlay Copy() => new()
     {
+        Circuits = Circuits?.Copy(),
         Edges = new(Edges),
         TerminalIds = [.. TerminalIds],
         Kinds = [.. Kinds],
@@ -270,6 +277,10 @@ public sealed partial class Graph
                         }
                         break;
                     }
+
+                case GraphCircuitsChange circuits:
+                    view.ApplyCircuits(overlay, circuits, i, issues);
+                    break;
 
                 default:
                     throw new ArgumentException($"Unknown change {changes[i].GetType().Name}.", nameof(changes));

@@ -4,6 +4,11 @@ namespace Cmdb.Graph;
 /// Builds a <see cref="Graph"/> from rows. Everything is sorted by external id and adjacency lists are sorted by target,
 /// so the same data always gives byte-identical arrays, whatever order the rows arrived in.
 /// </summary>
+internal sealed record CircuitArrays(
+    long[] CircuitIds, CircuitLayer[] CircuitLayers, int[] HopStart, int[] HopNodes, int[] NodeCircuitStart, int[] NodeCircuits,
+    int[] DependentStart, int[] Dependents, int[] CircuitServiceStart, int[] CircuitServices, long[] ServiceIds,
+    int[] ServiceCircuitStart, int[] ServiceCircuitList, int[] CarrierStart, int[] Carriers);
+
 public static class GraphBuilder
 {
     public static Graph Build(GraphData data, string version)
@@ -105,19 +110,10 @@ public static class GraphBuilder
             hopCircuit[i] = Find(circuitIds, data.HopCircuits[i], "hop circuit");
             hopNode[i] = Find(terminalIds, data.HopTerminals[i], "hop terminal");
         }
-        var (hopStart, hopNodes) = GroupStable(circuitIds.Length, hopCircuit, hopNode);
-        var (nodeCircuitStart, nodeCircuits) = GroupDistinct(n, hopNode, hopCircuit);
-
-        var dependents = data.DependencyCarriers.Select(c => Find(circuitIds, c, "carrier")).ToArray();
-        var dependentCircuits = data.DependencyCircuits.Select(c => Find(circuitIds, c, "dependent")).ToArray();
-        var (dependentStart, dependentList) = GroupDistinct(circuitIds.Length, dependents, dependentCircuits);
-
-        var serviceIds = data.ServiceCircuitServices.Distinct().Order().ToArray();
+        var carriers = data.DependencyCarriers.Select(c => Find(circuitIds, c, "carrier")).ToArray();
+        var dependents = data.DependencyCircuits.Select(c => Find(circuitIds, c, "dependent")).ToArray();
         var serviceCircuits = data.ServiceCircuitCircuits.Select(c => Find(circuitIds, c, "service circuit")).ToArray();
-        var services = data.ServiceCircuitServices.Select(s => Array.BinarySearch(serviceIds, s)).ToArray();
-        var (circuitServiceStart, circuitServices) = GroupDistinct(circuitIds.Length, serviceCircuits, services);
-        var (serviceCircuitStart, serviceCircuitList) = GroupDistinct(serviceIds.Length, services, serviceCircuits);
-        var (carrierStart, carrierList) = GroupDistinct(circuitIds.Length, dependentCircuits, dependents);
+        var c = Circuits(n, circuitIds, circuitLayers, hopCircuit, hopNode, carriers, dependents, [.. data.ServiceCircuitServices], serviceCircuits);
 
         return new Graph
         {
@@ -136,22 +132,42 @@ public static class GraphBuilder
             ConductorCables = conductorCables,
             CableIds = cableIds,
             CableLifecycles = cableLifecycles,
-            CircuitIds = circuitIds,
-            CircuitLayers = circuitLayers,
-            HopStart = hopStart,
-            HopNodes = hopNodes,
-            NodeCircuitStart = nodeCircuitStart,
-            NodeCircuits = nodeCircuits,
-            DependentStart = dependentStart,
-            Dependents = dependentList,
-            CircuitServiceStart = circuitServiceStart,
-            CircuitServices = circuitServices,
-            ServiceIds = serviceIds,
-            ServiceCircuitStart = serviceCircuitStart,
-            ServiceCircuitList = serviceCircuitList,
-            CarrierStart = carrierStart,
-            Carriers = carrierList,
+            CircuitIds = c.CircuitIds,
+            CircuitLayers = c.CircuitLayers,
+            HopStart = c.HopStart,
+            HopNodes = c.HopNodes,
+            NodeCircuitStart = c.NodeCircuitStart,
+            NodeCircuits = c.NodeCircuits,
+            DependentStart = c.DependentStart,
+            Dependents = c.Dependents,
+            CircuitServiceStart = c.CircuitServiceStart,
+            CircuitServices = c.CircuitServices,
+            ServiceIds = c.ServiceIds,
+            ServiceCircuitStart = c.ServiceCircuitStart,
+            ServiceCircuitList = c.ServiceCircuitList,
+            CarrierStart = c.CarrierStart,
+            Carriers = c.Carriers,
         }.IndexOwners();
+    }
+
+    /// <summary>
+    /// The circuit arrays from circuits sorted by id and their rows as indexes: hops in sequence per circuit,
+    /// dependencies as (carrier, dependent) and service links as (service id, circuit). Shared with compaction (#121),
+    /// which may pass the circuits per node it already has.
+    /// </summary>
+    internal static CircuitArrays Circuits(int nodes, long[] circuitIds, CircuitLayer[] layers, int[] hopCircuit, int[] hopNode,
+        int[] carriers, int[] dependents, long[] serviceRows, int[] serviceCircuits, (int[] Start, int[] Values)? circuitsPerNode = null)
+    {
+        var (hopStart, hopNodes) = GroupStable(circuitIds.Length, hopCircuit, hopNode);
+        var (nodeCircuitStart, nodeCircuits) = circuitsPerNode ?? GroupDistinct(nodes, hopNode, hopCircuit);
+        var (dependentStart, dependentList) = GroupDistinct(circuitIds.Length, carriers, dependents);
+        var serviceIds = serviceRows.Distinct().Order().ToArray();
+        var services = serviceRows.Select(s => Array.BinarySearch(serviceIds, s)).ToArray();
+        var (circuitServiceStart, circuitServices) = GroupDistinct(circuitIds.Length, serviceCircuits, services);
+        var (serviceCircuitStart, serviceCircuitList) = GroupDistinct(serviceIds.Length, services, serviceCircuits);
+        var (carrierStart, carrierList) = GroupDistinct(circuitIds.Length, dependents, carriers);
+        return new CircuitArrays(circuitIds, layers, hopStart, hopNodes, nodeCircuitStart, nodeCircuits, dependentStart, dependentList,
+            circuitServiceStart, circuitServices, serviceIds, serviceCircuitStart, serviceCircuitList, carrierStart, carrierList);
     }
 
     /// <summary>Both directions of every edge, grouped per node with counting sort and sorted by target.</summary>

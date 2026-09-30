@@ -3,9 +3,9 @@ namespace Cmdb.Graph;
 public sealed partial class Graph
 {
     /// <summary>
-    /// This production graph with its delta folded into the arrays (#81, #119): the adjacency is rebuilt, and new
-    /// terminals, equipment, conductors and cables are appended after the arrays' own, with sites sorted in. Arrays the
-    /// delta does not touch (circuits, services) are shared. The result is the graph a rebuild from rows would give, byte
+    /// This production graph with its delta folded into the arrays (#81, #119, #121): the adjacency is rebuilt, new
+    /// terminals, equipment, conductors and cables are appended after the arrays' own, sites are sorted in, and the
+    /// circuit arrays are rebuilt when circuits changed. Arrays the delta does not touch are shared. The result is the graph a rebuild from rows would give, byte
     /// for byte, at a fraction of the time and memory. <paramref name="batches"/> are the batches applied as the delta, in
     /// order: they carry the lifecycles the delta does not hold. Null when a new object's id is not above every id of its
     /// kind in the arrays, so appending would break their order; then only a rebuild from rows will do.
@@ -29,6 +29,12 @@ public sealed partial class Graph
         var conductorOrder = Order(o.ConductorIds);
         var cableOrder = Order(o.CableIds);
         int Node(int node) => node < TerminalIds.Length ? node : TerminalIds.Length + terminalOrder[node - TerminalIds.Length];
+        var terminalInverse = new int[terminalOrder.Length];
+        for (var i = 0; i < terminalOrder.Length; i++)
+        {
+            terminalInverse[terminalOrder[i]] = i;
+        }
+        int Old(int node) => node < TerminalIds.Length ? node : TerminalIds.Length + terminalInverse[node - TerminalIds.Length];
         int EquipmentIndex(int e) => e < EquipmentIds.Length ? e : EquipmentIds.Length + equipmentOrder[e - EquipmentIds.Length];
         int ConductorIndex(int c) => c < ConductorIds.Length ? c : ConductorIds.Length + conductorOrder[c - ConductorIds.Length];
         int CableIndex(int c) => c < CableIds.Length ? c : CableIds.Length + cableOrder[c - CableIds.Length];
@@ -104,22 +110,17 @@ public sealed partial class Graph
         }
 
         var n = terminalIds.Length;
-        var from = new int[n];
-        for (var node = 0; node < NodeCount; node++)
-        {
-            from[Node(node)] = node;
-        }
         var start = new int[n + 1];
         for (var node = 0; node < n; node++)
         {
-            start[node + 1] = start[node] + Neighbours(from[node]).Length;
+            start[node + 1] = start[node] + Neighbours(Old(node)).Length;
         }
         var targets = new int[start[n]];
         var kinds = new EdgeKind[targets.Length];
         var lifecycles = new Lifecycle[targets.Length];
         for (var node = 0; node < n; node++)
         {
-            var old = from[node];
+            var old = Old(node);
             if (old < TerminalIds.Length && !touched.Contains(old))
             {
                 // Untouched nodes of the arrays point at nodes of the arrays, whose indexes stay.
@@ -151,14 +152,7 @@ public sealed partial class Graph
             }
         }
 
-        // New terminals carry no circuits: a changed circuit is rebuilt from rows.
-        var nodeCircuitStart = NodeCircuitStart;
-        if (n > TerminalIds.Length)
-        {
-            nodeCircuitStart = new int[n + 1];
-            Array.Copy(NodeCircuitStart, nodeCircuitStart, NodeCircuitStart.Length);
-            Array.Fill(nodeCircuitStart, NodeCircuitStart[^1], NodeCircuitStart.Length, n + 1 - NodeCircuitStart.Length);
-        }
+        var circuits = FlattenCircuits(n, Node, Old);
 
         var graph = new Graph
         {
@@ -177,34 +171,158 @@ public sealed partial class Graph
             ConductorCables = conductorCables,
             CableIds = cableIds,
             CableLifecycles = cableLifecycles,
-            CircuitIds = CircuitIds,
-            CircuitLayers = CircuitLayers,
-            HopStart = HopStart,
-            HopNodes = HopNodes,
-            NodeCircuitStart = nodeCircuitStart,
-            NodeCircuits = NodeCircuits,
-            DependentStart = DependentStart,
-            Dependents = Dependents,
-            CircuitServiceStart = CircuitServiceStart,
-            CircuitServices = CircuitServices,
-            ServiceIds = ServiceIds,
-            ServiceCircuitStart = ServiceCircuitStart,
-            ServiceCircuitList = ServiceCircuitList,
-            CarrierStart = CarrierStart,
-            Carriers = Carriers,
+            CircuitIds = circuits.CircuitIds,
+            CircuitLayers = circuits.CircuitLayers,
+            HopStart = circuits.HopStart,
+            HopNodes = circuits.HopNodes,
+            NodeCircuitStart = circuits.NodeCircuitStart,
+            NodeCircuits = circuits.NodeCircuits,
+            DependentStart = circuits.DependentStart,
+            Dependents = circuits.Dependents,
+            CircuitServiceStart = circuits.CircuitServiceStart,
+            CircuitServices = circuits.CircuitServices,
+            ServiceIds = circuits.ServiceIds,
+            ServiceCircuitStart = circuits.ServiceCircuitStart,
+            ServiceCircuitList = circuits.ServiceCircuitList,
+            CarrierStart = circuits.CarrierStart,
+            Carriers = circuits.Carriers,
         };
-        if (o.TerminalIds.Count + o.EquipmentIds.Count + o.CableIds.Count + o.SiteIds.Count == 0)
+        return AppendOwners(graph) ? graph : graph.IndexOwners();
+    }
+
+    /// <summary>
+    /// The derived owner indexes of <paramref name="graph"/>, this graph folded: the arrays' own with the new equipment's
+    /// ports and new cables' ends appended, and the small site index rebuilt. False when a new terminal belongs to an
+    /// object of the arrays, which a delta does not do; then they are built from scratch.
+    /// </summary>
+    private bool AppendOwners(Graph graph)
+    {
+        var ports = new List<int>();
+        var portOwners = new List<int>();
+        var ends = new List<int>();
+        var endCables = new List<int>();
+        for (var node = TerminalIds.Length; node < graph.TerminalIds.Length; node++)
         {
-            // Nothing new: the owner indexes stay as they are.
-            graph.EquipmentPortStart = EquipmentPortStart;
-            graph.EquipmentPorts = EquipmentPorts;
-            graph.CableEndStart = CableEndStart;
-            graph.CableEnds = CableEnds;
-            graph.SiteEquipmentStart = SiteEquipmentStart;
-            graph.SiteEquipment = SiteEquipment;
-            return graph;
+            var owner = graph.TerminalOwners[node];
+            if (graph.TerminalKinds[node] == TerminalKind.Port)
+            {
+                if (owner < EquipmentIds.Length)
+                {
+                    return false;
+                }
+                ports.Add(node);
+                portOwners.Add(owner - EquipmentIds.Length);
+            }
+            else
+            {
+                var cable = graph.ConductorCables[owner];
+                if (cable < CableIds.Length)
+                {
+                    return false;
+                }
+                ends.Add(node);
+                endCables.Add(cable - CableIds.Length);
+            }
         }
-        return graph.IndexOwners();
+        (graph.EquipmentPortStart, graph.EquipmentPorts) = Appended(EquipmentPortStart, EquipmentPorts, graph.EquipmentIds.Length - EquipmentIds.Length, portOwners, ports);
+        (graph.CableEndStart, graph.CableEnds) = Appended(CableEndStart, CableEnds, graph.CableIds.Length - CableIds.Length, endCables, ends);
+        if (graph.EquipmentIds.Length == EquipmentIds.Length && graph.SiteIds.Length == SiteIds.Length)
+        {
+            (graph.SiteEquipmentStart, graph.SiteEquipment) = (SiteEquipmentStart, SiteEquipment);
+        }
+        else
+        {
+            (graph.SiteEquipmentStart, graph.SiteEquipment) = GraphBuilder.GroupStable(graph.SiteIds.Length, graph.EquipmentSites,
+                [.. Enumerable.Range(0, graph.EquipmentIds.Length)]);
+        }
+        return true;
+    }
+
+    /// <summary>A grouped index with groups for new keys appended; the same arrays when there are none.</summary>
+    private static (int[] Start, int[] Values) Appended(int[] start, int[] values, int newKeys, List<int> keys, List<int> added)
+    {
+        if (newKeys == 0)
+        {
+            return (start, values);
+        }
+        var (addedStart, addedValues) = GraphBuilder.GroupStable(newKeys, [.. keys], [.. added]);
+        return ([.. start, .. addedStart.Skip(1).Select(s => s + values.Length)], [.. values, .. addedValues]);
+    }
+
+    /// <summary>
+    /// The circuit arrays after the delta: shared when no circuit changed (grown to the new node count when terminals
+    /// were added), otherwise rebuilt from the delta's circuits the way the builder does it (#121).
+    /// </summary>
+    private CircuitArrays FlattenCircuits(int nodes, Func<int, int> node, Func<int, int> old)
+    {
+        if (CircuitDelta is null)
+        {
+            var grown = NodeCircuitStart;
+            if (nodes > TerminalIds.Length)
+            {
+                // New terminals carry no circuits.
+                grown = new int[nodes + 1];
+                Array.Copy(NodeCircuitStart, grown, NodeCircuitStart.Length);
+                Array.Fill(grown, NodeCircuitStart[^1], NodeCircuitStart.Length, nodes + 1 - NodeCircuitStart.Length);
+            }
+            return new CircuitArrays(CircuitIds, CircuitLayers, HopStart, HopNodes, grown, NodeCircuits, DependentStart,
+                Dependents, CircuitServiceStart, CircuitServices, ServiceIds, ServiceCircuitStart, ServiceCircuitList, CarrierStart, Carriers);
+        }
+
+        var alive = Enumerable.Range(0, CircuitCount).Where(c => !CircuitDelta.Removed.Contains(c)).ToArray();
+        var ids = alive.Select(CircuitId).ToArray();
+        Array.Sort(ids, alive);
+        var position = new int[CircuitCount];
+        for (var p = 0; p < alive.Length; p++)
+        {
+            position[alive[p]] = p;
+        }
+        var layers = alive.Select(LayerOf).ToArray();
+        var hopCircuit = new List<int>(HopNodes.Length);
+        var hopNode = new List<int>(HopNodes.Length);
+        var carriers = new List<int>(Carriers.Length);
+        var dependents = new List<int>(Carriers.Length);
+        var serviceRows = new List<long>(CircuitServices.Length);
+        var serviceCircuits = new List<int>(CircuitServices.Length);
+        for (var p = 0; p < alive.Length; p++)
+        {
+            var c = alive[p];
+            foreach (var hop in HopsOf(c))
+            {
+                hopCircuit.Add(p);
+                hopNode.Add(node(hop));
+            }
+            foreach (var carrier in CarriersOf(c))
+            {
+                carriers.Add(position[carrier]);
+                dependents.Add(p);
+            }
+            foreach (var service in ServicesOf(c))
+            {
+                serviceRows.Add(ServiceId(service));
+                serviceCircuits.Add(p);
+            }
+        }
+        // Circuits per node from the delta's lists, renumbered, rather than grouped again from every hop: that would take
+        // two more arrays the size of the network.
+        var nodeCircuitStart = new int[nodes + 1];
+        for (var n = 0; n < nodes; n++)
+        {
+            nodeCircuitStart[n + 1] = nodeCircuitStart[n] + CircuitsThrough(old(n)).Length;
+        }
+        var nodeCircuits = new int[nodeCircuitStart[nodes]];
+        for (var n = 0; n < nodes; n++)
+        {
+            var through = CircuitsThrough(old(n));
+            var segment = nodeCircuits.AsSpan(nodeCircuitStart[n], through.Length);
+            for (var i = 0; i < through.Length; i++)
+            {
+                segment[i] = position[through[i]];
+            }
+            segment.Sort();
+        }
+        return GraphBuilder.Circuits(nodes, ids, layers, [.. hopCircuit], [.. hopNode], [.. carriers], [.. dependents], [.. serviceRows],
+            [.. serviceCircuits], (nodeCircuitStart, nodeCircuits));
     }
 
     /// <summary>New ids can follow the arrays' own when they are all above the highest.</summary>
