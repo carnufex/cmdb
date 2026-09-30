@@ -45,6 +45,9 @@ import {
             </div>
             <p class="muted">
               {{ statusLabels[d.plan.status] }} · {{ d.plan.createdBy }}
+              @if (d.plan.createdVia === 'mcp') {
+                · <strong>föreslagen av agent, granska innan införande</strong>
+              }
               @if (d.plan.appliedBy) {
                 · införd av {{ d.plan.appliedBy }}
               }
@@ -180,6 +183,9 @@ import {
               >
                 <cmdb-status [value]="lifecycle(p)" />
                 <span class="name">{{ p.name }}</span>
+                @if (p.createdVia === 'mcp') {
+                  <span class="muted" title="Föreslagen av en agent">agent</span>
+                }
                 <span class="muted">{{ p.operations }} ändr.</span>
               </button>
             </li>

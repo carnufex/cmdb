@@ -19,8 +19,12 @@ public sealed class McpTests(ApiFactory factory)
         var resources = await client.ListResourcesAsync(cancellationToken: Ct);
         var prompts = await client.ListPromptsAsync(cancellationToken: Ct);
 
-        tools.Select(t => t.Name).Order().ShouldBe(["describe_catalog", "find_sites", "get_object", "impact", "neighbourhood", "search", "trace"]);
-        tools.ShouldAllBe(t => t.ProtocolTool.Annotations!.ReadOnlyHint == true);
+        tools.Select(t => t.Name).Order().ShouldBe(["add_to_plan", "connect_ports", "create_plan", "describe_catalog", "find_sites", "get_object",
+            "impact", "list_plans", "neighbourhood", "preview_plan", "search", "trace"]);
+        // Writing tools only write plans (#64): none is destructive, and none applies a plan.
+        tools.Where(t => t.ProtocolTool.Annotations!.ReadOnlyHint != true).Select(t => t.Name).Order()
+            .ShouldBe(["add_to_plan", "connect_ports", "create_plan"]);
+        tools.ShouldAllBe(t => t.ProtocolTool.Annotations!.DestructiveHint != true);
         resources.Select(r => r.Uri).ShouldBe(["cmdb://docs/domanmodell", "cmdb://docs/plan", "cmdb://docs/arkitektur"], ignoreOrder: true);
         prompts.Select(p => p.Name).ShouldBe(["cable_cut_impact", "find_sites_by_equipment"], ignoreOrder: true);
         client.ServerInstructions.ShouldNotBeNull().ShouldContain("SYNTHETIC");

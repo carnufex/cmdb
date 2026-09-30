@@ -35,7 +35,7 @@ claude mcp add --transport http cmdb https://cmdb.rosenvall.se/mcp --header "Aut
 
 ### Verktyg
 
-Alla verktyg är skrivskyddade. Ändringar kommer att föreslås som planer som en människa för in (#64).
+Inget verktyg ändrar produktion. Agenter föreslår ändringar som planer, och en människa granskar och för in dem i webben (#64). Det finns inget verktyg som för in eller avbryter en plan, och en token från en agentklient (`cmdb-agents`) nekas att föra in planer även via REST.
 
 | Verktyg | Vad det svarar på |
 |---|---|
@@ -46,6 +46,13 @@ Alla verktyg är skrivskyddade. Ändringar kommer att föreslås som planer som 
 | `trace` | Spåra en tjänst eller krets ned genom lagren, eller den fysiska vägen från en terminal genom patchar, skarvar och ledare |
 | `neighbourhood` | Siter inom 1–3 kabelhopp från en site |
 | `describe_catalog` | Sitetyper, livscykler, tjänstetyper, kategorier med attribut och alla modeller |
+| `list_plans` | Planer du kan se, med status, antal ändringar, konflikter och vem som gjort dem |
+| `create_plan` | Skapar ett utkast. Planen märks med agentens identitet och `createdVia: mcp`. |
+| `add_to_plan` | Lägger till ändringar i ordning: koppla, koppla bort, livscykel och namnbyte. Varje ändring kontrolleras mot planens vy, och svaret visar det som inte passar produktion och konflikter med andra planers anspråk eller reservationer. |
+| `connect_ports` | Ett portintervall mot ett annat i frontpanelens ordning, till exempel "patcha port 1–24 på SW-1 mot ODF-3". |
+| `preview_plan` | Planens ändringar mot produktion, inklusive de planer den bygger på, med problem, konflikter och om den är redo att föras in. `url` öppnar planen i webben. |
+
+Skrivande verktyg kräver grupp `cmdb-full` eller `cmdb-agents` och följer omfånget: en agent kan inte röra terminaler eller objekt utanför sitt omfång.
 
 Varje objekt i svaren har en stabil referens (`ref`, till exempel `site:1268`) och en `url` som öppnar samma objekt i UI:t, så att människan kan se det agenten såg. Listor är begränsade till 50 poster och anger när de är trunkerade.
 

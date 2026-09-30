@@ -1,0 +1,173 @@
+using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
+using Cmdb.Api.Features.Plans;
+using Cmdb.Catalog;
+using Cmdb.DataGen;
+using Cmdb.Graph;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
+using ModelContextProtocol.Client;
+using ModelContextProtocol.Protocol;
+using Npgsql;
+
+namespace Cmdb.Api.IntegrationTests.Agents;
+
+/// <summary>
+/// Agents propose changes as plans (#64, ADR-0011): the plan tools over MCP with an agent token, and that only a person
+/// can bring an agent's plan into production.
+/// </summary>
+public sealed class PlanToolTests(ApiFactory factory)
+{
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
+    private static string AgentToken(string user = "cmdb-agent-demo") =>
+        ApiFactory.Token(user, ["cmdb-agents"], audience: "cmdb-agents", issuer: "https://idp.test/application/o/cmdb-agents/");
+
+    [Fact]
+    public async Task An_agent_proposes_a_port_range_as_a_plan_that_only_a_person_can_apply()
+    {
+        var (db, api) = await NetworkAsync(31);
+        await using var dbScope = db;
+        await using var apiScope = api;
+        var (from, to) = await TwoEquipmentWithFreePortsAsync(db, 4);
+        await using var agent = await ConnectAsync(api, AgentToken());
+
+        var plan = Json(await agent.CallToolAsync("create_plan", new Dictionary<string, object?>
+        {
+            ["name"] = "Patcha fyra portar",
+            ["description"] = "Ny transmissionslänk.",
+        }, cancellationToken: Ct));
+        var reference = plan.GetProperty("ref").GetString()!;
+        plan.GetProperty("createdVia").GetString().ShouldBe("mcp");
+        plan.GetProperty("url").GetString().ShouldEndWith($"/?plan={reference["plan:".Length..]}");
+
+        var added = Json(await agent.CallToolAsync("connect_ports", new Dictionary<string, object?>
+        {
+            ["plan"] = reference,
+            ["from"] = $"equipment:{from}",
+            ["fromPort"] = "1",
+            ["to"] = $"equipment:{to}",
+            ["toPort"] = "1",
+            ["count"] = 4,
+        }, cancellationToken: Ct));
+        added.GetProperty("added").GetArrayLength().ShouldBe(4);
+
+        var preview = Json(await agent.CallToolAsync("preview_plan", new Dictionary<string, object?> { ["plan"] = reference }, cancellationToken: Ct));
+        preview.GetProperty("changes").GetArrayLength().ShouldBe(4);
+        preview.GetProperty("problems").GetInt32().ShouldBe(0);
+        preview.GetProperty("readyToApply").GetBoolean().ShouldBeTrue();
+
+        var list = await agent.CallToolAsync("list_plans", new Dictionary<string, object?>(), cancellationToken: Ct);
+        Text(list).ShouldContain("cmdb-agent-demo");
+
+        // The agent cannot apply its plan, not even over REST; a person can.
+        var id = long.Parse(reference["plan:".Length..], System.Globalization.CultureInfo.InvariantCulture);
+        using var agentHttp = api.CreateClient();
+        agentHttp.DefaultRequestHeaders.Authorization = new("Bearer", AgentToken());
+        (await agentHttp.PostAsync($"/api/plans/{id}/apply", null, Ct)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        using var person = NetworkFixture.Client(api);
+        var applied = await person.PostAsync($"/api/plans/{id}/apply", null, Ct);
+        applied.StatusCode.ShouldBe(HttpStatusCode.OK, await applied.Content.ReadAsStringAsync(Ct));
+        (await applied.Content.ReadFromJsonAsync<ApplyResult>(Ct))!.Plan.CreatedBy.ShouldBe("cmdb-agent-demo");
+    }
+
+    [Fact]
+    public async Task Changes_are_checked_and_readers_cannot_propose()
+    {
+        var (db, api) = await NetworkAsync(32);
+        await using var dbScope = db;
+        await using var apiScope = api;
+        var (from, to) = await TwoEquipmentWithFreePortsAsync(db, 2);
+        await using var agent = await ConnectAsync(api, AgentToken());
+        var reference = Json(await agent.CallToolAsync("create_plan", new Dictionary<string, object?> { ["name"] = "Kontroller" }, cancellationToken: Ct))
+            .GetProperty("ref").GetString()!;
+
+        // The second connect of the same pair does not fit the plan's view.
+        var args = new Dictionary<string, object?>
+        {
+            ["plan"] = reference,
+            ["from"] = $"equipment:{from}",
+            ["fromPort"] = "1",
+            ["to"] = $"equipment:{to}",
+            ["toPort"] = "1",
+            ["count"] = 1,
+        };
+        Json(await agent.CallToolAsync("connect_ports", args, cancellationToken: Ct));
+        var again = Json(await agent.CallToolAsync("connect_ports", args, cancellationToken: Ct));
+        again.GetProperty("added")[0].GetProperty("problem").GetString().ShouldBe("Terminalerna är redan kopplade.");
+
+        var bad = await agent.CallToolAsync("add_to_plan", new Dictionary<string, object?>
+        {
+            ["plan"] = reference,
+            ["operations"] = new[] { new { kind = "connect", a = 999_999_999L, b = 1L } },
+        }, cancellationToken: Ct);
+        bad.IsError.ShouldBe(true);
+        Text(bad).ShouldContain("finns inte");
+        var tooMany = await agent.CallToolAsync("connect_ports", new Dictionary<string, object?>(args) { ["count"] = 500 }, cancellationToken: Ct);
+        tooMany.IsError.ShouldBe(true);
+
+        await using var reader = await ConnectAsync(api, ApiFactory.Token("cmdb-demo-region", ["cmdb-region-nord"]));
+        var refused = await reader.CallToolAsync("create_plan", new Dictionary<string, object?> { ["name"] = "Nej" }, cancellationToken: Ct);
+        refused.IsError.ShouldBe(true);
+        Text(refused).ShouldContain("may read but not propose");
+    }
+
+    private async Task<(NpgsqlDataSource Db, WebApplicationFactory<Program> Api)> NetworkAsync(int seed)
+    {
+        var db = await factory.NewDatabaseAsync();
+        await Loader.LoadAsync(db, NetworkBuilder.Build(seed, Scale.Small, TypeCatalog.Embedded), reset: false, TextWriter.Null, ct: Ct);
+        await using (var clear = db.CreateCommand("DELETE FROM reservation; DELETE FROM plan_operation; DELETE FROM plan_dependency; DELETE FROM plan"))
+        {
+            await clear.ExecuteNonQueryAsync(Ct);
+        }
+        var connectionString = new NpgsqlConnectionStringBuilder(factory.ConnectionString)
+        {
+            Database = new NpgsqlConnectionStringBuilder(db.ConnectionString).Database,
+        }.ConnectionString;
+        var api = factory.WithWebHostBuilder(b => b.UseSetting("ConnectionStrings:Cmdb", connectionString));
+        await api.Services.GetRequiredService<GraphHolder>().Ready.WaitAsync(TimeSpan.FromSeconds(60), Ct);
+        await api.Services.GetRequiredService<Cmdb.Api.Auth.ScopeRefreshService>().Ready.WaitAsync(TimeSpan.FromSeconds(60), Ct);
+        return (db, api);
+    }
+
+    private static async Task<McpClient> ConnectAsync(WebApplicationFactory<Program> api, string token)
+    {
+        var http = api.CreateClient();
+        http.DefaultRequestHeaders.Authorization = new("Bearer", token);
+        var transport = new HttpClientTransport(
+            new HttpClientTransportOptions { Endpoint = new Uri(http.BaseAddress!, "/mcp"), TransportMode = HttpTransportMode.StreamableHttp },
+            http,
+            ownsHttpClient: true);
+        return await McpClient.CreateAsync(transport, cancellationToken: Ct);
+    }
+
+    /// <summary>Two pieces of equipment whose first <paramref name="ports"/> ports are all unconnected.</summary>
+    private static async Task<(long From, long To)> TwoEquipmentWithFreePortsAsync(NpgsqlDataSource db, int ports)
+    {
+        await using var cmd = db.CreateCommand($"""
+            SELECT e.id FROM equipment e
+            WHERE (SELECT count(*) FROM port p WHERE p.equipment_id = e.id) >= {ports}
+              AND NOT EXISTS (
+                  SELECT 1 FROM (SELECT p.terminal_id FROM port p WHERE p.equipment_id = e.id ORDER BY p.position LIMIT {ports}) f
+                  JOIN connection c ON f.terminal_id IN (c.a_terminal_id, c.b_terminal_id))
+            ORDER BY e.id LIMIT 2
+            """);
+        await using var reader = await cmd.ExecuteReaderAsync(Ct);
+        var ids = new List<long>();
+        while (await reader.ReadAsync(Ct))
+        {
+            ids.Add(reader.GetInt64(0));
+        }
+        return (ids[0], ids[1]);
+    }
+
+    private static string Text(CallToolResult result) => string.Concat(result.Content.OfType<TextContentBlock>().Select(c => c.Text));
+
+    private static JsonElement Json(CallToolResult result)
+    {
+        result.IsError.ShouldNotBe(true, Text(result));
+        return JsonDocument.Parse(Text(result)).RootElement;
+    }
+}

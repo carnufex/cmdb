@@ -15,6 +15,9 @@ public sealed class AgentLinks(IHttpContextAccessor http, IConfiguration config)
     public string For(string type, long id) =>
         string.Create(CultureInfo.InvariantCulture, $"{Base}/?p={type}:{id}");
 
+    /// <summary>The web app switched to the plan's view (#24).</summary>
+    public string ForPlan(long id) => string.Create(CultureInfo.InvariantCulture, $"{Base}/?plan={id}");
+
     public static string Ref(string type, long id) => string.Create(CultureInfo.InvariantCulture, $"{type}:{id}");
 
     private string ResolveBase()

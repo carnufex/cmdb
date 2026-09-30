@@ -31,7 +31,7 @@ internal static class PlanSql
             {
                 var p = PlanViews.ReadPlan(reader);
                 list.Add(new PlanSummary(p.Id, p.Name, p.Description, p.Status, p.Flag, p.CreatedBy, p.CreatedAt, p.UpdatedAt,
-                    p.AppliedBy, p.AppliedAt, p.DependsOn, reader.GetInt32(12)));
+                    p.AppliedBy, p.AppliedAt, p.DependsOn, reader.GetInt32(14), CreatedVia: p.CreatedVia, Client: p.Client));
             }
         }
         // Operations in conflict with others' claims (#25), per plan.

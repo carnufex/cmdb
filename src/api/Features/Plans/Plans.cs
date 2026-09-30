@@ -11,7 +11,7 @@ namespace Cmdb.Api.Features.Plans;
 
 public sealed record PlanSummary(long Id, string Name, string Description, string Status, string? Flag, string CreatedBy,
     DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, string? AppliedBy, DateTimeOffset? AppliedAt, IReadOnlyList<long> DependsOn,
-    int Operations, int Conflicts = 0);
+    int Operations, int Conflicts = 0, string CreatedVia = "api", string? Client = null);
 
 /// <summary>An operation in words, with the objects it touches and, when it no longer fits, why.</summary>
 /// <param name="Conflicts">Claims on the same resources by others (#25): a reservation (blocking) or another plan.</param>
@@ -119,7 +119,7 @@ public sealed class ListPlansEndpoint(RequestDb db) : EndpointWithoutRequest<Lis
 }
 
 /// <summary>Creates a draft plan on top of production and, optionally, other plans.</summary>
-public sealed class CreatePlanEndpoint(RequestDb db) : Endpoint<CreatePlanRequest, PlanSummary>
+public sealed class CreatePlanEndpoint(PlanWrites writes) : Endpoint<CreatePlanRequest, PlanSummary>
 {
     public override void Configure()
     {
@@ -129,28 +129,15 @@ public sealed class CreatePlanEndpoint(RequestDb db) : Endpoint<CreatePlanReques
 
     public override async Task HandleAsync(CreatePlanRequest req, CancellationToken ct)
     {
-        var scope = HttpContext.Scope();
-        var dependsOn = (req.DependsOn ?? []).Distinct().ToArray();
-        if (await PlanSql.CheckDependenciesAsync(db, dependsOn, scope, ct) is { } problem)
+        var result = await writes.CreateAsync(User, PlanWrites.Via(HttpContext), HttpContext.Scope(), req.Name, req.Description,
+            req.DependsOn ?? [], ct);
+        if (result.Value is not { } created)
         {
-            AddError(r => r.DependsOn!, problem);
+            AddError(r => r.DependsOn!, result.Error!);
             await Send.ErrorsAsync(cancellation: ct);
             return;
         }
-        await using var conn = await db.OpenConnectionAsync(ct);
-        await using var tx = await conn.BeginTransactionAsync(ct);
-        long id;
-        await using (var cmd = new NpgsqlCommand("INSERT INTO plan (name, description, created_by) VALUES ($1, $2, $3) RETURNING id", conn, tx))
-        {
-            cmd.Parameters.Add(new() { Value = req.Name });
-            cmd.Parameters.Add(new() { Value = req.Description ?? "" });
-            cmd.Parameters.Add(new() { Value = PlanSql.Actor(User) });
-            id = (long)(await cmd.ExecuteScalarAsync(ct))!;
-        }
-        await PlanSql.InsertDependenciesAsync(conn, tx, id, dependsOn, ct);
-        await tx.CommitAsync(ct);
-        var created = (await PlanSql.SummariesAsync(db, [id], ct)).Single();
-        await Send.CreatedAtAsync<GetPlanEndpoint>(new { id }, created, cancellation: ct);
+        await Send.CreatedAtAsync<GetPlanEndpoint>(new { id = created.Id }, created, cancellation: ct);
     }
 }
 
@@ -230,8 +217,7 @@ public sealed class SetDependenciesEndpoint(RequestDb db) : Endpoint<SetDependen
 }
 
 /// <summary>Adds an operation at the end of a draft plan. Only objects inside the caller's scopes can be touched.</summary>
-public sealed class AddOperationEndpoint(RequestDb db, GraphHolder holder, PlanViews views, ScopeMasks masks)
-    : Endpoint<AddOperationRequest, PlanOperationView>
+public sealed class AddOperationEndpoint(PlanWrites writes) : Endpoint<AddOperationRequest, PlanOperationView>
 {
     public override void Configure()
     {
@@ -241,76 +227,23 @@ public sealed class AddOperationEndpoint(RequestDb db, GraphHolder holder, PlanV
 
     public override async Task HandleAsync(AddOperationRequest req, CancellationToken ct)
     {
-        var scope = HttpContext.Scope();
-        var graph = holder.Require();
-        if (await views.GetAsync(graph, req.Id, scope, ct) is not { } view)
+        var result = await writes.AddAsync(User, HttpContext.Scope(), req, ct);
+        switch (result.Failure)
         {
-            await Send.NotFoundAsync(ct);
-            return;
-        }
-        if (view.Chain.Plan.Status != "draft")
-        {
-            await PlanSql.ConflictAsync(HttpContext, "Bara utkast kan ändras.", ct);
-            return;
-        }
-        var mask = await masks.GetAsync(graph, scope, ct);
-        string payload;
-        if (req.Kind is "connect" or "disconnect")
-        {
-            // Terminals must exist in production and be inside the caller's scopes.
-            foreach (var terminal in new[] { req.A!.Value, req.B!.Value })
-            {
-                if (!graph.TryGetNode(terminal, out var node) || !Visible(graph, mask, node))
-                {
-                    AddError($"Terminal {terminal} finns inte.");
-                    await Send.ErrorsAsync(cancellation: ct);
-                    return;
-                }
-            }
-            payload = System.Text.Json.JsonSerializer.Serialize(req.Kind == "connect"
-                ? (object)new { a = req.A, b = req.B, kind = req.ConnectionKind }
-                : new { a = req.A, b = req.B });
-        }
-        else
-        {
-            if (!await PlanSql.ObjectVisibleAsync(db, req.Type!, req.ObjectId!.Value, scope, ct))
-            {
-                AddError($"{req.Type} {req.ObjectId} finns inte.");
+            case PlanWriteFailure.NotFound:
+                await Send.NotFoundAsync(ct);
+                return;
+            case PlanWriteFailure.Conflict:
+                await PlanSql.ConflictAsync(HttpContext, result.Error!, ct);
+                return;
+            case PlanWriteFailure.Invalid:
+                AddError(result.Error!);
                 await Send.ErrorsAsync(cancellation: ct);
                 return;
-            }
-            payload = System.Text.Json.JsonSerializer.Serialize(req.Kind == "set_lifecycle"
-                ? (object)new { type = req.Type, id = req.ObjectId, lifecycle = req.Lifecycle }
-                : new { type = req.Type, id = req.ObjectId, name = req.Name });
+            default:
+                await Send.OkAsync(result.Value!, ct);
+                return;
         }
-
-        await using var conn = await db.OpenConnectionAsync(ct);
-        await using var tx = await conn.BeginTransactionAsync(ct);
-        long opId;
-        await using (var cmd = new NpgsqlCommand("""
-            INSERT INTO plan_operation (plan_id, seq, kind, payload, created_by)
-            SELECT $1, coalesce(max(seq), 0) + 1, $2, $3::jsonb, $4 FROM plan_operation WHERE plan_id = $1
-            RETURNING id
-            """, conn, tx))
-        {
-            cmd.Parameters.Add(new() { Value = req.Id });
-            cmd.Parameters.Add(new() { Value = req.Kind });
-            cmd.Parameters.Add(new() { Value = payload });
-            cmd.Parameters.Add(new() { Value = PlanSql.Actor(User) });
-            opId = (long)(await cmd.ExecuteScalarAsync(ct))!;
-        }
-        await PlanSql.TouchAsync(conn, tx, req.Id, ct);
-        await tx.CommitAsync(ct);
-
-        var after = (await views.GetAsync(graph, req.Id, scope, ct))!;
-        var op = after.Chain.Operations.Single(o => o.Id == opId);
-        await Send.OkAsync((await PlanSql.DescribeAsync(db, graph, mask, scope, [op], after.Problems, ct)).Single(), ct);
-    }
-
-    private static bool Visible(Cmdb.Graph.Graph g, GraphMask mask, int node)
-    {
-        var site = g.SiteIndexOfNode(node);
-        return site >= 0 ? mask.Sites[site] : mask.Cables[g.CableIndexOfNode(node)];
     }
 }
 
