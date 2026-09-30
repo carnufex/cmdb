@@ -85,6 +85,14 @@
     </button>
     <button
       type="button"
+      class="text-button tool-button"
+      [attr.aria-pressed]="tools.open() === 'voice'"
+      (click)="tools.toggle('voice')"
+    >
+      Driftagent
+    </button>
+    <button
+      type="button"
       class="icon-button"
       (click)="theme.toggle()"
       [attr.aria-label]="theme.theme() === 'dark' ? 'Byt till ljust tema' : 'Byt till mörkt tema'"
@@ -153,6 +161,8 @@
       <aside class="tool wide" aria-label="Kalkylark"><cmdb-grid-panel /></aside>
     } @else if (tools.open() === 'changelog') {
       <aside class="tool" aria-label="Nyheter"><cmdb-changelog-panel /></aside>
+    } @else if (tools.open() === 'voice') {
+      <aside class="tool" aria-label="Driftagent"><cmdb-voice-panel /></aside>
     } @else if (tools.open() === 'perf') {
       <aside class="tool wide" aria-label="Prestanda"><cmdb-perf-panel /></aside>
     }

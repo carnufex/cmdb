@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Threading.RateLimiting;
 using Cmdb.Api.Agents;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using ModelContextProtocol.AspNetCore.Authentication;
 
@@ -57,8 +58,13 @@ public static class AuthSetup
                     };
                     return Task.CompletedTask;
                 };
-            });
-        services.AddAuthorization();
+            })
+            // The operations agent's voice channel (ADR-0015): a shared secret, and the caller's scopes once verified.
+            .AddScheme<AuthenticationSchemeOptions, Cmdb.Api.Features.Voice.VoiceAuthenticationHandler>(
+                Cmdb.Api.Features.Voice.VoiceAuthenticationHandler.SchemeName, null);
+        services.AddAuthorization(o => o.AddPolicy(Cmdb.Api.Features.Voice.VoiceAuthenticationHandler.SchemeName, p => p
+            .AddAuthenticationSchemes(Cmdb.Api.Features.Voice.VoiceAuthenticationHandler.SchemeName)
+            .RequireAuthenticatedUser()));
 
         // Agents (anything on /mcp, and the agent service-account clients on /api) are limited per client and user,
         // so one agent cannot bulk-export the network. People in the web UI are not limited.
@@ -71,6 +77,7 @@ public static class AuthSetup
             {
                 var client = context.User.FindFirstValue(CmdbClaims.Client);
                 var isAgent = context.Request.Path.StartsWithSegments(McpSetup.Path, StringComparison.Ordinal)
+                    || context.Request.Path.StartsWithSegments(McpSetup.VoicePath, StringComparison.Ordinal)
                     || (client is not null && trust.AgentClients.Contains(client));
                 return isAgent
                     ? RateLimitPartition.GetTokenBucketLimiter($"{client}|{context.User.FindFirstValue(CmdbClaims.Subject)}", _ => new TokenBucketRateLimiterOptions

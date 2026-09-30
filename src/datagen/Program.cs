@@ -19,6 +19,7 @@ internal static class Cli
         var scale = Scale.Small;
         var reset = false;
         var dryRun = false;
+        var scenariosOnly = false;
         var connection = Environment.GetEnvironmentVariable("ConnectionStrings__Cmdb")
             ?? "Host=127.0.0.1;Port=15432;Database=cmdb;Username=cmdb";
 
@@ -41,10 +42,26 @@ internal static class Cli
                 case "--dry-run":
                     dryRun = true;
                     break;
+                case "--scenarios":
+                    scenariosOnly = true;
+                    break;
                 default:
-                    Console.Error.WriteLine($"Unknown argument '{args[i]}'. Usage: --scale small|medium|full|2x|4x --seed N [--reset] [--dry-run] [--connection CS]");
+                    Console.Error.WriteLine($"Unknown argument '{args[i]}'. Usage: --scale small|medium|full|2x|4x --seed N [--reset] [--dry-run] [--scenarios] [--connection CS]");
                     return 1;
             }
+        }
+
+        if (scenariosOnly)
+        {
+            // The operations agent's scenarios (#132) on an already loaded network, without generating anything.
+            var system = new NpgsqlConnectionStringBuilder(connection) { CommandTimeout = 0, Options = "-c cmdb.scopes=*" };
+            await using var source = CmdbDatabase.CreateDataSource(system.ConnectionString);
+            await using (var conn = await source.OpenConnectionAsync())
+            {
+                await DemoScenarios.SeedAsync(conn, Console.Out, CancellationToken.None);
+            }
+            await Cmdb.Database.Scopes.ScopeVisibility.RefreshAsync(source);
+            return 0;
         }
 
         var total = Stopwatch.StartNew();
@@ -78,7 +95,7 @@ internal static class Cli
         // The generator is system work and sees everything under row-level security (#22).
         var bulk = new NpgsqlConnectionStringBuilder(connection) { CommandTimeout = 0, Options = "-c cmdb.scopes=*" };
         await using var db = CmdbDatabase.CreateDataSource(bulk.ConnectionString);
-        await Loader.LoadAsync(db, network, reset, Console.Out);
+        await Loader.LoadAsync(db, network, reset, Console.Out, scenarios: true);
         Console.WriteLine($"Loaded in {load.Elapsed.TotalSeconds:0.0} s, total {total.Elapsed.TotalSeconds:0.0} s");
         return 0;
     }

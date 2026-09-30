@@ -20,7 +20,8 @@ internal static class Loader
     private static readonly string[] IdentityTables =
         ["site", "location", "equipment", "terminal", "cable", "conductor", "connection", "channel", "service", "circuit"];
 
-    public static async Task LoadAsync(NpgsqlDataSource db, Network net, bool reset, TextWriter log, bool fast = true, CancellationToken ct = default)
+    public static async Task LoadAsync(NpgsqlDataSource db, Network net, bool reset, TextWriter log, bool fast = true, bool scenarios = false,
+        CancellationToken ct = default)
     {
         // The schema is owned by the EF model (ADR-0009); the loader only migrates and then bulk-writes rows.
         await CmdbDatabase.MigrateAsync(db, ct);
@@ -28,6 +29,7 @@ internal static class Loader
         {
             await CatalogSync.SyncAsync(context, TypeCatalog.Embedded, ct);
             await Cmdb.Database.Scopes.ScopeCatalog.SyncAsync(context, ct);
+            await Cmdb.Database.Voice.VoiceCallerCatalog.SyncAsync(context, ct);
         }
 
         await using var conn = await db.OpenConnectionAsync(ct);
@@ -37,7 +39,7 @@ internal static class Loader
         if (reset)
         {
             // Plans (#24) and reservations (#25) refer to terminals and objects by id, so they go with the network.
-            await Exec(conn, $"TRUNCATE {string.Join(", ", NetworkTables)}, graph_change, reservation, plan_operation, plan_dependency, plan RESTART IDENTITY", ct);
+            await Exec(conn, $"TRUNCATE {string.Join(", ", NetworkTables)}, graph_change, reservation, plan_operation, plan_dependency, plan, incident, voice_session, voice_challenge, voice_sms, voice_tool_call RESTART IDENTITY", ct);
         }
         else if (await Scalar<bool>(conn, "SELECT EXISTS (SELECT 1 FROM site)", ct))
         {
@@ -249,6 +251,11 @@ internal static class Loader
         await Exec(conn, "SET cmdb.bulk = 'off'", ct);
         await Exec(conn, "INSERT INTO graph_change (kind, key) VALUES ('reload', 0)", ct);
         var sw = Stopwatch.StartNew();
+        if (scenarios)
+        {
+            // The operations agent's demo scenarios (#132) change the generated network, so only the demo loads them.
+            await DemoScenarios.SeedAsync(conn, log, ct);
+        }
         await Cmdb.Database.Scopes.ScopeVisibility.RefreshAsync(db, ct);
         log.WriteLine($"  scopes  {sw.Elapsed.TotalSeconds,6:0.0} s");
         await DemoPlans.SeedAsync(conn, log, ct);

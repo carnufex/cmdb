@@ -43,6 +43,7 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         await using var context = CmdbDatabase.CreateContext(Db);
         await CatalogSync.SyncAsync(context, TypeCatalog.Embedded);
         await Cmdb.Database.Scopes.ScopeCatalog.SyncAsync(context);
+        await Cmdb.Database.Voice.VoiceCallerCatalog.SyncAsync(context);
         // Starting the host loads the graph in the background; tests begin once it is in place.
         await Services.GetRequiredService<Cmdb.Graph.GraphHolder>().Ready.WaitAsync(TimeSpan.FromSeconds(60));
     }
@@ -134,11 +135,15 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         return client;
     }
 
+    /// <summary>The voice channel's shared secret (ADR-0015) in tests.</summary>
+    public const string VoiceSecret = "test-voice-secret";
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseSetting("ConnectionStrings:Cmdb", ConnectionString);
         builder.UseSetting("Auth:Authority", Issuer);
         builder.UseSetting("Auth:Audience", Audience);
+        builder.UseSetting("Voice:Secret", VoiceSecret);
         builder.ConfigureTestServices(services =>
             services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, o =>
             {

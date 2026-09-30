@@ -106,6 +106,23 @@ Kodagenter i en terminal (Claude Code, Codex) och skript använder med fördel k
 
 Varje uppgift tog ett anrop med båda. CLI:t löser koder direkt (`cmdb trace TJ-0000001`), medan MCP-verktyget `trace` kräver en referens. Siffrorna är svarsstorlekar, inte uppmätta tokens i en Claude Code-session. För agenter i en terminal ger CLI:t ändå tydligt mindre kontext per uppgift. MCP är fortfarande rätt för chattklienter utan skal.
 
+## Driftagenten: röstkanalen
+
+Driftagenten (epic #130, ADR-0015) är en ElevenLabs-agent som tar emot felanmälningar på svenska. Den når CMDB:n på en egen ingång, `/voice/mcp`, inte på `/mcp`. Konfigurationen ligger i [agent/](../agent/).
+
+- **Autentisering:** en hemlighet (`Voice:Secret`, Bitwarden `CMDB_VOICE_SECRET`) och samtals-id:t i headern `X-Conversation-Id`. Hemligheten öppnar bara röstverktygen.
+- **Utan verifiering** har samtalet omfånget "ingenting". Bara `find_station` (namn, kod, typ, region och status) och verifieringen fungerar.
+- **Stegvis verifiering:** `request_verification_code` skickar en sexsiffrig kod till telefonen för anställningsnumret, och `verify_caller` kontrollerar den. Koden gäller i 5 minuter med 3 försök per samtal. SMS är stubbat, och utkorgen syns i webbens panel **Driftagent** för den som ser hela nätet.
+- **Efter verifiering** bär samtalet uppringarens grupper i 30 minuter. `station_overview`, `fault_impact` och `create_incident` körs då med samma åtkomstomfång, masker och filter som webben.
+- **Felpåverkan:** påverkansanalysen i grafen kompletteras per tjänst med om en annan väg fungerar, om alla vägar går via felet (falsk redundans) eller om det bara finns en väg. Kritiska tjänster har `criticality: critical`.
+- **Ärenden** får prioritet av regler i servern, aldrig av agenten:
+  - P1: en kritisk tjänst saknar fungerande väg. Jouren larmas.
+  - P2: en kritisk tjänst har kvar en väg, eller en annan tjänst saknar väg.
+  - P3: övrigt.
+- **Loggning:** varje verktygsanrop loggas i `voice_tool_call` med verktyg, utfall, tid, samtal och verifierad uppringare.
+
+Demoscenarier och uppringare finns i [demo-scenarier.md](demo-scenarier.md).
+
 ## Utan MCP
 
 - **OpenAPI:** `https://cmdb.rosenvall.se/api/openapi.json`, öppen utan inloggning. Datan bakom kräver token.
