@@ -86,6 +86,29 @@ public sealed class LoaderTests(ApiFactory factory)
         ((long)(await cmd.ExecuteScalarAsync(Ct))!).ShouldBe(2);
     }
 
+    [Fact]
+    public async Task The_operations_agents_scenarios_are_seeded_the_same_when_run_again()
+    {
+        await using var db = await factory.NewDatabaseAsync();
+        await Loader.LoadAsync(db, NetworkBuilder.Build(1, Scale.Small, TypeCatalog.Embedded), reset: false, TextWriter.Null, scenarios: true, ct: Ct);
+        var circuits = await Count(db, "circuit");
+
+        await using (var conn = await db.OpenConnectionAsync(Ct))
+        {
+            await DemoScenarios.SeedAsync(conn, TextWriter.Null, Ct);
+        }
+
+        (await Count(db, "circuit")).ShouldBe(circuits);
+        await using var cmd = db.CreateCommand($$"""
+            SELECT (SELECT count(*) FROM site WHERE name = '{{DemoScenarios.Station}}'),
+                   (SELECT count(*) FROM circuit WHERE code LIKE '%{{DemoScenarios.BackupSuffix}}'),
+                   (SELECT count(*) FROM service WHERE name LIKE 'Mobilnät {{DemoScenarios.Station}}%' AND attributes->>'criticality' = 'critical')
+            """);
+        await using var reader = await cmd.ExecuteReaderAsync(Ct);
+        await reader.ReadAsync(Ct);
+        (reader.GetInt64(0), reader.GetInt64(1), reader.GetInt64(2)).ShouldBe((1L, 2L, 2L));
+    }
+
     [Theory]
     [InlineData(55.40, 13.35)]
     [InlineData(59.33, 18.07)]

@@ -1,7 +1,7 @@
 import { Injectable, signal } from '@angular/core';
 
 /** Tools opened from the toolbar. They sit over the left edge of the lens, never on top of the panel stack. */
-export type Tool = 'query' | 'perf' | 'tree' | 'plans' | 'grid' | 'changelog';
+export type Tool = 'query' | 'perf' | 'tree' | 'plans' | 'grid' | 'changelog' | 'voice';
 
 @Injectable({ providedIn: 'root' })
 export class Tools {

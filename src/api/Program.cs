@@ -74,6 +74,8 @@ if (migrateOnly || app.Configuration.GetValue<bool>("Database:MigrateOnStartup")
     StartupLog.CatalogSynced(app.Logger, synced);
     // Access scopes (#22) are synthetic demo data too; what they show is materialised after the sync.
     await Cmdb.Database.Scopes.ScopeCatalog.SyncAsync(scope.ServiceProvider.GetRequiredService<CmdbDbContext>());
+    // The people who may call the operations agent (ADR-0015) are synthetic demo data like the scopes.
+    await Cmdb.Database.Voice.VoiceCallerCatalog.SyncAsync(scope.ServiceProvider.GetRequiredService<CmdbDbContext>());
     // The change log (#82) is reviewed data too.
     await Cmdb.Database.Changelog.ChangelogSync.SyncAsync(scope.ServiceProvider.GetRequiredService<CmdbDbContext>(),
         Cmdb.Database.Changelog.ChangelogSync.Embedded());
