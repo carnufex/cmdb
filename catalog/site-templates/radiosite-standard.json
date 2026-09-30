@@ -1,0 +1,26 @@
+{
+  "key": "radiosite-standard",
+  "name": "Radiosite, standard",
+  "siteType": "radio",
+  "description": "Mobilsite med basband, radioenhet med antenn, router mot transport och en ODF för inkommande fiber. Strömförsörjning med likriktare och batteri.",
+  "equipment": [
+    { "ref": "odf", "typeKey": "acme-odf-24", "name": "{code} ODF-24 1", "rack": "Rack 1" },
+    { "ref": "router", "typeKey": "acme-ar-10", "name": "{code} AR-10 1", "rack": "Rack 1" },
+    { "ref": "baseband", "typeKey": "acme-bb-6", "name": "{code} BB-6 1", "rack": "Rack 1" },
+    { "ref": "rectifier", "typeKey": "acme-rect-48", "name": "{code} RECT-48 1", "rack": "Rack 1" },
+    { "ref": "battery", "typeKey": "acme-bat-100", "name": "{code} BAT-100 1", "rack": "Rack 1" },
+    { "ref": "radio", "typeKey": "acme-rr-4", "name": "{code} RR-4 1", "rack": "Mast" },
+    { "ref": "antenna", "typeKey": "acme-ant-4p", "name": "{code} ANT-4P 1", "rack": "Mast" }
+  ],
+  "connections": [
+    { "from": "router", "fromPort": "xe-0/1/1", "to": "odf", "toPort": "1", "kind": "patch" },
+    { "from": "baseband", "fromPort": "bh1", "to": "router", "toPort": "xe-0/1/2", "kind": "patch" },
+    { "from": "baseband", "fromPort": "cpri1", "to": "radio", "toPort": "cpri1", "kind": "patch" },
+    { "from": "radio", "fromPort": "ant1", "to": "antenna", "toPort": "port1", "kind": "termination" },
+    { "from": "radio", "fromPort": "ant2", "to": "antenna", "toPort": "port2", "kind": "termination" },
+    { "from": "radio", "fromPort": "ant3", "to": "antenna", "toPort": "port3", "kind": "termination" },
+    { "from": "radio", "fromPort": "ant4", "to": "antenna", "toPort": "port4", "kind": "termination" },
+    { "from": "rectifier", "fromPort": "out1", "to": "radio", "toPort": "dc", "kind": "internal" },
+    { "from": "rectifier", "fromPort": "out2", "to": "battery", "toPort": "plus", "kind": "internal" }
+  ]
+}

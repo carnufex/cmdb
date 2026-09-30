@@ -49,6 +49,7 @@ builder.Services.AddSingleton<Cmdb.Api.Auth.ScopeRegistry>();
 builder.Services.AddSingleton<Cmdb.Api.Auth.ScopeMasks>();
 builder.Services.AddSingleton<Cmdb.Api.Features.Plans.PlanViews>();
 builder.Services.AddScoped<Cmdb.Api.Features.Plans.PlanWrites>();
+builder.Services.AddScoped<Cmdb.Api.Features.Plans.PlanPatterns>();
 builder.Services.AddSingleton<Cmdb.Api.Auth.ScopeRefreshService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<Cmdb.Api.Auth.ScopeRefreshService>());
 builder.Services.AddScoped(sp => sp.GetRequiredService<IHttpContextAccessor>().HttpContext?.User is { Identity.IsAuthenticated: true } user

@@ -77,6 +77,7 @@ En fil per modell i [`catalog/equipment-types/`](../catalog/equipment-types/). F
 - Portarna får positionsnummer 1…N i mallens ordning. Samma typ ger därför alltid samma numrering.
 - `attributes` är ett JSON Schema (2020-12) för instansens JSONB-attribut. Det valideras när utrustning skapas.
 - Kategorier: `switch`, `router`, `card`, `radio`, `antenna`, `transmission`, `odf`, `patch`, `power`.
+- **Sitemallar** (`catalog/site-templates/<key>.json`, #26) beskriver en sitetyp med utrustning (modell, namnmönster med `{code}`, rack) och intern kabeldragning (port till port). De valideras mot utrustningstyperna vid laddning och används i planer.
 - Katalogen valideras vid laddning (unika namn, portar inom panelen, inga överlapp, giltigt schema, kända kategorier) och synkas till `equipment_type` i samma steg som migreringarna. Om en portmall ändras genereras inte portarna om på befintlig utrustning.
 
 ## Livscykel

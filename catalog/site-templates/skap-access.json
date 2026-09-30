@@ -1,0 +1,14 @@
+{
+  "key": "skap-access",
+  "name": "Accesskåp",
+  "siteType": "cabinet",
+  "description": "Skåp för fiberaccess: en ODF för inkommande kabel och en accesswitch mot kunderna.",
+  "equipment": [
+    { "ref": "odf", "typeKey": "acme-odf-24", "name": "{code} ODF-24 1", "rack": "Skåp" },
+    { "ref": "switch", "typeKey": "acme-ix-8", "name": "{code} IX-8 1", "rack": "Skåp" }
+  ],
+  "connections": [
+    { "from": "switch", "fromPort": "xe-0/1/1", "to": "odf", "toPort": "1", "kind": "patch" },
+    { "from": "switch", "fromPort": "xe-0/1/2", "to": "odf", "toPort": "2", "kind": "patch" }
+  ]
+}

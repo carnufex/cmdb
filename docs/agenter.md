@@ -50,6 +50,9 @@ Inget verktyg ändrar produktion. Agenter föreslår ändringar som planer, och 
 | `create_plan` | Skapar ett utkast. Planen märks med agentens identitet och `createdVia: mcp`. |
 | `add_to_plan` | Lägger till ändringar i ordning: koppla, koppla bort, livscykel, namnbyte, ny site, ny utrustning och ny kabel. Ett nytt objekt får en planerad referens (`target`, till exempel `site:-12`) som senare ändringar använder. Varje ändring kontrolleras mot planens vy, och svaret visar det som inte passar produktion och konflikter med andra planers anspråk eller reservationer. |
 | `connect_ports` | Ett portintervall mot ett annat i frontpanelens ordning, till exempel "patcha port 1–24 på SW-1 mot ODF-3". Fungerar också mot planerad utrustning (`equipment:-12`). |
+| `list_site_templates`, `create_site_from_template` | Sitemallar, och en hel site ur en mall i planen |
+| `splice_ports_to_cable` | Mönsterpatchning: portar från en startport mot fibrer från en startfiber, med steg, på kabelns A- eller B-sida |
+| `terminate_cable` | Terminerar en kabel i båda ändar på lediga ODF-portar, som planen föreslår |
 | `preview_plan` | Planens ändringar mot produktion, inklusive de planer den bygger på, med problem, konflikter och om den är redo att föras in. `url` öppnar planen i webben. |
 
 Skrivande verktyg kräver grupp `cmdb-full` eller `cmdb-agents` och följer omfånget: en agent kan inte röra terminaler eller objekt utanför sitt omfång.

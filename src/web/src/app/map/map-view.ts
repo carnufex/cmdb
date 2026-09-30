@@ -47,6 +47,13 @@ export class MapView {
   readonly planned = signal<PlannedObjects | null>(null);
 
   /**
+   * While true, clicking a site in the map picks it (#26, drawing a cable in a plan) instead of opening its panel; the
+   * pick lands in {@link picked}.
+   */
+  readonly picking = signal(false);
+  readonly picked = signal<{ code: string; seq: number } | null>(null);
+
+  /**
    * Set by the map while it is shown: animates the view over the country and returns frame times in ms.
    * Used by the performance panel (#56).
    */
@@ -68,6 +75,10 @@ export class MapView {
 
   showRoute(route: Omit<Route, 'seq'>): void {
     this.route.set({ ...route, seq: ++this.seq });
+  }
+
+  pick(code: string): void {
+    this.picked.set({ code, seq: ++this.seq });
   }
 
   clearRoute(): void {

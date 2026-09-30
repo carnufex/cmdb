@@ -153,6 +153,42 @@ public sealed class PlanToolTests(ApiFactory factory)
         preview.GetProperty("problems").GetInt32().ShouldBe(0);
     }
 
+    [Fact]
+    public async Task An_agent_builds_two_sites_from_templates_and_terminates_a_cable_between_them()
+    {
+        var (db, api) = await NetworkAsync(34);
+        await using var dbScope = db;
+        await using var apiScope = api;
+        await using var agent = await ConnectAsync(api, AgentToken());
+        var plan = Json(await agent.CallToolAsync("create_plan", new Dictionary<string, object?> { ["name"] = "Två skåp" }, cancellationToken: Ct))
+            .GetProperty("ref").GetString()!;
+
+        async Task<string> Site(string code, double x) => Json(await agent.CallToolAsync("create_site_from_template", new Dictionary<string, object?>
+        {
+            ["plan"] = plan,
+            ["template"] = "skap-access",
+            ["code"] = code,
+            ["name"] = code,
+            ["x"] = x,
+            ["y"] = 7_000_000.0,
+        }, cancellationToken: Ct)).GetProperty("added")[0].GetProperty("target").GetString()!;
+        var a = await Site("SKP-AGENT-1", 600_000);
+        var b = await Site("SKP-AGENT-2", 601_000);
+        var cable = Json(await agent.CallToolAsync("add_to_plan", new Dictionary<string, object?>
+        {
+            ["plan"] = plan,
+            ["operations"] = new[] { new { kind = "create_cable", aSite = a, bSite = b, typeKey = "fiber-12" } },
+        }, cancellationToken: Ct)).GetProperty("added")[0].GetProperty("target").GetString()!;
+
+        var terminated = Json(await agent.CallToolAsync("terminate_cable", new Dictionary<string, object?> { ["plan"] = plan, ["cable"] = cable }, cancellationToken: Ct));
+        terminated.GetProperty("added").GetArrayLength().ShouldBe(24);
+        (await agent.CallToolAsync("terminate_cable", new Dictionary<string, object?> { ["plan"] = plan, ["cable"] = cable }, cancellationToken: Ct))
+            .IsError.ShouldBe(true);
+        var preview = Json(await agent.CallToolAsync("preview_plan", new Dictionary<string, object?> { ["plan"] = plan }, cancellationToken: Ct));
+        preview.GetProperty("problems").GetInt32().ShouldBe(0);
+        preview.GetProperty("readyToApply").GetBoolean().ShouldBeTrue();
+    }
+
     private async Task<(NpgsqlDataSource Db, WebApplicationFactory<Program> Api)> NetworkAsync(int seed)
     {
         var db = await factory.NewDatabaseAsync();
