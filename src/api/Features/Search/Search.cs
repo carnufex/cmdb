@@ -101,10 +101,22 @@ public sealed class SearchEndpoint(RequestDb db) : Endpoint<SearchRequest, IRead
     // even for a term that matches tens of thousands of rows. Only the few candidates are ranked.
     // Exact and prefix levels use B-tree pattern indexes (codes are upper case, names via lower(name));
     // trigram indexes serve only the contains level, where they are the right tool.
-    private static readonly string Sql = $"""
+    /// <summary>
+    /// The search runs in two rounds (#100). Every hit found only at the contains level ranks below every exact or prefix
+    /// hit, so the first round takes the exact and prefix levels and, when they fill the requested limit, the answer is
+    /// complete: the trigram scans, the expensive part for short common terms such as "K-000", are skipped. Otherwise the
+    /// second round takes the contains level alone and its hits follow, without those already found.
+    /// </summary>
+    private static readonly string PrefixSql = Query(0, 1);
+
+    private static readonly string ContainsSql = Query(2);
+
+    private static string Query(params int[] levels) => $"""
         WITH candidates AS (
-        {string.Join("\n    UNION ALL\n", Sources.SelectMany(s => new[] { (0, s.Exact), (1, s.Prefix), (2, s.Contains) }.Select(level =>
-            $"    (SELECT '{s.Type}' AS type, {level.Item1} AS match_rank, {s.Rank} AS type_rank, {s.Select} FROM {s.From} WHERE ({level.Item2}) AND {s.Scope} LIMIT {PerLevel})")))}
+        {string.Join("\n    UNION ALL\n", Sources.SelectMany(s => new[] { (0, s.Exact), (1, s.Prefix), (2, s.Contains) }
+            .Where(level => levels.Contains(level.Item1))
+            .Select(level =>
+                $"    (SELECT '{s.Type}' AS type, {level.Item1} AS match_rank, {s.Rank} AS type_rank, {s.Select} FROM {s.From} WHERE ({level.Item2}) AND {s.Scope} LIMIT {PerLevel})")))}
         ), hits AS (
             SELECT DISTINCT ON (type, id) * FROM candidates ORDER BY type, id, match_rank
         )
@@ -151,39 +163,51 @@ public sealed class SearchEndpoint(RequestDb db) : Endpoint<SearchRequest, IRead
         {
             await setting.ExecuteNonQueryAsync(ct);
         }
-        await using var cmd = new NpgsqlCommand(Sql, conn, tx);
-        cmd.Parameters.Add(new NpgsqlParameter { Value = q });
-        cmd.Parameters.Add(new NpgsqlParameter { Value = q.ToUpperInvariant() });
-        cmd.Parameters.Add(new NpgsqlParameter { Value = q.ToLowerInvariant() });
-        cmd.Parameters.Add(new NpgsqlParameter { Value = $"{literal.ToUpperInvariant()}%" });
-        cmd.Parameters.Add(new NpgsqlParameter { Value = $"{literal.ToLowerInvariant()}%" });
-        cmd.Parameters.Add(new NpgsqlParameter { Value = q.Length >= 3 ? $"%{literal}%" : DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
-        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)nx ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Double });
-        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)ny ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Double });
-        cmd.Parameters.Add(new NpgsqlParameter { Value = limit });
-        // An id match only when the query is a number, so the primary key index is used.
-        cmd.Parameters.Add(new NpgsqlParameter
+        var hits = await ReadAsync(PrefixSql);
+        if (hits.Count >= limit || q.Length < 3)
         {
-            Value = long.TryParse(q, NumberStyles.None, CultureInfo.InvariantCulture, out var id) ? id : DBNull.Value,
-            NpgsqlDbType = NpgsqlDbType.Bigint,
-        });
-        cmd.Parameters.Add(scope.Parameter());
-
-        var hits = new List<SearchHit>(limit);
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct))
-        {
-            hits.Add(new SearchHit(
-                reader.GetString(0),
-                reader.GetInt64(1),
-                reader.GetString(2),
-                reader.IsDBNull(3) ? null : reader.GetString(3),
-                reader.IsDBNull(4) ? null : reader.GetString(4),
-                reader.GetString(5),
-                reader.IsDBNull(6) || scope.HidesCoordinates ? null : reader.GetDouble(6),
-                reader.IsDBNull(7) || scope.HidesCoordinates ? null : reader.GetDouble(7)));
+            return hits;
         }
+        var found = hits.Select(h => (h.Type, h.Id)).ToHashSet();
+        hits.AddRange((await ReadAsync(ContainsSql)).Where(h => !found.Contains((h.Type, h.Id))).Take(limit - hits.Count));
         return hits;
+
+        async Task<List<SearchHit>> ReadAsync(string sql)
+        {
+            await using var cmd = new NpgsqlCommand(sql, conn, tx);
+            cmd.Parameters.Add(new NpgsqlParameter { Value = q });
+            cmd.Parameters.Add(new NpgsqlParameter { Value = q.ToUpperInvariant() });
+            cmd.Parameters.Add(new NpgsqlParameter { Value = q.ToLowerInvariant() });
+            cmd.Parameters.Add(new NpgsqlParameter { Value = $"{literal.ToUpperInvariant()}%" });
+            cmd.Parameters.Add(new NpgsqlParameter { Value = $"{literal.ToLowerInvariant()}%" });
+            cmd.Parameters.Add(new NpgsqlParameter { Value = q.Length >= 3 ? $"%{literal}%" : DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
+            cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)nx ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Double });
+            cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)ny ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Double });
+            cmd.Parameters.Add(new NpgsqlParameter { Value = limit });
+            // An id match only when the query is a number, so the primary key index is used.
+            cmd.Parameters.Add(new NpgsqlParameter
+            {
+                Value = long.TryParse(q, NumberStyles.None, CultureInfo.InvariantCulture, out var id) ? id : DBNull.Value,
+                NpgsqlDbType = NpgsqlDbType.Bigint,
+            });
+            cmd.Parameters.Add(scope.Parameter());
+
+            var found = new List<SearchHit>(limit);
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                found.Add(new SearchHit(
+                    reader.GetString(0),
+                    reader.GetInt64(1),
+                    reader.GetString(2),
+                    reader.IsDBNull(3) ? null : reader.GetString(3),
+                    reader.IsDBNull(4) ? null : reader.GetString(4),
+                    reader.GetString(5),
+                    reader.IsDBNull(6) || scope.HidesCoordinates ? null : reader.GetDouble(6),
+                    reader.IsDBNull(7) || scope.HidesCoordinates ? null : reader.GetDouble(7)));
+            }
+            return found;
+        }
     }
 
     private static string EscapeLike(string value) =>
@@ -191,6 +215,6 @@ public sealed class SearchEndpoint(RequestDb db) : Endpoint<SearchRequest, IRead
              .Replace("%", @"\%", StringComparison.Ordinal)
              .Replace("_", @"\_", StringComparison.Ordinal);
 
-    /// <summary>The generated SQL, for the benchmark script and for reading.</summary>
-    internal static string GeneratedSql => Sql;
+    /// <summary>The generated SQL of both rounds, for the benchmark script and for reading.</summary>
+    internal static string GeneratedSql => PrefixSql + ";\n" + ContainsSql;
 }

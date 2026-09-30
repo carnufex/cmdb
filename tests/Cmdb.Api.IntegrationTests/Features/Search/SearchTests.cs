@@ -45,6 +45,20 @@ public sealed class SearchTests(ApiFactory factory) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Contains_hits_follow_prefix_hits_once_and_only_when_there_is_room()
+    {
+        // Two rounds (#100): prefix hits first; contains hits fill up after them, without repeating any.
+        using var client = factory.CreateAuthenticatedClient();
+        var all = (await client.GetFromJsonAsync<List<SearchHit>>("/api/search?q=SRCH&limit=50", Ct))!;
+        var one = (await client.GetFromJsonAsync<List<SearchHit>>("/api/search?q=SRCH&limit=1", Ct))!;
+
+        all.Select(h => (h.Type, h.Id)).ShouldBeUnique();
+        all.ShouldContain(h => h.Code == "XSRCH-2");
+        all.FindIndex(h => h.Code == "XSRCH-2").ShouldBeGreaterThan(all.FindIndex(h => h.Code == "SRCH-10"));
+        one.Single().Code.ShouldBe(all[0].Code);
+    }
+
+    [Fact]
     public async Task Sites_rank_before_equipment_at_the_same_match_level()
     {
         var hits = await SearchAsync("SRCH-1");
