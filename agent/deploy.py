@@ -173,13 +173,13 @@ def system_tool(kind: str, description: str, **params) -> dict:
     return {"name": kind, "description": description, "type": "system", "params": {"system_tool_type": kind, **params}}
 
 
-def transfers(*targets: tuple[str | None, str, str]) -> dict:
-    """transfer_to_agent to (agent id, when, what the agent says before the handover). The next agent does not greet:
-    it picks up from the transcript, and the call keeps its id, so a verification still holds (ADR-0016)."""
+def transfers(*targets: tuple[str, str]) -> dict:
+    """transfer_to_agent to (agent id, when). The next agent does not greet: it picks up from the transcript, and the
+    call keeps its id, so a verification still holds (ADR-0016). No fixed transfer message: it was spoken in Swedish in
+    English calls and on top of the agent's own words; the agent says it connects the caller, in the caller's language."""
     return system_tool("transfer_to_agent", "Lämna över samtalet till rätt agent.", transfers=[
-        {"agent_id": agent_id, "condition": condition, "delay_ms": 0, "transfer_message": message,
-         "enable_transferred_agent_first_message": False}
-        for agent_id, condition, message in targets if agent_id])
+        {"agent_id": agent_id, "condition": condition, "delay_ms": 0, "enable_transferred_agent_first_message": False}
+        for agent_id, condition in targets])
 
 
 END_CALL = system_tool("end_call", "Avsluta samtalet när uppringaren säger att hen är klar.")
@@ -308,24 +308,18 @@ def main() -> None:
                                      "IT-självhjälp (syntetisk data): lösenord, utrustning, verifiering, kö och uppringning.")
     kb, stale = knowledge_base(state)
     noc_tests, desk_tests = tests(state), tests(desk, HERE / "tests" / "servicedesk")
-    back = "Jag kopplar dig tillbaka till service desk."
 
-    # Two passes: the first creates missing agents so that every transfer can name its target, the second sets them.
-    for _ in range(2):
-        noc_id = upsert(state, agent_body(state["voice_id"], state["mcp_server_id"], kb, noc_tests, {
-            "transfer_to_agent": transfers((desk.get("agent_id"), "Samtalet gäller inte nätet: IT, passertaggar eller annat.", back))}))
-        it_id = upsert(it, light_agent(
-            "CMDB IT-självhjälp", "it", "it.md", IT_FIRST, IT_FIRST_EN, state["voice_id"], it["mcp_server_id"],
-            {"transfer_to_agent": transfers((desk.get("agent_id"), "Samtalet gäller inte IT: nätet, passertaggar eller annat.", back))},
-            []))
-        upsert(desk, light_agent(
-            "CMDB Service desk", "servicedesk", "servicedesk.md", DESK_FIRST, DESK_FIRST, state["voice_id"], desk["mcp_server_id"],
-            {"transfer_to_agent": transfers(
-                (it_id, "IT: lösenord, konto, inloggning, dator, telefon, programvara eller beställa utrustning.",
-                 "Jag kopplar dig till IT-självhjälpen."),
-                (noc_id, "Nätet: CMDB, fiber, kablar, stationer, siter, länkar, larm, grävning eller felanmälan på nätet.",
-                 "Jag kopplar dig till NOC."))},
-            desk_tests))
+    # Handovers go one way only, from the switchboard (#154): with a way back, the NOC agent handed a call straight back
+    # and the two bounced it until speech failed. The specialists offer a callback for what is not theirs.
+    noc_id = upsert(state, agent_body(state["voice_id"], state["mcp_server_id"], kb, noc_tests, {"transfer_to_agent": None}))
+    it_id = upsert(it, light_agent("CMDB IT-självhjälp", "it", "it.md", IT_FIRST, IT_FIRST_EN, state["voice_id"],
+                                   it["mcp_server_id"], {"transfer_to_agent": None}, []))
+    upsert(desk, light_agent(
+        "CMDB Service desk", "servicedesk", "servicedesk.md", DESK_FIRST, DESK_FIRST, state["voice_id"], desk["mcp_server_id"],
+        {"transfer_to_agent": transfers(
+            (it_id, "IT: lösenord, konto, inloggning, dator, telefon, programvara eller beställa utrustning."),
+            (noc_id, "Nätet: CMDB, fiber, kablar, stationer, siter, länkar, larm, strömavbrott, grävning eller felanmälan på nätet."))},
+        desk_tests))
     for doc in stale:
         request("DELETE", f"/v1/convai/knowledge-base/{doc}")
     STATE.write_text(json.dumps(state, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
