@@ -58,6 +58,11 @@ Uppmätt i full skala (7,6 M terminaler, 4,3 M kanter, 117 000 kretsar):
   - Dess terminal n är `-(op × 10000 + n)`. För utrustning är n portens position. För en kabel är ändarna för ledare k `2k-1` och `2k`.
   - Ledare k är `-(op × 10000 + 5000 + k)`.
   Senare operationer och planer som bygger på planen refererar direkt till id:na. I grafen får planerade terminaler, utrustningar, siter och kablar index efter basens, och omfångsmaskerna räknar dem som synliga, eftersom planens synlighet redan styrs av omfånget. Namnen kommer från operationerna (`PlannedNames`). När planen förs in skapas raderna i samma transaktion, och planerade id:n skrivs om till riktiga, även i utkast som bygger på planen. Planvyn ger geometri för planerade siter och kablar, och kartan ritar dem streckat violetta.
+- **Massprovisionering (#26):**
+  - `POST /api/plans/{id}/operations/batch` lägger till flera operationer, alla eller ingen. Misslyckas en tas de föregående bort igen.
+  - Sitemallar (`catalog/site-templates/*.json`, `GET /api/templates`) och mönster (`POST /api/plans/{id}/patterns`: portintervall → ledarintervall med förskjutning och steg) expanderas till vanliga operationer.
+  - `GET /api/plans/{id}/cables/{cableId}/termination` föreslår terminering i båda ändar. I varje ände väljs den ODF som har flest portar utan skarv i planens vy, och fiber k går till dess k:te lediga port.
+  - `create_equipment` tar ett rack, som skapas i en byggnad på siten när det saknas.
 - **Införande** (`POST /api/plans/{id}/apply`) kräver att beroendena redan är införda och att alla operationer passar produktion. Operationerna körs i en transaktion. En koppling blir en rad i `connection`, och en bortkoppling stänger raden (`valid_to`, livscykel *borttagen*). Ändringsflödet tar dem till grafen. Därefter kontrolleras alla utkast som bygger på planen, direkt eller indirekt, mot produktion som den blir, och de vars operationer inte längre passar flaggas.
 - **Avbrott** (`POST /api/plans/{id}/cancel`) flaggar alla utkast som bygger på planen. En ändring i en flaggad plan tar bort flaggan.
 - **Behörighet:** skrivningar kräver `cmdb-full`, som övriga skrivningar. Operationer får bara röra terminaler och objekt inom användarens omfång. En plan syns för omfång med `*` eller planens id i `access_scope.plans`; *Hela nätet* har `*`.

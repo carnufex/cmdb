@@ -39,6 +39,13 @@ Status visas alltid med **prick och text**, aldrig bara med färg (WCAG 2.1 AA).
 
 Allt massarbete sker i en plan: förhandsvisning av skillnader, konfliktkontroll och ångra genom att kasta planen.
 
+Så är det byggt (#26):
+
+- **Sitemallar:** planpanelens *Från mall* lägger en hel site (utrustning i rack och intern kabeldragning) vid kartans mittpunkt, i ett steg.
+- **Mönster:** Shift-klicka ett portintervall i frontpanelen och välj *Skarva*: kabel, första ledare, sida och steg. Porterna följer panelens ordning.
+- **Rita kabel:** *Ny kabel*, sedan *Välj siterna i kartan*, och klicka på två siter (befintliga eller planerade). Därefter föreslås terminering på lediga ODF-portar i båda ändar, och *Terminera* lägger till skarvarna.
+- **Allt eller inget:** en mall, ett mönster och en terminering läggs till helt eller inte alls, och varje operation kontrolleras som vanligt.
+
 ## Linser
 
 | Lins | Svarar på |

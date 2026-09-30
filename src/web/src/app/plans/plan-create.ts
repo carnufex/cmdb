@@ -1,10 +1,19 @@
 import { HttpClient, httpResource } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  effect,
+  inject,
+  OnDestroy,
+  signal,
+  untracked,
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { MapView } from '../map/map-view';
 import { ActivePlan } from './active-plan';
-import { resolveSite, SiteChoice } from './plan-model';
+import { NewOperation, PlanOperation, resolveSite, SiteChoice } from './plan-model';
 
 interface Fields {
   siteTypes: string[];
@@ -12,11 +21,33 @@ interface Fields {
   cableTypes: { key: string; name: string; medium: string; conductors: number }[] | null;
 }
 
-type Tab = 'site' | 'equipment' | 'cable';
+interface Template {
+  key: string;
+  name: string;
+  siteType: string;
+  description: string;
+  equipment: number;
+  connections: number;
+}
+
+/** GET /api/plans/{id}/cables/{cableId}/termination */
+interface Termination {
+  cableId: number;
+  sides: {
+    side: 'A' | 'B';
+    siteCode: string;
+    equipment: string | null;
+    fibres: number;
+    operations: NewOperation[];
+  }[];
+}
+
+type Tab = 'template' | 'site' | 'equipment' | 'cable';
 
 /**
- * Creating objects in the active plan (#107): a site at the map's centre, equipment at a site, and a cable between two
- * sites. Sites are given by code, existing or planned in the plan; planned ones become violet in the map.
+ * Creating objects in the active plan (#107, #26): a site from a template or bare, equipment at a site, and a cable
+ * between two sites, picked by code or in the map, with a suggested termination on free ODF ports. Planned objects
+ * become violet in the map.
  */
 @Component({
   selector: 'cmdb-plan-create',
@@ -35,6 +66,31 @@ type Tab = 'site' | 'equipment' | 'cable';
       }
     </div>
     @switch (tab()) {
+      @case ('template') {
+        <form (ngSubmit)="createFromTemplate()">
+          <label
+            >Mall
+            <select name="template" [(ngModel)]="template">
+              @for (t of templates.value() ?? []; track t.key) {
+                <option [value]="t.key">{{ t.name }} ({{ t.equipment }} utrustningar)</option>
+              }
+            </select>
+          </label>
+          @if (chosenTemplate(); as t) {
+            <p class="muted">{{ t.description }}</p>
+          }
+          <label>Kod <input name="code" [(ngModel)]="code" required maxlength="50" /></label>
+          <label>Namn <input name="name" [(ngModel)]="name" required maxlength="200" /></label>
+          <p class="muted">Placeras vid kartans mittpunkt.</p>
+          <button
+            type="submit"
+            class="action"
+            [disabled]="busy() || !template || !code.trim() || !name.trim()"
+          >
+            Lägg till site från mall
+          </button>
+        </form>
+      }
       @case ('site') {
         <form (ngSubmit)="createSite()">
           <label>Kod <input name="code" [(ngModel)]="code" required maxlength="50" /></label>
@@ -86,6 +142,14 @@ type Tab = 'site' | 'equipment' | 'cable';
           <label
             >Till site (kod) <input name="b" [(ngModel)]="siteB" list="plan-sites" required
           /></label>
+          <button type="button" class="action" (click)="togglePicking()">
+            {{ mapView.picking() ? 'Sluta välja i kartan' : 'Välj siterna i kartan' }}
+          </button>
+          @if (mapView.picking()) {
+            <p class="muted" role="status">
+              Klicka på {{ siteA ? 'siten i andra änden' : 'siten i första änden' }} i kartan.
+            </p>
+          }
           <label
             >Kabeltyp
             <select name="cableType" [(ngModel)]="cableType">
@@ -102,6 +166,32 @@ type Tab = 'site' | 'equipment' | 'cable';
             Lägg till kabel
           </button>
         </form>
+        @if (termination(); as t) {
+          <div class="suggestion" role="status">
+            <p>Förslag till terminering:</p>
+            <ul>
+              @for (s of t.sides; track s.side) {
+                <li>
+                  {{ s.side }} ({{ s.siteCode }}):
+                  @if (s.fibres > 0) {
+                    {{ s.fibres }} fibrer mot {{ s.equipment }}
+                  } @else {
+                    ingen ledig ODF
+                  }
+                </li>
+              }
+            </ul>
+            <button
+              type="button"
+              class="action"
+              [disabled]="busy() || !terminable()"
+              (click)="terminate()"
+            >
+              Terminera
+            </button>
+            <button type="button" class="action" (click)="termination.set(null)">Hoppa över</button>
+          </div>
+        }
       }
     }
     <datalist id="plan-sites">
@@ -121,6 +211,7 @@ type Tab = 'site' | 'equipment' | 'cable';
     }
     .tabs {
       display: flex;
+      flex-wrap: wrap;
       gap: var(--space-1);
     }
     .tabs button {
@@ -172,6 +263,18 @@ type Tab = 'site' | 'equipment' | 'cable';
         background: var(--surface-2);
       }
     }
+    .suggestion {
+      border-left: 3px solid var(--status-planned);
+      padding-left: var(--space-2);
+      font-size: var(--text-sm);
+      p,
+      ul {
+        margin: 0 0 var(--space-1);
+      }
+      ul {
+        padding-left: var(--space-4);
+      }
+    }
     .muted {
       margin: 0;
       color: var(--text-muted);
@@ -185,21 +288,27 @@ type Tab = 'site' | 'equipment' | 'cable';
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class PlanCreateComponent {
+export class PlanCreateComponent implements OnDestroy {
   private readonly http = inject(HttpClient);
-  private readonly mapView = inject(MapView);
+  protected readonly mapView = inject(MapView);
   private readonly active = inject(ActivePlan);
 
   protected readonly tabs: { key: Tab; label: string }[] = [
+    { key: 'template', label: 'Från mall' },
     { key: 'site', label: 'Ny site' },
     { key: 'equipment', label: 'Ny utrustning' },
     { key: 'cable', label: 'Ny kabel' },
   ];
-  protected readonly tab = signal<Tab>('site');
+  protected readonly tab = signal<Tab>('template');
   protected readonly busy = signal(false);
   protected readonly error = signal<string | null>(null);
+  protected readonly termination = signal<Termination | null>(null);
+  protected readonly terminable = computed(() =>
+    (this.termination()?.sides ?? []).some((s) => s.fibres > 0),
+  );
 
   protected readonly fields = httpResource<Fields>(() => '/api/query/fields');
+  protected readonly templates = httpResource<Template[]>(() => '/api/templates');
   protected readonly siteTypes = computed(() => this.fields.value()?.siteTypes ?? ['radio']);
   protected readonly models = computed(() =>
     (this.fields.value()?.types ?? []).filter((t) => t.category !== 'card'),
@@ -208,6 +317,10 @@ export class PlanCreateComponent {
   protected readonly plannedSites = computed<SiteChoice[]>(
     () => this.active.view.value()?.planned?.sites ?? [],
   );
+  protected readonly chosenTemplate = computed(() => {
+    this.templateKey();
+    return (this.templates.value() ?? []).find((t) => t.key === this.template) ?? null;
+  });
 
   protected code = '';
   protected name = '';
@@ -217,11 +330,67 @@ export class PlanCreateComponent {
   protected siteA = '';
   protected siteB = '';
   protected cableType = '';
+  private readonly templateKey = signal('');
+  protected get template(): string {
+    return this.templateKey();
+  }
+  protected set template(value: string) {
+    this.templateKey.set(value);
+  }
+
+  constructor() {
+    // Sites picked in the map fill the cable's ends in turn.
+    effect(() => {
+      const picked = this.mapView.picked();
+      if (!picked || !untracked(() => this.mapView.picking())) {
+        return;
+      }
+      if (!this.siteA) {
+        this.siteA = picked.code;
+      } else {
+        this.siteB = picked.code;
+        this.mapView.picking.set(false);
+      }
+    });
+  }
+
+  ngOnDestroy(): void {
+    this.mapView.picking.set(false);
+  }
+
+  protected togglePicking(): void {
+    const on = !this.mapView.picking();
+    if (on) {
+      this.siteA = '';
+      this.siteB = '';
+    }
+    this.mapView.picking.set(on);
+  }
+
+  protected async createFromTemplate(): Promise<void> {
+    const center = this.center();
+    if (!center) {
+      return;
+    }
+    await this.run(async () => {
+      await firstValueFrom(
+        this.http.post(`/api/plans/${this.active.id()}/templates`, {
+          templateKey: this.template,
+          code: this.code.trim(),
+          name: this.name.trim(),
+          x: Math.round(center.x),
+          y: Math.round(center.y),
+        }),
+      );
+      this.active.changed();
+      this.code = '';
+      this.name = '';
+    });
+  }
 
   protected async createSite(): Promise<void> {
-    const center = this.mapView.center();
+    const center = this.center();
     if (!center) {
-      this.error.set('Kartan har ingen mittpunkt än. Öppna kartan först.');
       return;
     }
     await this.run(async () => {
@@ -240,7 +409,7 @@ export class PlanCreateComponent {
 
   protected async createEquipment(): Promise<void> {
     await this.run(async () => {
-      const siteId = await this.site_(this.site);
+      const siteId = await this.siteId(this.site);
       await this.active.add({
         kind: 'create_equipment',
         siteId,
@@ -253,13 +422,50 @@ export class PlanCreateComponent {
 
   protected async createCable(): Promise<void> {
     await this.run(async () => {
-      const [aSiteId, bSiteId] = [await this.site_(this.siteA), await this.site_(this.siteB)];
-      await this.active.add({ kind: 'create_cable', aSiteId, bSiteId, typeKey: this.cableType });
+      const [aSiteId, bSiteId] = [await this.siteId(this.siteA), await this.siteId(this.siteB)];
+      const cable: PlanOperation = await this.active.add({
+        kind: 'create_cable',
+        aSiteId,
+        bSiteId,
+        typeKey: this.cableType,
+      });
+      // A new cable comes with a suggested termination on free ODF ports at both ends.
+      this.termination.set(
+        await firstValueFrom(
+          this.http.get<Termination>(
+            `/api/plans/${this.active.id()}/cables/${cable.target!.id}/termination`,
+          ),
+        ),
+      );
     });
   }
 
+  protected async terminate(): Promise<void> {
+    const t = this.termination();
+    if (!t) {
+      return;
+    }
+    await this.run(async () => {
+      await firstValueFrom(
+        this.http.post(`/api/plans/${this.active.id()}/operations/batch`, {
+          operations: t.sides.flatMap((s) => s.operations),
+        }),
+      );
+      this.active.changed();
+      this.termination.set(null);
+    });
+  }
+
+  private center(): { x: number; y: number } | null {
+    const center = this.mapView.center();
+    if (!center) {
+      this.error.set('Kartan har ingen mittpunkt än. Öppna kartan först.');
+    }
+    return center;
+  }
+
   /** A site by code: planned in the plan, or an exact hit in the quick search. */
-  private async site_(code: string): Promise<number> {
+  private async siteId(code: string): Promise<number> {
     const id = await resolveSite(code, this.plannedSites(), (q) =>
       firstValueFrom(
         this.http.get<{ type: string; id: number; code: string }[]>(

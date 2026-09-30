@@ -1,4 +1,5 @@
-import { httpResource } from '@angular/common/http';
+import { HttpClient, httpResource } from '@angular/common/http';
+import { firstValueFrom } from 'rxjs';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -69,6 +70,68 @@ type Port = EquipmentDetail['ports'][number];
               {{ marked().size }} portar markerade
               <button type="button" class="action" (click)="marked.set(emptySet)">Rensa</button>
             </p>
+            @if (plan.view.value()?.plan?.status === 'draft') {
+              <form
+                class="plan-actions"
+                (submit)="$event.preventDefault(); splice(e)"
+                aria-label="Skarva mot kabel"
+              >
+                <p class="muted">
+                  Skarva de markerade portarna mot en kabel i planen
+                  {{ plan.view.value()!.plan.name }}:
+                </p>
+                <p class="port-actions">
+                  <label
+                    >Kabel
+                    <input
+                      [value]="spliceCable()"
+                      (input)="spliceCable.set($any($event.target).value)"
+                      list="plan-cables"
+                      placeholder="K-000123"
+                      size="10"
+                  /></label>
+                  <label
+                    >Från ledare
+                    <input
+                      type="number"
+                      min="1"
+                      [value]="spliceFrom()"
+                      (input)="spliceFrom.set(+$any($event.target).value)"
+                      size="4"
+                  /></label>
+                  <label
+                    >Sida
+                    <select
+                      [value]="spliceSide()"
+                      (change)="spliceSide.set($any($event.target).value)"
+                    >
+                      <option value="A">A</option>
+                      <option value="B">B</option>
+                    </select>
+                  </label>
+                  <label
+                    >Steg
+                    <input
+                      type="number"
+                      min="1"
+                      [value]="spliceStep()"
+                      (input)="spliceStep.set(+$any($event.target).value)"
+                      size="3"
+                  /></label>
+                  <button type="submit" class="action" [disabled]="!spliceCable().trim()">
+                    Skarva
+                  </button>
+                </p>
+                <datalist id="plan-cables">
+                  @for (c of plan.view.value()?.planned?.cables ?? []; track c.id) {
+                    <option [value]="c.code">planerad</option>
+                  }
+                </datalist>
+                @if (planError(); as err) {
+                  <p class="error" role="alert">{{ err }}</p>
+                }
+              </form>
+            }
           }
         </section>
       }
@@ -266,6 +329,7 @@ type Port = EquipmentDetail['ports'][number];
 export class EquipmentPanelComponent {
   private readonly panels = inject(PanelStack);
   private readonly commands = inject(CommandRegistry);
+  private readonly http = inject(HttpClient);
   protected readonly plan = inject(ActivePlan);
 
   readonly id = input.required<string>();
@@ -319,6 +383,57 @@ export class EquipmentPanelComponent {
   protected startConnect(port: Port): void {
     const name = this.equipment.value()?.name ?? '';
     this.plan.pending.set({ terminalId: port.terminalId, label: `${name} · ${port.name}` });
+  }
+
+  protected readonly spliceCable = signal('');
+  protected readonly spliceFrom = signal(1);
+  protected readonly spliceSide = signal<'A' | 'B'>('A');
+  protected readonly spliceStep = signal(1);
+
+  /** Pattern patching (#26): the marked ports, in panel order, to fibres from a start fibre with a step. */
+  protected async splice(equipment: EquipmentDetail): Promise<void> {
+    this.planError.set(null);
+    const marked = equipment.ports.filter((p) => this.marked().has(p.terminalId));
+    const first = marked.reduce((a, b) => (a.position <= b.position ? a : b));
+    try {
+      const cableId = await this.cableId(this.spliceCable());
+      await firstValueFrom(
+        this.http.post(`/api/plans/${this.plan.id()}/patterns`, {
+          equipmentId: equipment.id,
+          fromPort: String(first.position),
+          count: marked.length,
+          cableId,
+          fromConductor: this.spliceFrom(),
+          conductorStep: this.spliceStep(),
+          side: this.spliceSide(),
+        }),
+      );
+      this.plan.changed();
+      this.marked.set(new Set());
+    } catch (e: unknown) {
+      this.planError.set(e instanceof Error ? e.message : problemText(e));
+    }
+  }
+
+  /** A cable by code: planned in the plan, or an exact hit in the quick search. */
+  private async cableId(code: string): Promise<number> {
+    const wanted = code.trim().toUpperCase();
+    const planned = this.plan.view
+      .value()
+      ?.planned?.cables.find((c) => c.code.toUpperCase() === wanted);
+    if (planned) {
+      return planned.id;
+    }
+    const hits = await firstValueFrom(
+      this.http.get<{ type: string; id: number; code: string }[]>(
+        `/api/search?q=${encodeURIComponent(code.trim())}&limit=10`,
+      ),
+    );
+    const hit = hits.find((h) => h.type === 'cable' && h.code.toUpperCase() === wanted);
+    if (!hit) {
+      throw new Error(`Hittade ingen kabel med koden ${code.trim()}.`);
+    }
+    return hit.id;
   }
 
   protected async reserve(terminalId: number): Promise<void> {

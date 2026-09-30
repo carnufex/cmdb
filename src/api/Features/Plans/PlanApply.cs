@@ -139,9 +139,19 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx)
         var site = p.GetProperty("site").GetInt64();
         var typeKey = p.GetProperty("typeKey").GetString()!;
         var type = TypeCatalog.Embedded.Find(typeKey) ?? throw new InvalidOperationException($"Unknown equipment type {typeKey}.");
-        // Equipment sits in a location; a site without one (a planned site, say) gets a rack.
-        var location = await ScalarAsync<long?>("SELECT id FROM location WHERE site_id = $1 ORDER BY (kind = 'rack') DESC, id LIMIT 1", ct, site)
-            ?? await ScalarAsync<long>("INSERT INTO location (site_id, kind, name) VALUES ($1, 'rack', 'Rack 1') RETURNING id", ct, site);
+        // Equipment sits in a rack: the named one (#26), created in a building on the site when missing; without a name,
+        // the site's first rack, or a new "Rack 1".
+        var rack = p.TryGetProperty("rack", out var r) && r.ValueKind == JsonValueKind.String ? r.GetString()! : null;
+        var location = rack is null
+            ? await ScalarAsync<long?>("SELECT id FROM location WHERE site_id = $1 ORDER BY (kind = 'rack') DESC, id LIMIT 1", ct, site)
+            : await ScalarAsync<long?>("SELECT id FROM location WHERE site_id = $1 AND kind = 'rack' AND name = $2 ORDER BY id LIMIT 1", ct, site, rack);
+        if (location is null)
+        {
+            var building = await ScalarAsync<long?>("SELECT id FROM location WHERE site_id = $1 AND kind = 'building' ORDER BY id LIMIT 1", ct, site)
+                ?? await ScalarAsync<long>("INSERT INTO location (site_id, kind, name) VALUES ($1, 'building', 'Byggnad A') RETURNING id", ct, site);
+            location = await ScalarAsync<long>("INSERT INTO location (site_id, parent_id, kind, name) VALUES ($1, $2, 'rack', $3) RETURNING id", ct,
+                site, building, rack ?? "Rack 1");
+        }
         var equipment = await ScalarAsync<long>("""
             INSERT INTO equipment (equipment_type_id, site_id, location_id, name)
             SELECT t.id, $1, $2, $3 FROM equipment_type t WHERE t.key = $4 RETURNING id

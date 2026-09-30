@@ -242,6 +242,13 @@ export class MapComponent {
     });
     this.map.on('click', (e) => {
       const feature = this.map!.forEachFeatureAtPixel(e.pixel, (f) => f, { hitTolerance: 4 });
+      if (this.mapView.picking()) {
+        // Drawing a cable in a plan (#26): a site click picks the site, production or planned.
+        if (feature && (feature.get('planned') === 'site' || feature.get('layer') === 'sites')) {
+          this.mapView.pick(String(feature.get('code')));
+        }
+        return;
+      }
       if (feature?.get('planned')) {
         // Planned in the active plan (#107): nothing in production to open; the plan panel lists it.
         return;

@@ -77,7 +77,7 @@ public sealed class AgentPlanOperation
 /// </summary>
 [McpServerToolType]
 public sealed class PlanTools(RequestDb db, PlanWrites writes, PlanViews views, GraphHolder holder, ScopeMasks masks, AgentLinks links,
-    IHttpContextAccessor http)
+    PlanPatterns patterns, IHttpContextAccessor http)
 {
     private const int MaxOperations = 100;
 
@@ -187,6 +187,96 @@ public sealed class PlanTools(RequestDb db, PlanWrites writes, PlanViews views, 
             B = y,
             ConnectionKind = connectionKind,
         })], ct);
+    }
+
+    [McpServerTool(Name = "list_site_templates", Title = "Sitemallar", ReadOnly = true, Idempotent = true, OpenWorld = false)]
+    [Description("Site templates for create_site_from_template: a site type with its equipment and internal cabling.")]
+    public IReadOnlyList<TemplateSummary> ListSiteTemplates() =>
+        [.. Cmdb.Catalog.SiteTemplates.Embedded.All.OrderBy(t => t.Name, StringComparer.Ordinal)
+            .Select(t => new TemplateSummary(t.Key, t.Name, t.SiteType, t.Description, t.Equipment.Count, t.Connections.Count))];
+
+    [McpServerTool(Name = "create_site_from_template", Title = "Site från mall", Destructive = false, OpenWorld = false)]
+    [Description("Adds a whole site to a draft plan from a template: the site at a position, its equipment in racks and the " +
+        "internal cabling, all checked as ordinary changes. All or nothing.")]
+    public async Task<AgentPlanAdded> CreateSiteFromTemplate(
+        [Description("The plan, \"plan:12\".")] string plan,
+        [Description("A template key from list_site_templates.")] string template,
+        [Description("A new, unique site code, e.g. \"RAD-001234\".")] string code,
+        [Description("The site's name.")] string name,
+        [Description("Position in SWEREF 99 TM (EPSG:3006), metres east.")] double x,
+        [Description("Metres north.")] double y,
+        CancellationToken ct = default)
+    {
+        RequireWriter();
+        var planId = ParseRef(plan, "plan");
+        var result = await patterns.TemplateAsync(Http.User, Http.Scope(),
+            new TemplateRequest { Id = planId, TemplateKey = template, Code = code, Name = name, X = x, Y = y }, ct);
+        return await AddedAsync(planId, result);
+    }
+
+    [McpServerTool(Name = "splice_ports_to_cable", Title = "Mönsterpatchning", Destructive = false, OpenWorld = false)]
+    [Description("Pattern patching: ports from a start port (every portStep-th) to fibres from a start fibre (every conductorStep-th) " +
+        "on one side of a cable, e.g. ODF ports 1–12 to fibres 13–24 at the A end. Equipment and cable may be planned. All or nothing.")]
+    public async Task<AgentPlanAdded> SplicePortsToCable(
+        [Description("The plan, \"plan:12\".")] string plan,
+        [Description("Equipment, \"equipment:34\" (or planned, \"equipment:-5\").")] string equipment,
+        [Description("First port: name or position.")] string fromPort,
+        [Description("Cable, \"cable:56\" (or planned).")] string cable,
+        [Description("How many connections, 1–288.")] int count,
+        [Description("The cable end at the equipment's site: A or B.")] string side = "A",
+        [Description("First fibre (conductor number).")] int fromConductor = 1,
+        [Description("Take every n-th port.")] int portStep = 1,
+        [Description("Take every n-th fibre.")] int conductorStep = 1,
+        [Description("splice, termination or patch.")] string kind = "splice",
+        CancellationToken ct = default)
+    {
+        RequireWriter();
+        var planId = ParseRef(plan, "plan");
+        var result = await patterns.PatternAsync(Http.User, Http.Scope(), new PatternRequest
+        {
+            Id = planId,
+            EquipmentId = ParseRef(equipment, "equipment", planned: true),
+            FromPort = fromPort,
+            Count = count,
+            PortStep = portStep,
+            CableId = ParseRef(cable, "cable", planned: true),
+            FromConductor = fromConductor,
+            ConductorStep = conductorStep,
+            Side = side,
+            Kind = kind,
+        }, ct);
+        return await AddedAsync(planId, result);
+    }
+
+    [McpServerTool(Name = "terminate_cable", Title = "Terminera kabel", Destructive = false, OpenWorld = false)]
+    [Description("Terminates a cable in a draft plan at both ends as the plan suggests: at each end's site, the ODF with the most free " +
+        "ports at the back, fibre k to its k-th free port. Use after adding a cable.")]
+    public async Task<AgentPlanAdded> TerminateCable(
+        [Description("The plan, \"plan:12\".")] string plan,
+        [Description("The cable, \"cable:56\" (or planned).")] string cable,
+        CancellationToken ct = default)
+    {
+        RequireWriter();
+        var planId = ParseRef(plan, "plan");
+        var termination = await patterns.TerminationAsync(Http.Scope(), planId, ParseRef(cable, "cable", planned: true), ct)
+            ?? throw new McpException($"No {cable} in plan:{planId}.");
+        var operations = termination.Sides.SelectMany(s => s.Operations).ToList();
+        if (operations.Count == 0)
+        {
+            throw new McpException("Nothing to terminate: no free ODF ports at the ends, or the fibres are already spliced.");
+        }
+        return await AddedAsync(planId, await patterns.BatchAsync(Http.User, Http.Scope(), planId, operations, ct));
+    }
+
+    private async Task<AgentPlanAdded> AddedAsync(long planId, PlanWrite<List<PlanOperationView>> result)
+    {
+        if (result.Value is null)
+        {
+            throw new McpException(result.Error!);
+        }
+        var summary = (await PlanSql.SummariesAsync(db, [planId], CancellationToken.None)).Single();
+        var names = new Dictionary<long, string> { [planId] = summary.Name };
+        return new AgentPlanAdded(ToAgent(summary), [.. result.Value.Select(a => ToAgent(a, names))]);
     }
 
     [McpServerTool(Name = "preview_plan", Title = "Förhandsvisa plan", ReadOnly = true, Idempotent = true, OpenWorld = false)]

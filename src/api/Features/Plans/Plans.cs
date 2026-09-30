@@ -85,6 +85,9 @@ public sealed class AddOperationRequest
     /// <summary>create_equipment: the site, existing or planned (negative id).</summary>
     public long? SiteId { get; set; }
 
+    /// <summary>create_equipment: the rack it sits in, created in a building on the site when missing (#26).</summary>
+    public string? Rack { get; set; }
+
     /// <summary>create_cable: the sites at the two ends, existing or planned.</summary>
     public long? ASiteId { get; set; }
     public long? BSiteId { get; set; }
@@ -122,6 +125,7 @@ public sealed class AddOperationValidator : Validator<AddOperationRequest>
         {
             RuleFor(r => r.SiteId).NotNull().NotEqual(0);
             RuleFor(r => r.Name).NotEmpty().MaximumLength(200);
+            RuleFor(r => r.Rack).MaximumLength(100);
             RuleFor(r => r.TypeKey).Must(k => k is not null && Cmdb.Catalog.TypeCatalog.Embedded.Find(k) is { Category: not "card" })
                 .WithMessage("typeKey is an equipment model that is not a card (describe_catalog lists them).");
         });

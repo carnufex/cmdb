@@ -186,7 +186,13 @@ public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views
             case "create_equipment":
                 return await SiteProblem(req.SiteId!.Value) is { } equipmentSite
                     ? (null, equipmentSite)
-                    : (System.Text.Json.JsonSerializer.Serialize(new { site = req.SiteId, typeKey = req.TypeKey, name = req.Name!.Trim() }), null);
+                    : (System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        site = req.SiteId,
+                        typeKey = req.TypeKey,
+                        name = req.Name!.Trim(),
+                        rack = string.IsNullOrWhiteSpace(req.Rack) ? null : req.Rack.Trim(),
+                    }), null);
             default:
                 foreach (var site in new[] { req.ASiteId!.Value, req.BSiteId!.Value })
                 {
