@@ -154,3 +154,14 @@ ul.links {
     font-size: var(--text-sm);
   }
 }
+
+.reserve {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+
+  input {
+    width: 5em;
+    margin-left: var(--space-1);
+  }
+}

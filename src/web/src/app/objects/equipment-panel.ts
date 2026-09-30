@@ -9,6 +9,7 @@ import {
   signal,
 } from '@angular/core';
 import { ActivePlan } from '../plans/active-plan';
+import { ClaimsComponent } from './claims';
 import { NewOperation } from '../plans/plan-model';
 import { CommandRegistry } from '../shell/commands';
 import { PanelStack } from '../shell/panels';
@@ -24,7 +25,13 @@ type Port = EquipmentDetail['ports'][number];
 
 @Component({
   selector: 'cmdb-equipment-panel',
-  imports: [ObjectLinkComponent, EditHeaderComponent, ImpactListComponent, FrontPanelComponent],
+  imports: [
+    ClaimsComponent,
+    ObjectLinkComponent,
+    EditHeaderComponent,
+    ImpactListComponent,
+    FrontPanelComponent,
+  ],
   template: `
     @if (equipment.value(); as e) {
       <header class="header">
@@ -115,6 +122,11 @@ type Port = EquipmentDetail['ports'][number];
                       Koppla i planen…
                     </button>
                   }
+                  @if (!p.claims?.reservation) {
+                    <button type="button" class="action" (click)="reserve(p.terminalId)">
+                      Reservera för planen
+                    </button>
+                  }
                 </p>
                 @if (planError(); as err) {
                   <p class="error" role="alert">{{ err }}</p>
@@ -129,6 +141,10 @@ type Port = EquipmentDetail['ports'][number];
             <dd>{{ p.type }}{{ p.group ? ' · ' + p.group : '' }}</dd>
             <dt>Kretsar</dt>
             <dd>{{ p.circuits }}</dd>
+            @if (p.claims) {
+              <dt>Anspråk</dt>
+              <dd><cmdb-claims [claims]="p.claims" /></dd>
+            }
             @for (c of p.connections; track c.peer.terminalId) {
               <dt>{{ connectionLabels[c.kind] ?? c.kind }}</dt>
               <dd>
@@ -305,6 +321,16 @@ export class EquipmentPanelComponent {
     this.plan.pending.set({ terminalId: port.terminalId, label: `${name} · ${port.name}` });
   }
 
+  protected async reserve(terminalId: number): Promise<void> {
+    this.planError.set(null);
+    try {
+      await this.plan.reserve('terminal', terminalId);
+      this.equipment.reload();
+    } catch (e: unknown) {
+      this.planError.set(problemText(e));
+    }
+  }
+
   protected async connect(a: number, b: number): Promise<void> {
     await this.planned({ kind: 'connect', a, b, connectionKind: 'patch' });
   }
@@ -317,15 +343,9 @@ export class EquipmentPanelComponent {
     this.planError.set(null);
     try {
       await this.plan.add(operation);
+      this.equipment.reload();
     } catch (e: unknown) {
-      const body = (e as { error?: { detail?: string; errors?: Record<string, string[]> } }).error;
-      this.planError.set(
-        body?.detail ??
-          Object.values(body?.errors ?? {})
-            .flat()
-            .join(' ') ??
-          'Det gick inte att lägga till i planen.',
-      );
+      this.planError.set(problemText(e));
     }
   }
 
@@ -374,4 +394,16 @@ export class EquipmentPanelComponent {
       }
     });
   }
+}
+
+/** The message in an API error: a problem's detail or the validation errors. */
+function problemText(e: unknown): string {
+  const body = (e as { error?: { detail?: string; errors?: Record<string, string[]> } }).error;
+  return (
+    body?.detail ??
+    (Object.values(body?.errors ?? {})
+      .flat()
+      .join(' ') ||
+      'Det gick inte att ändra planen.')
+  );
 }

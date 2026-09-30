@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Cmdb.Api.Auth;
 using Cmdb.Api.Features.Objects;
+using Cmdb.Api.Features.Reservations;
 using Cmdb.Api.Features.Trace;
 using Cmdb.Graph;
 using Npgsql;
@@ -23,15 +24,20 @@ internal static class PlanSql
             FROM plan p WHERE $1::bigint[] IS NULL OR p.id = ANY($1)
             """);
         cmd.Parameters.Add(new() { Value = (object?)ids ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Array | NpgsqlTypes.NpgsqlDbType.Bigint });
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
         var list = new List<PlanSummary>();
-        while (await reader.ReadAsync(ct))
+        await using (var reader = await cmd.ExecuteReaderAsync(ct))
         {
-            var p = PlanViews.ReadPlan(reader);
-            list.Add(new PlanSummary(p.Id, p.Name, p.Description, p.Status, p.Flag, p.CreatedBy, p.CreatedAt, p.UpdatedAt,
-                p.AppliedBy, p.AppliedAt, p.DependsOn, reader.GetInt32(12)));
+            while (await reader.ReadAsync(ct))
+            {
+                var p = PlanViews.ReadPlan(reader);
+                list.Add(new PlanSummary(p.Id, p.Name, p.Description, p.Status, p.Flag, p.CreatedBy, p.CreatedAt, p.UpdatedAt,
+                    p.AppliedBy, p.AppliedAt, p.DependsOn, reader.GetInt32(12)));
+            }
         }
-        return list;
+        // Operations in conflict with others' claims (#25), per plan.
+        var conflicts = (await ClaimsSql.ConflictsAsync(db, ids, ct)).GroupBy(c => c.PlanId)
+            .ToDictionary(g => g.Key, g => g.Select(c => c.OperationId).Distinct().Count());
+        return [.. list.Select(p => p with { Conflicts = conflicts.GetValueOrDefault(p.Id) })];
     }
 
     /// <summary>Why the dependencies cannot be used, or null: each must exist, be visible and not be cancelled.</summary>
@@ -79,6 +85,14 @@ internal static class PlanSql
     public static async Task TouchAsync(NpgsqlConnection conn, NpgsqlTransaction tx, long planId, CancellationToken ct)
     {
         await using var cmd = new NpgsqlCommand("UPDATE plan SET version = version + 1, flag = NULL, updated_at = now() WHERE id = $1", conn, tx);
+        cmd.Parameters.Add(new() { Value = planId });
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    public static async Task ReleaseReservationsAsync(NpgsqlConnection conn, NpgsqlTransaction tx, long planId, CancellationToken ct)
+    {
+        await using var cmd = new NpgsqlCommand(
+            "UPDATE reservation SET released_at = now() WHERE holder_kind = 'plan' AND holder_id = $1 AND released_at IS NULL", conn, tx);
         cmd.Parameters.Add(new() { Value = planId });
         await cmd.ExecuteNonQueryAsync(ct);
     }
@@ -149,6 +163,7 @@ internal static class PlanSql
         UserScope scope, IReadOnlyList<PlanOp> operations, IReadOnlyDictionary<long, GraphChangeProblem> problems, CancellationToken ct)
     {
         var terminals = operations.Where(o => o.Edge is not null).SelectMany(o => new[] { o.A, o.B }).Distinct().ToArray();
+        var conflicts = (await ClaimsSql.ConflictsAsync(db, [.. operations.Select(o => o.PlanId).Distinct()], ct)).ToLookup(c => c.OperationId);
         var names = await TraceNames.LoadAsync(db, terminals, [], [], ct);
         var objects = await ObjectsAsync(db, operations.Where(o => o.Edge is null).Select(o => (o.ObjectType!, o.ObjectId)).Distinct().ToList(), scope, ct);
 
@@ -166,7 +181,8 @@ internal static class PlanSql
                     ? $"Koppla {a.Label} till {b.Label} ({ConnectionName(op.ConnectionKind)})"
                     : $"Koppla bort {a.Label} från {b.Label}";
                 list.Add(new PlanOperationView(op.Id, op.PlanId, op.Seq, op.Kind, summary, [a, b], null, op.ConnectionKind, null, null,
-                    problem, op.CreatedBy, op.CreatedAt));
+                    problem, op.CreatedBy, op.CreatedAt, [.. conflicts[op.Id].Select(c => c.Message(scope))],
+                    conflicts[op.Id].Any(c => c.Blocking)));
                 continue;
             }
             var found = objects.TryGetValue((op.ObjectType!, op.ObjectId), out var o);
@@ -182,7 +198,7 @@ internal static class PlanSql
                 problem = "Objektet finns inte längre.";
             }
             list.Add(new PlanOperationView(op.Id, op.PlanId, op.Seq, op.Kind, text, [], target, null, lifecycle, name, problem,
-                op.CreatedBy, op.CreatedAt));
+                op.CreatedBy, op.CreatedAt, [], false));
         }
         return list;
     }

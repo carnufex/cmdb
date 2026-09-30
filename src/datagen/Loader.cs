@@ -36,8 +36,8 @@ internal static class Loader
         await Exec(conn, "SET cmdb.scopes = '*'", ct);
         if (reset)
         {
-            // Plans (#24) refer to terminals and objects by id, so they go with the network.
-            await Exec(conn, $"TRUNCATE {string.Join(", ", NetworkTables)}, graph_change, plan_operation, plan_dependency, plan RESTART IDENTITY", ct);
+            // Plans (#24) and reservations (#25) refer to terminals and objects by id, so they go with the network.
+            await Exec(conn, $"TRUNCATE {string.Join(", ", NetworkTables)}, graph_change, reservation, plan_operation, plan_dependency, plan RESTART IDENTITY", ct);
         }
         else if (await Scalar<bool>(conn, "SELECT EXISTS (SELECT 1 FROM site)", ct))
         {

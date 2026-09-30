@@ -20,7 +20,11 @@ public sealed record CableDetail(
     JsonElement Attributes,
     ObjectRef A,
     ObjectRef B,
-    IReadOnlyList<ObjectRef> Circuits);
+    IReadOnlyList<ObjectRef> Circuits,
+    IReadOnlyList<ConductorClaims>? Claims = null);
+
+/// <summary>A conductor (fibre) that is reserved or wanted by a plan (#25).</summary>
+public sealed record ConductorClaims(long ConductorId, int Number, Cmdb.Api.Features.Reservations.ResourceClaims Claims);
 
 /// <summary>
 /// A cable, its ends and the circuits routed directly through its conductors. What depends on it further up
@@ -102,10 +106,49 @@ public sealed class GetCableEndpoint(RequestDb db) : Endpoint<CableRequest, Cabl
 
         await reader.NextResultAsync(ct);
         await reader.ReadAsync(ct);
+        var inUse = reader.GetInt32(0);
+        await reader.DisposeAsync();
+
+        var numbers = new Dictionary<long, int>();
+        await using (var cmd = new NpgsqlCommand("SELECT id, number FROM conductor WHERE cable_id = $1", conn))
+        {
+            cmd.Parameters.Add(new() { Value = id });
+            await using var conductors = await cmd.ExecuteReaderAsync(ct);
+            while (await conductors.ReadAsync(ct))
+            {
+                numbers[conductors.GetInt64(0)] = conductors.GetInt32(1);
+            }
+        }
+        var claims = await Cmdb.Api.Features.Reservations.ClaimsSql.ForConductorsAsync(db, [.. numbers.Keys], scope, ct);
         return cable with
         {
-            ConductorsInUse = reader.GetInt32(0),
+            ConductorsInUse = inUse,
             Circuits = circuits,
+            Claims = [.. claims.OrderBy(c => numbers[c.Key]).Select(c => new ConductorClaims(c.Key, numbers[c.Key], c.Value))],
         };
+    }
+}
+
+public sealed record ConductorRequest(long Id, int Number);
+
+public sealed record ConductorId(long Id);
+
+/// <summary>A cable's conductor (fibre) by number, for reserving it (#25). Outside the caller's scope it does not exist.</summary>
+public sealed class GetConductorEndpoint(RequestDb db) : Endpoint<ConductorRequest, ConductorId>
+{
+    public override void Configure() => Get("/cables/{id}/conductors/{number}");
+
+    public override async Task HandleAsync(ConductorRequest req, CancellationToken ct)
+    {
+        await using var cmd = db.CreateCommand($"SELECT k.id FROM conductor k WHERE k.cable_id = $1 AND k.number = $2 AND {ScopeSql.Cable("k.cable_id", 3)}");
+        cmd.Parameters.Add(new() { Value = req.Id });
+        cmd.Parameters.Add(new() { Value = req.Number });
+        cmd.Parameters.Add(HttpContext.Scope().Parameter());
+        if (await cmd.ExecuteScalarAsync(ct) is not long id)
+        {
+            await Send.NotFoundAsync(ct);
+            return;
+        }
+        await Send.OkAsync(new ConductorId(id), ct);
     }
 }

@@ -11,6 +11,12 @@ public enum GraphChangeProblem
     AlreadyConnected,
     NotConnected,
     SameTerminal,
+
+    /// <summary>
+    /// A terminal takes one connection of each kind (#25): one patch at the front of a port and one splice or
+    /// termination at the back. Adding a second of the same kind is a conflict.
+    /// </summary>
+    Occupied,
 }
 
 public sealed record GraphChangeIssue(int Index, GraphEdgeChange Change, GraphChangeProblem Problem);
@@ -77,6 +83,11 @@ public sealed partial class Graph
                 if (IndexOfConnection(ea, b) >= 0)
                 {
                     issues.Add(new(i, change, GraphChangeProblem.AlreadyConnected));
+                    continue;
+                }
+                if (ea.Kinds.Contains(change.Kind) || eb.Kinds.Contains(change.Kind))
+                {
+                    issues.Add(new(i, change, GraphChangeProblem.Occupied));
                     continue;
                 }
                 ea.Targets.Add(b);

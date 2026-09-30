@@ -71,7 +71,29 @@ internal static class DemoPlans
         {
             await OperationAsync(conn, stage2, "connect", $$"""{"a": {{free[8]}}, "b": {{free[9]}}, "kind": "patch"}""", ct);
         }
-        log.WriteLine("  plans   3 demo plans");
+        // Two plans that want the same fibre (#25): the first has reserved it, so the second is blocked.
+        var end = await RowAsync(conn, $"""
+            SELECT ce.terminal_id, ce.conductor_id, c.code, k.number FROM conductor_end ce
+            JOIN conductor k ON k.id = ce.conductor_id JOIN cable c ON c.id = k.cable_id
+            WHERE {hubId} IN (c.a_site_id, c.b_site_id)
+              AND NOT EXISTS (SELECT 1 FROM connection x WHERE x.valid_to IS NULL AND ce.terminal_id IN (x.a_terminal_id, x.b_terminal_id))
+            ORDER BY ce.terminal_id LIMIT 1
+            """, ct);
+        var plans = 3;
+        if (end is not null && free.Count >= 12)
+        {
+            var (terminal, conductor, code, number) = ((long)end[0], (long)end[1], (string)end[2], (int)end[3]);
+            var customer = await PlanAsync(conn, $"Kundförbindelse via {code} fiber {number}", "Svartfiber till en företagskund.", ct);
+            await OperationAsync(conn, customer, "connect", $$"""{"a": {{free[10]}}, "b": {{terminal}}, "kind": "splice"}""", ct);
+            await ExecAsync(conn, $"""
+                INSERT INTO reservation (resource_kind, resource_id, holder_kind, holder_id, reason, created_by)
+                VALUES ('conductor', {conductor}, 'plan', {customer}, 'Kundorder, avtal tecknat', '{Author}')
+                """, ct);
+            var backhaul = await PlanAsync(conn, $"Ny mobillänk via {code} fiber {number}", "Vill använda samma fiber som kundförbindelsen.", ct);
+            await OperationAsync(conn, backhaul, "connect", $$"""{"a": {{free[11]}}, "b": {{terminal}}, "kind": "splice"}""", ct);
+            plans = 5;
+        }
+        log.WriteLine($"  plans   {plans} demo plans");
     }
 
     private static async Task<long> PlanAsync(NpgsqlConnection conn, string name, string description, CancellationToken ct)

@@ -17,6 +17,8 @@ export interface PlanSummary {
   appliedAt: string | null;
   dependsOn: number[];
   operations: number;
+  /** Operations whose resources others have reserved or want too (#25). */
+  conflicts: number;
 }
 
 /** One operation in words, with what it touches and, when it no longer fits production, why. */
@@ -34,6 +36,10 @@ export interface PlanOperation {
   problem: string | null;
   createdBy: string;
   createdAt: string;
+  /** Others' claims on the same resources (#25). */
+  conflicts: string[];
+  /** Someone else's reservation stops the plan from being applied. */
+  blocked: boolean;
 }
 
 /** GET /api/plans/{id} */
@@ -85,8 +91,10 @@ export const planStatusLabels: Record<PlanSummary['status'], string> = {
 };
 
 /** The status dot for a plan: drafts are planned, applied plans are in service, flags are conflicts. */
-export function planLifecycle(plan: Pick<PlanSummary, 'status' | 'flag'>): Lifecycle {
-  if (plan.flag) {
+export function planLifecycle(
+  plan: Pick<PlanSummary, 'status' | 'flag'> & { conflicts?: number },
+): Lifecycle {
+  if (plan.flag || (plan.status === 'draft' && (plan.conflicts ?? 0) > 0)) {
     return 'conflict';
   }
   return plan.status === 'draft' ? 'planned' : plan.status === 'applied' ? 'in_service' : 'removed';

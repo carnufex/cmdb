@@ -101,12 +101,30 @@ public sealed class GraphOverlayTests
     }
 
     [Fact]
+    public void A_terminal_takes_one_connection_of_each_kind()
+    {
+        var production = GraphBuilder.Build(Network(crossConnect: false), "v1");
+
+        // 1 has a patch to 2 and 4 a splice to 20: a second patch at 1 or a second splice at 4 is a conflict.
+        var (_, issues) = production.WithChanges([
+            new(1, 3, EdgeKind.Patch, Add: true),
+            new(4, 5, EdgeKind.Splice, Add: true),
+            new(4, 3, EdgeKind.Patch, Add: true),
+        ]);
+
+        issues.Select(i => (i.Index, i.Problem)).ShouldBe([
+            (0, GraphChangeProblem.Occupied),
+            (1, GraphChangeProblem.Occupied),
+        ]);
+    }
+
+    [Fact]
     public void A_view_of_a_view_stacks_the_changes_on_the_same_base()
     {
         var production = GraphBuilder.Build(Network(crossConnect: false), "v1");
 
         var (dependency, _) = production.WithChanges([new(3, 4, EdgeKind.Patch, Add: true)]);
-        var (plan, issues) = dependency.WithChanges([new(1, 5, EdgeKind.Patch, Add: true)]);
+        var (plan, issues) = dependency.WithChanges([new(1, 5, EdgeKind.Termination, Add: true)]);
 
         issues.ShouldBeEmpty();
         plan.Base.ShouldBeSameAs(production);

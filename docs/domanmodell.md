@@ -105,7 +105,7 @@ Regler:
 2. En plans beroenden måste vara konfliktfria sinsemellan. Konflikter löses där de uppstår.
 3. När en plan förs in i produktion byggs beroende planer om. Nya krockar flaggas.
 4. När en plan avbryts markeras alla planer som beror på den.
-5. Konflikter detekteras på **resursnivå** (terminal, ledare, slot, kanal) via reservationer, inte bara på fältnivå.
+5. Konflikter detekteras på **resursnivå** (terminal, ledare, slot, kanal) via reservationer, inte bara på fältnivå. En plans kopplingar är anspråk på sina terminaler och ledare. En reservation håller resursen åt en plan eller tjänst, och en terminal tar en koppling av varje slag (#25).
 
 ## Tid och historik
 

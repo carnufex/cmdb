@@ -1,4 +1,5 @@
 using Cmdb.Api.Auth;
+using Cmdb.Api.Features.Reservations;
 using Cmdb.Graph;
 using FastEndpoints;
 using Npgsql;
@@ -47,6 +48,13 @@ public sealed partial class ApplyPlanEndpoint(RequestDb db, GraphHolder holder, 
             await PlanSql.ConflictAsync(HttpContext, $"{view.Problems.Count} operationer passar inte produktion. Åtgärda dem först.", ct);
             return;
         }
+        var blocked = (await ClaimsSql.ConflictsAsync(db, [plan.Id], ct)).Where(c => c.Blocking).ToList();
+        if (blocked.Count > 0)
+        {
+            await PlanSql.ConflictAsync(HttpContext,
+                $"{blocked.Select(c => c.OperationId).Distinct().Count()} operationer använder resurser som andra har reserverat. {blocked[0].Message(scope)}", ct);
+            return;
+        }
 
         var operations = view.Chain.Operations;
         await using (var conn = await db.OpenConnectionAsync(ct))
@@ -83,6 +91,8 @@ public sealed partial class ApplyPlanEndpoint(RequestDb db, GraphHolder holder, 
                 cmd.Parameters.Add(new() { Value = PlanSql.Actor(User) });
                 await cmd.ExecuteNonQueryAsync(ct);
             }
+            // In production the resources are taken by the connections themselves (#25).
+            await PlanSql.ReleaseReservationsAsync(conn, tx, plan.Id, ct);
             await tx.CommitAsync(ct);
         }
         var actor = PlanSql.Actor(User);
@@ -184,12 +194,18 @@ public sealed class CancelPlanEndpoint(RequestDb db) : Endpoint<PlanIdRequest, A
             await PlanSql.ConflictAsync(HttpContext, "Planen är redan införd eller avbruten.", ct);
             return;
         }
-        await using (var cmd = db.CreateCommand("""
-            UPDATE plan SET status = 'cancelled', cancelled_at = now(), version = version + 1, updated_at = now() WHERE id = $1 AND status = 'draft'
-            """))
+        await using (var conn = await db.OpenConnectionAsync(ct))
+        await using (var tx = await conn.BeginTransactionAsync(ct))
         {
-            cmd.Parameters.Add(new() { Value = req.Id });
-            await cmd.ExecuteNonQueryAsync(ct);
+            await using (var cmd = new NpgsqlCommand("""
+                UPDATE plan SET status = 'cancelled', cancelled_at = now(), version = version + 1, updated_at = now() WHERE id = $1 AND status = 'draft'
+                """, conn, tx))
+            {
+                cmd.Parameters.Add(new() { Value = req.Id });
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+            await PlanSql.ReleaseReservationsAsync(conn, tx, req.Id, ct);
+            await tx.CommitAsync(ct);
         }
         var flagged = new List<PlanSummary>();
         foreach (var id in await PlanSql.DependentsAsync(db, req.Id, ct))
