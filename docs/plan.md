@@ -49,6 +49,7 @@ Vid 25–50 % tillväxt per år är nätet dubbelt så stort om 2–3 år och fy
 Slutsatser:
 
 - **Frågorna skalar.** Hela budgeten håller i 4×. Kartplattan är raden som växer (fler objekt per ruta).
+- **Snabbsöket behöver inget eget index (#100).** Sökningen i två omgångar (prefix först, delsträng bara vid behov) växer knappt med datan. Lokalt är p50 7,9 / 9,1 / 9,8 ms och p95 18,9 / 15,4 / 18,9 ms i full / 2× / 4×. I demon är p95 19–22 ms i full skala. Med samma tillväxt ger det ungefär 25–30 ms vid 4×, långt under budgeten 50 ms. Ett sökindex i minnet eller en separat söktjänst blir aktuellt först om snabbsökets p95 i demon passerar 35 ms.
 - **Ändringar skalar.** Satser som flyttar kopplingar, ändrar objekt utan att ändra struktur, lägger till utrustning och kablar eller ändrar kretsar blir ett delta (#81, #119, #121, se [arkitektur.md](arkitektur.md)): millisekunder oavsett nätets storlek. Deltat kompakteras in i arrayerna vart tionde minut eller vid 50 000 noder. Det tar under en sekund även i 4×, och toppen är högst 1,1 gånger grafens storlek.
 - **Borttagningar och flyttar skalar inte ännu.** Satser som tar bort, flyttar eller bygger om utrustning och kablar byggs om från rader. Tiden och toppen växer linjärt, och toppen är ungefär tre gånger grafens storlek. Inget flöde i appen gör sådana ändringar i dag (#123). Podgränsen bestäms därför av laddningen vid start och av den ovanliga ombyggnaden. I full skala räcker 2 GiB (topp 1,6 GB). I 2× behövs cirka 4 GiB och i 4× cirka 7 GiB.
 
