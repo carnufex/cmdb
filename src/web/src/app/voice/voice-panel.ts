@@ -4,9 +4,11 @@ import {
   Component,
   computed,
   DestroyRef,
+  effect,
   inject,
   signal,
 } from '@angular/core';
+import { MapView, Operations } from '../map/map-view';
 import { PanelStack } from '../shell/panels';
 import { Tools } from '../shell/tools';
 import { VoiceRoiComponent } from './roi';
@@ -445,7 +447,7 @@ const FRESH_SMS_MS = 5 * 60_000;
       background: var(--status-in-service);
     }
     [data-priority='P1'] .dot {
-      background: var(--status-removed);
+      background: var(--status-conflict);
     }
     [data-priority='P2'] .dot {
       background: var(--status-decommissioning);
@@ -486,7 +488,7 @@ const FRESH_SMS_MS = 5 * 60_000;
     }
     [data-kind='digging'] .dot,
     [data-kind='false-redundancy'] .dot {
-      background: var(--status-removed);
+      background: var(--status-conflict);
     }
     [data-kind='battery'] .dot {
       background: var(--status-decommissioning);
@@ -636,9 +638,42 @@ export class VoicePanelComponent {
     () => (this.activityResource.error() as { status?: number } | undefined)?.status === 403,
   );
 
+  // The map's operations layer (#156) while the panel is open: incidents and the live call every poll, work areas
+  // and risks every tenth.
+  private readonly mapView = inject(MapView);
+  private readonly liveResource = httpResource<Pick<Operations, 'incidents' | 'live'>>(() => ({
+    url: '/api/operations/live',
+    params: { t: this.tick() },
+  }));
+  private readonly worksResource = httpResource<Pick<Operations, 'works' | 'risks'>>(() => ({
+    url: '/api/operations/works',
+    params: { t: Math.floor(this.tick() / 10) },
+  }));
+  private lastLive: Pick<Operations, 'incidents' | 'live'> | undefined;
+  private lastWorks: Pick<Operations, 'works' | 'risks'> | undefined;
+
   constructor() {
     const timer = setInterval(() => this.tick.update((t) => t + 1), POLL_MS);
-    inject(DestroyRef).onDestroy(() => clearInterval(timer));
+    inject(DestroyRef).onDestroy(() => {
+      clearInterval(timer);
+      this.mapView.operations.set(null);
+    });
+    effect(() => {
+      if (this.liveResource.hasValue()) {
+        this.lastLive = this.liveResource.value();
+      }
+      if (this.worksResource.hasValue()) {
+        this.lastWorks = this.worksResource.value();
+      }
+      if (this.lastLive || this.lastWorks) {
+        this.mapView.operations.set({
+          incidents: this.lastLive?.incidents ?? [],
+          live: this.lastLive?.live ?? null,
+          works: this.lastWorks?.works ?? [],
+          risks: this.lastWorks?.risks ?? [],
+        });
+      }
+    });
   }
 
   protected callAgent(): void {
@@ -657,7 +692,7 @@ export class VoicePanelComponent {
         responsible_employee_id: risk.responsibleEmployeeId,
       },
       firstMessage:
-        `Hej ${risk.responsibleName}, det här är Driftagenten. Jag ringer om en risk i nätet som du ansvarar för. ` +
+        `Hej ${risk.responsibleName}, det här är Sebastian på NOC. Jag ringer om en risk i nätet som du ansvarar för. ` +
         'Innan jag berättar mer behöver jag verifiera dig. Vad är ditt anställningsnummer?',
     });
   }

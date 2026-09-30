@@ -92,7 +92,7 @@ public sealed class VoiceTools(SystemDb system, RequestDb db, GraphHolder holder
                     Region(reader.IsDBNull(5) ? null : reader.GetDouble(5)), Status(reader.GetString(4)), Math.Round(reader.GetDouble(6), 2)));
             }
             return (IReadOnlyList<StationMatch>)matches;
-        }, r => r.Count == 0 ? "no-match" : "ok");
+        }, r => r.Count == 0 ? "no-match" : "ok", reference: r => r.Count > 0 ? r[0].Station : null);
     }
 
     [McpServerTool(Name = "request_verification_code", Title = "Skicka verifieringskod", ReadOnly = false, Idempotent = false, OpenWorld = false)]
@@ -155,7 +155,7 @@ public sealed class VoiceTools(SystemDb system, RequestDb db, GraphHolder holder
                 [.. equipment.OrderByDescending(e => e.Ports).Take(8).Select(e => new StationEquipment(e.Name, e.Model, e.Category, Status(e.Lifecycle)))],
                 detail.Cables.Count,
                 [.. detail.Cables.Select(c => $"{c.OtherEnd.Code} {c.OtherEnd.Name}".Trim()).Distinct().Take(6)]);
-        });
+        }, reference: r => r.Station);
     }
 
     [McpServerTool(Name = "fault_impact", Title = "Felpåverkan", ReadOnly = true, Idempotent = true, OpenWorld = false)]
@@ -172,7 +172,7 @@ public sealed class VoiceTools(SystemDb system, RequestDb db, GraphHolder holder
             var fault = await AnalyseAsync(reference, ct);
             return new FaultImpact(fault.Reference, $"site:{fault.SiteId}", fault.SiteName, fault.Priority, fault.Affected, fault.Down, fault.CriticalDown,
                 fault.FalseRedundancy, Summary(fault), [.. fault.Services.Take(TopServices).Select(Spoken)]);
-        }, r => r.Priority);
+        }, r => r.Priority, reference: r => r.Reference);
     }
 
     [McpServerTool(Name = "create_incident", Title = "Skapa ärende", ReadOnly = false, Idempotent = false, OpenWorld = false)]
@@ -185,10 +185,12 @@ public sealed class VoiceTools(SystemDb system, RequestDb db, GraphHolder holder
         [Description("What the caller has seen or done: alarms, LEDs, power, what they tried. Empty if nothing.")] string observations,
         CancellationToken ct = default)
     {
+        string? about = null;
         return await AuditAsync("create_incident", async () =>
         {
             RequireVerified();
             var fault = await AnalyseAsync(reference, ct);
+            about = fault.Reference;
             var enrichment = JsonSerializer.SerializeToDocument(new
             {
                 fault.Affected,
@@ -224,7 +226,7 @@ public sealed class VoiceTools(SystemDb system, RequestDb db, GraphHolder holder
                     $"Driftagenten: ärende {number} ({fault.Priority}) för {fault.SiteName} är skapat.{(notified ? " Jouren är larmad." : "")}", ct);
             }
             return new IncidentCreated(fault.Priority, fault.SiteName, Summary(fault), notified, caller is not null);
-        }, r => r.Priority);
+        }, r => r.Priority, reference: _ => about);
     }
 
     [McpServerTool(Name = "risk_details", Title = "Riskdetaljer", ReadOnly = true, Idempotent = true, OpenWorld = false)]
@@ -245,7 +247,7 @@ public sealed class VoiceTools(SystemDb system, RequestDb db, GraphHolder holder
             var risks = await RiskDetection.RunAsync(graph, await masks.GetAsync(graph, Scope, ct), db.Source, Scope, ct);
             return risks.FirstOrDefault(r => r.Id == riskId.Trim())
                 ?? throw new McpException("Risken finns inte längre, eller ligger utanför uppringarens behörighet.");
-        }, r => r.Kind);
+        }, r => r.Kind, reference: r => r.Reference);
     }
 
     private async Task<Fault> AnalyseAsync(string reference, CancellationToken ct)
@@ -347,8 +349,9 @@ public sealed class VoiceTools(SystemDb system, RequestDb db, GraphHolder holder
     };
 
     /// <summary>Runs a tool and logs the call (ADR-0015).</summary>
-    private Task<T> AuditAsync<T>(string tool, Func<Task<T>> run, Func<T, string>? outcome = null, string? employeeId = null) =>
-        VoiceAudit.RunAsync(system, User, tool, run, outcome, employeeId);
+    private Task<T> AuditAsync<T>(string tool, Func<Task<T>> run, Func<T, string>? outcome = null, string? employeeId = null,
+        Func<T, string?>? reference = null) =>
+        VoiceAudit.RunAsync(system, User, tool, run, outcome, employeeId, reference);
 }
 
 internal static partial class VoiceLog

@@ -14,11 +14,12 @@ Röstagenten för felanmälan i ett rikstäckande telenät (epic #130, ADR-0015)
 **1. Problemet (30 s).** "En tekniker på plats ringer NOC: ingen länk på en station. NOC letar i flera system efter stationen, vad som går genom den och om det finns reserv, och sätter prioritet efter känsla. Det tar tid, och prioriteten blir fel när reserven bara finns på papperet."
 
 **2. Anmälan (1 min).** Klicka **Ring service desk**. Saga svarar på svenska och engelska. Säg: "Hej, det är ingen länk på Lingonåsen."
-- Saga hör att det gäller nätet och säger "Jag kopplar dig till NOC". NOC-agenten tar över utan att fråga igen (ADR-0016).
+- Saga hör att det gäller nätet och kopplar till Sebastian på NOC, som tar över med egen röst utan att fråga igen (ADR-0016).
+- **Kartan följer samtalet** så länge driftagentpanelen är öppen (#156). Den flyger till stationen redan när Sebastian slår upp den, och efter påverkansanalysen lyser det som tappar sin väg rött och den falska redundansen orange. Grävområden och risker syns hela tiden.
 - Agenten slår upp stationen med `find_station` och bekräftar: "Menar du Lingonåsen, aggregeringsnoden?"
 - Poäng: stationen hittas även om namnet hörs fel eller kallas "LGÅ". Stationssöket är det enda som är öppet utan verifiering, och det lämnar bara ut det som står på en skylt.
 
-**3. Stegvis verifiering (1 min).** Agenten ber om anställningsnumret. Säg "ett noll noll ett".
+**3. Stegvis verifiering (1 min).** Sebastian ber om anställningsnumret. Säg "ett noll noll ett".
 - En sexsiffrig kod syns i SMS-utkorgen i webben. Läs upp den.
 - Poäng: **behörigheten ligger i servern, inte i prompten.**
   - Utan verifiering har samtalet omfånget "ingenting".

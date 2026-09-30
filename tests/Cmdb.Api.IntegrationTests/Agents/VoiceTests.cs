@@ -115,6 +115,37 @@ public sealed partial class VoiceTests(ApiFactory factory)
     }
 
     [Fact]
+    public async Task The_map_follows_the_latest_call_and_shows_incidents_work_and_risks()
+    {
+        var (db, api) = await NetworkFixture.WithScenariosAsync(factory);
+        var call = NewCall();
+        await using var voice = await ConnectAsync(api, call);
+        var station = (await CallAsync(voice, "find_station", new() { ["query"] = "Lingonåsen" }))[0].GetProperty("station").GetString()!;
+        using var web = NetworkFixture.Client(api);
+
+        // Before verification the map already goes to the station, without any impact (#156).
+        var live = (await web.GetFromJsonAsync<JsonElement>("/api/operations/live", Ct)).GetProperty("live");
+        live.GetProperty("tool").GetString().ShouldBe("find_station");
+        live.GetProperty("reference").GetString().ShouldBe(station);
+        live.GetProperty("site").GetProperty("name").GetString().ShouldBe(DemoScenarios.Station);
+        live.GetProperty("impact").ValueKind.ShouldBe(JsonValueKind.Null);
+
+        await VerifyAsync(voice, db, "1001");
+        await CallAsync(voice, "fault_impact", new() { ["reference"] = station });
+        live = (await web.GetFromJsonAsync<JsonElement>("/api/operations/live", Ct)).GetProperty("live");
+        live.GetProperty("tool").GetString().ShouldBe("fault_impact");
+        var impact = live.GetProperty("impact");
+        impact.GetProperty("priority").GetString().ShouldBe("P1");
+        impact.GetProperty("down").GetProperty("cables").GetArrayLength().ShouldBeGreaterThan(0);
+        impact.GetProperty("falseRedundancy").GetProperty("cables").GetArrayLength().ShouldBeGreaterThan(0);
+
+        var works = await web.GetFromJsonAsync<JsonElement>("/api/operations/works", Ct);
+        works.GetProperty("works").EnumerateArray().ShouldContain(w => w.GetProperty("contractor").GetString() == DemoScenarios.Contractor);
+        works.GetProperty("works")[0].GetProperty("ring").GetArrayLength().ShouldBeGreaterThan(3);
+        works.GetProperty("risks").EnumerateArray().Select(r => r.GetProperty("kind").GetString()).ShouldContain("digging");
+    }
+
+    [Fact]
     public async Task A_verification_belongs_to_its_call_and_three_wrong_codes_lock_it()
     {
         var (db, api) = await NetworkFixture.WithScenariosAsync(factory);

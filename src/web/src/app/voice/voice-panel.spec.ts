@@ -3,6 +3,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { RUNTIME_CONFIG } from '../config';
+import { MapView } from '../map/map-view';
 import { PanelStack } from '../shell/panels';
 import { VoiceCall } from './voice-call';
 import { Incident, Risk, VoiceActivity, VoicePanelComponent } from './voice-panel';
@@ -99,6 +100,27 @@ describe('operations agent panel', () => {
     http.expectOne((r) => r.url === '/api/voice/activity').flush(activity);
     await settle(fixture);
 
+    // The map's operations layer follows the live call while the panel is open (#156).
+    const site = { id: 12, code: 'AGG-0012', name: 'Lingonåsen', x: 1, y: 2 };
+    http
+      .expectOne((r) => r.url === '/api/operations/live')
+      .flush({
+        incidents: [{ number: 'INC-00001', priority: 'P1', site, createdAt: incident.createdAt }],
+        live: {
+          tool: 'fault_impact',
+          reference: 'site:12',
+          conversationId: 'conv_1',
+          at: incident.createdAt,
+          site,
+          impact: null,
+        },
+      });
+    http.expectOne((r) => r.url === '/api/operations/works').flush({ works: [], risks: [] });
+    await settle(fixture);
+    const operations = TestBed.inject(MapView).operations()!;
+    expect(operations.live!.site.name).toBe('Lingonåsen');
+    expect(operations.incidents.length).toBe(1);
+
     const text = (fixture.nativeElement as HTMLElement).textContent!;
     expect(text).toContain('INC-00001');
     expect(text).toContain('P1 · jour larmad');
@@ -140,6 +162,7 @@ describe('operations agent panel', () => {
     expect(calls).toContain('anst. 1001');
     expect(calls).toContain('Din kod till Driftagenten: 123456.');
     fixture.destroy();
+    expect(TestBed.inject(MapView).operations()).toBeNull();
   });
 
   it('keeps the list short and shows a fresh code above the tabs', async () => {

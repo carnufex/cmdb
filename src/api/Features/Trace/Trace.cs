@@ -253,7 +253,7 @@ public sealed class TraceEndpoint(GraphHolder holder, RequestDb db, ScopeMasks m
         return null;
     }
 
-    private static async Task<TraceRoute> RouteAsync(NpgsqlDataSource db, IReadOnlyList<ObjectRef> sites, IReadOnlyList<ObjectRef> cables, UserScope scope, CancellationToken ct)
+    internal static async Task<TraceRoute> RouteAsync(NpgsqlDataSource db, IReadOnlyList<ObjectRef> sites, IReadOnlyList<ObjectRef> cables, UserScope scope, CancellationToken ct)
     {
         if (scope.HidesCoordinates)
         {

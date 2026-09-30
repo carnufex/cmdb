@@ -40,6 +40,60 @@
   border: var(--line);
   border-radius: var(--radius-md);
 
+  .ops {
+    margin: var(--space-1) 0 0;
+    padding: var(--space-1) 0 0;
+    border-top: var(--line);
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: var(--text-xs);
+
+    li {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+    }
+  }
+
+  .sym {
+    display: inline-block;
+    width: 14px;
+    height: 3px;
+    border-radius: 2px;
+
+    &.fault {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--status-conflict);
+    }
+    &.down {
+      background: var(--status-conflict);
+    }
+    &.false {
+      background: repeating-linear-gradient(
+        90deg,
+        var(--status-decommissioning) 0 5px,
+        transparent 5px 8px
+      );
+    }
+    &.work {
+      height: 10px;
+      border: 2px solid var(--status-decommissioning);
+      background: color-mix(in srgb, var(--status-decommissioning) 22%, transparent);
+    }
+    &.risk {
+      width: 0;
+      height: 0;
+      border-radius: 0;
+      border-left: 6px solid transparent;
+      border-right: 6px solid transparent;
+      border-bottom: 10px solid var(--status-decommissioning);
+    }
+  }
+
   .hint {
     margin: var(--space-1) 0 0;
     max-width: 200px;

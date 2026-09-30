@@ -13,6 +13,15 @@
   <cmdb-status value="in_service" />
   <cmdb-status value="under_construction" />
   <cmdb-status value="planned" />
+  @if (operationsShown()) {
+    <ul class="ops" aria-label="Driftläge">
+      <li><span class="sym fault" aria-hidden="true"></span>Fel och ärenden</li>
+      <li><span class="sym down" aria-hidden="true"></span>Tappar sin väg</li>
+      <li><span class="sym false" aria-hidden="true"></span>Falsk redundans</li>
+      <li><span class="sym work" aria-hidden="true"></span>Arbete (streckat: planerat)</li>
+      <li><span class="sym risk" aria-hidden="true"></span>Risk</li>
+    </ul>
+  }
   @if (zoom() < detailZoom) {
     <p class="hint">Zooma in för att se accessiter och små kablar.</p>
   }
