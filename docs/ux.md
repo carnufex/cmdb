@@ -61,3 +61,17 @@ Snabbsöket (Ctrl+K) hittar objekt på namn och kod. För frågor som *alla radi
 - Attribut och tillåtna värden kommer från typkatalogen, så nya modeller blir sökbara utan kodändring.
 - Träffarna markeras i kartan i ett eget lager, på alla zoomnivåer, och övriga nätet tonas ned. En rad i listan öppnar siten i panelstacken.
 - Färdiga exempel visar vad sökningen klarar och används i demon.
+
+## Planer
+
+- **Planer** i verktygsfältet listar planerna du kan se, med status som prick och text: utkast (planerad), införd (i drift), avbruten (borttagen) och flaggad (konflikt). Där skapas också en ny plan, eventuellt ovanpå andra.
+- **Att välja en plan växlar hela appen till planens vy:** produktion, plus planerna den bygger på, plus planen. Planen står i adressen (`?plan=`), så en länk öppnar samma vy. En violett etikett i verktygsfältet visar vilken plan som gäller, och × går tillbaka till produktion.
+- **I planvyn:**
+  - Spårning och påverkan räknas i planen.
+  - Siterna planen rör markeras i kartan.
+  - Planpanelen visar ändringarna, grupperade per plan i den ordning de gäller. En ändring som inte längre passar produktion visas med skälet.
+- **Ändringar görs där objekten finns.** Välj en port i utrustningspanelen:
+  - *Koppla bort i planen* bryter en koppling som finns i planens vy.
+  - *Koppla i planen…* väljer första änden. Välj sedan en port på valfri utrustning och *Koppla … hit*.
+- *För in i produktion* och *Avbryt planen* kräver en bekräftelse. Planer som bygger på planen och som påverkas flaggas, och det står i panelen vilka det gäller.
+- Detaljpanelerna (site, utrustning och kabel) visar produktion. Det som skiljer i planen syns i planpanelen, i spårning och i påverkan.

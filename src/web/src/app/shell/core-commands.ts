@@ -58,6 +58,17 @@ export function registerCoreCommands(): void {
       },
     },
     {
+      id: 'tools.plans',
+      label: 'Planer',
+      hint: 'Verktyg',
+      keywords: ['plan', 'projekt', 'etapp', 'ändringsmängd', 'produktion'],
+      run: () => {
+        if (tools.open() !== 'plans') {
+          tools.toggle('plans');
+        }
+      },
+    },
+    {
       id: 'tools.perf',
       label: 'Prestandamätning',
       hint: 'Verktyg',

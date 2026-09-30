@@ -174,3 +174,39 @@
 .tool.wide {
   width: var(--tool-width-wide);
 }
+
+/* The active plan (#24): the whole app shows the plan's view until you go back to production. */
+.plan-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-1) 0 var(--space-2);
+  border: 1px solid var(--status-planned);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--status-planned);
+  }
+
+  button {
+    border: 0;
+    background: none;
+    color: var(--text);
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .plan-exit {
+    color: var(--text-muted);
+    font-size: 16px;
+
+    &:hover {
+      color: var(--text);
+    }
+  }
+}

@@ -1,6 +1,7 @@
 import { httpResource } from '@angular/common/http';
 import { DecimalPipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, effect, inject, input } from '@angular/core';
+import { ActivePlan } from '../plans/active-plan';
 import { PanelStack } from '../shell/panels';
 import { StatusComponent } from '../shell/status';
 import { ImpactListComponent } from './impact-list';
@@ -65,14 +66,17 @@ import { ObjectLinkComponent } from './object-link';
 })
 export class CablePanelComponent {
   private readonly panels = inject(PanelStack);
+  private readonly plan = inject(ActivePlan);
 
   readonly id = input.required<string>();
 
   protected readonly cable = httpResource<CableDetail>(() => `/api/${apiPath.cable}/${this.id()}`);
   /** Loaded after the cable itself: impact analysis has its own, larger budget. */
-  protected readonly impact = httpResource<Impact>(() =>
-    this.cable.value() ? `/api/${apiPath.cable}/${this.id()}/impact` : undefined,
-  );
+  protected readonly impact = httpResource<Impact>(() => {
+    return this.cable.value()
+      ? this.plan.request(`/api/${apiPath.cable}/${this.id()}/impact${this.plan.param(true)}`)
+      : undefined;
+  });
   protected readonly layers: Record<string, string> = {
     physical: 'Fysisk',
     transmission: 'Transmission',

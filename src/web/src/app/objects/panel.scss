@@ -138,3 +138,19 @@ ul.links {
   padding: var(--space-4);
   color: var(--status-conflict);
 }
+
+/* Port actions in the active plan (#24). */
+.plan-actions {
+  margin: var(--space-2) 0;
+  padding-left: var(--space-3);
+  border-left: 3px solid var(--status-planned);
+
+  p {
+    margin: 0 0 var(--space-1);
+  }
+
+  .muted {
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+  }
+}
