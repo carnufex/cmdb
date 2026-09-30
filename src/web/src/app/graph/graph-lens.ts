@@ -30,6 +30,7 @@ import {
   SiteGraphNode,
   siteTypeLabels,
 } from './graph-model';
+import { GraphBenchmark, GraphView } from './graph-view';
 
 /** Kilometres from SWEREF metres: a readable starting layout before forces take over. */
 const SCALE = 1 / 1000;
@@ -204,6 +205,7 @@ export class GraphLensComponent {
   private readonly http = inject(HttpClient);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly graphView = inject(GraphView);
   private readonly panels = inject(PanelStack);
   private readonly theme = inject(ThemeStore);
   private readonly host = inject(ElementRef<HTMLElement>);
@@ -264,7 +266,10 @@ export class GraphLensComponent {
 
   constructor() {
     afterNextRender(() => this.create());
-    inject(DestroyRef).onDestroy(() => this.sigma?.kill());
+    inject(DestroyRef).onDestroy(() => {
+      this.graphView.renderBenchmark = null;
+      this.sigma?.kill();
+    });
 
     effect(() => {
       const focus = this.focus();
@@ -337,7 +342,65 @@ export class GraphLensComponent {
       e.preventSigmaDefault();
       void this.expandNodes([Number(e.node)]);
     });
+    this.graphView.renderBenchmark = (start, nodes, signal) => this.benchmark(start, nodes, signal);
     void this.start(this.focus());
+  }
+
+  /**
+   * The performance panel's rendering benchmark (#89): the graph grown from a site to at least `nodes` sites, then
+   * the camera zoomed and panned over it while frame times are recorded, as the map does (#56).
+   */
+  private async benchmark(
+    start: number,
+    nodes: number,
+    signal: AbortSignal,
+  ): Promise<GraphBenchmark> {
+    await this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { g: start },
+      queryParamsHandling: 'merge',
+    });
+    await until(() => this.loaded === start && this.state?.focus === start && !this.busy(), signal);
+    for (;;) {
+      signal.throwIfAborted();
+      const state = this.state!;
+      const next = state.frontier(this.filters());
+      if (state.visibleNodes(this.filters()).size >= nodes || next.length === 0) {
+        break;
+      }
+      await this.expandNodes(next.slice(0, EXPAND_BATCH * 5));
+    }
+
+    const camera = this.sigma!.getCamera();
+    const stops = [
+      { x: 0.3, y: 0.35, ratio: 0.25 },
+      { x: 0.65, y: 0.6, ratio: 0.12 },
+      { x: 0.5, y: 0.5, ratio: 0.6 },
+      { x: 0.25, y: 0.75, ratio: 0.3 },
+      { x: 0.75, y: 0.25, ratio: 0.2 },
+    ];
+    const frames: number[] = [];
+    let last = performance.now();
+    let running = true;
+    const tick = (t: number) => {
+      frames.push(t - last);
+      last = t;
+      if (running) {
+        requestAnimationFrame(tick);
+      }
+    };
+    requestAnimationFrame(tick);
+    try {
+      for (const stop of stops) {
+        signal.throwIfAborted();
+        await camera.animate(stop, { duration: 900 });
+      }
+    } finally {
+      running = false;
+      await camera.animatedReset({ duration: 300 });
+    }
+    // The first delta spans the time before the benchmark started.
+    return { nodes: this.state!.visibleNodes(this.filters()).size, frames: frames.slice(1) };
   }
 
   /** Colours from the design tokens, read once per theme: status for nodes, neutral lines for edges. */
@@ -503,5 +566,13 @@ export class GraphLensComponent {
       }
     });
     this.sigma?.refresh();
+  }
+}
+
+/** Resolves once `done` holds, checking every 50 ms. */
+async function until(done: () => boolean, signal: AbortSignal): Promise<void> {
+  while (!done()) {
+    signal.throwIfAborted();
+    await new Promise((resolve) => setTimeout(resolve, 50));
   }
 }
