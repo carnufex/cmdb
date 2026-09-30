@@ -4,7 +4,8 @@ Röstagenten för felanmälan i ett rikstäckande telenät (epic #130, ADR-0015)
 
 ## Förberedelser (5 minuter innan)
 - **Webb:** öppna https://cmdb.rosenvall.se, logga in och öppna panelen **Driftagent**. Den visar ärenden, SMS-utkorgen (koden) och verktygsanropen. Sök fram Lingonåsen på kartan (Ctrl+K "Lingonåsen"), så att stationen syns.
-- **Röst:** öppna testlänken ur [agent/README.md](../agent/README.md) (`elevenlabs.io/app/talk-to?agent_id=…`) i en annan flik. Kontrollera mikrofonen.
+- **Röst:** samtalen startas från panelen (**Ring service desk**). Kontrollera mikrofonen.
+- **Extra om tid finns:** ring igen och säg "Min passertagg har slutat fungera" (Saga löser det själv) eller "Jag har glömt mitt lösenord" (IT-självhjälpen). Serviceärendena syns under fliken **Samtal**.
 - **Du är** Kim Lindqvist, tekniker, anställningsnummer **1001**.
 - **Reserv om röst eller nät krånglar:** `node agent/e2e.mjs` kör samma samtal i text mot den riktiga agenten och skriver ut hela dialogen.
 
@@ -12,7 +13,8 @@ Röstagenten för felanmälan i ett rikstäckande telenät (epic #130, ADR-0015)
 
 **1. Problemet (30 s).** "En tekniker på plats ringer NOC: ingen länk på en station. NOC letar i flera system efter stationen, vad som går genom den och om det finns reserv, och sätter prioritet efter känsla. Det tar tid, och prioriteten blir fel när reserven bara finns på papperet."
 
-**2. Anmälan (1 min).** Ring agenten och säg: "Hej, det är ingen länk på Lingonåsen."
+**2. Anmälan (1 min).** Klicka **Ring service desk**. Saga svarar på svenska och engelska. Säg: "Hej, det är ingen länk på Lingonåsen."
+- Saga hör att det gäller nätet och säger "Jag kopplar dig till NOC". NOC-agenten tar över utan att fråga igen (ADR-0016).
 - Agenten slår upp stationen med `find_station` och bekräftar: "Menar du Lingonåsen, aggregeringsnoden?"
 - Poäng: stationen hittas även om namnet hörs fel eller kallas "LGÅ". Stationssöket är det enda som är öppet utan verifiering, och det lämnar bara ut det som står på en skylt.
 

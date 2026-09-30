@@ -1,0 +1,37 @@
+{
+  "name": "Växeln: passertaggen hanteras på service desk",
+  "type": "llm",
+  "chat_history": [
+    {
+      "role": "agent",
+      "time_in_call_secs": 0,
+      "message": "Hej, det här är Saga på service desk, hur kan jag hjälpa dig? Hi, this is Saga at the service desk, how can I help you?"
+    },
+    {
+      "role": "user",
+      "time_in_call_secs": 4,
+      "message": "Min passertagg har slutat fungera, jag kommer inte in genom entrén."
+    }
+  ],
+  "success_condition": "The agent handles the access tag itself: it starts the verification by asking for the employee id, or says it will block the tag and order a new one after verification. It does not hand the call over to IT or NOC and does not say it cannot help.",
+  "success_examples": [
+    {
+      "type": "success",
+      "response": "Det ordnar jag. Vad är ditt anställningsnummer?"
+    }
+  ],
+  "failure_examples": [
+    {
+      "type": "failure",
+      "response": "Jag kopplar dig till IT-självhjälpen."
+    },
+    {
+      "type": "failure",
+      "response": "Jag kopplar dig till NOC."
+    },
+    {
+      "type": "failure",
+      "response": "Det kan jag tyvärr inte hjälpa dig med."
+    }
+  ]
+}

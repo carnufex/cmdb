@@ -86,6 +86,47 @@ public class Incident
     public DateTimeOffset CreatedAt { get; set; }
 }
 
+/// <summary>
+/// A request to the service desk or IT self-service agents (ADR-0016, #151): a broken access tag, a password reset, an
+/// equipment order, or a callback from a person. Everything but a callback needs a verified caller.
+/// </summary>
+public class ServiceRequest
+{
+    public long Id { get; set; }
+
+    /// <summary>tag, password, equipment or callback.</summary>
+    public required string Kind { get; set; }
+    public string Status { get; set; } = "open";
+
+    /// <summary>The verified caller; null for a callback from someone who did not verify.</summary>
+    public string? EmployeeId { get; set; }
+    public required string CallerName { get; set; }
+    public required string Phone { get; set; }
+    public required string ConversationId { get; set; }
+
+    /// <summary>What was asked for, in one sentence.</summary>
+    public required string Summary { get; set; }
+    public JsonDocument Details { get; set; } = JsonDocument.Parse("{}");
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+internal sealed class ServiceRequestConfiguration : IEntityTypeConfiguration<ServiceRequest>
+{
+    public void Configure(EntityTypeBuilder<ServiceRequest> e)
+    {
+        e.ToTable("service_request", t =>
+        {
+            t.HasCheckConstraint("ck_service_request_kind", "kind IN ('tag', 'password', 'equipment', 'callback')");
+            t.HasCheckConstraint("ck_service_request_status", "status IN ('open', 'done')");
+        });
+        e.Property(x => x.CreatedAt).HasDefaultValueSql("now()");
+        e.Property(x => x.Status).HasDefaultValue("open").HasSentinel(null!);
+        e.Property(x => x.Details).HasColumnType("jsonb");
+        e.HasIndex(x => new { x.Kind, x.Status });
+        e.HasIndex(x => x.CreatedAt);
+    }
+}
+
 internal sealed class VoiceCallerConfiguration : IEntityTypeConfiguration<VoiceCaller>
 {
     public void Configure(EntityTypeBuilder<VoiceCaller> e)

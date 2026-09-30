@@ -77,7 +77,7 @@ public static class AuthSetup
             {
                 var client = context.User.FindFirstValue(CmdbClaims.Client);
                 var isAgent = context.Request.Path.StartsWithSegments(McpSetup.Path, StringComparison.Ordinal)
-                    || context.Request.Path.StartsWithSegments(McpSetup.VoicePath, StringComparison.Ordinal)
+                    || Features.Voice.VoiceChannels.For(context.Request.Path) is not null
                     || (client is not null && trust.AgentClients.Contains(client));
                 return isAgent
                     ? RateLimitPartition.GetTokenBucketLimiter($"{client}|{context.User.FindFirstValue(CmdbClaims.Subject)}", _ => new TokenBucketRateLimiterOptions

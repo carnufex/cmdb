@@ -17,10 +17,13 @@ export interface VoiceCallRequest {
   variables: Record<string, string>;
   firstMessage?: string;
   label: string;
+  /** Which agent answers: the service desk switchboard (default) or the NOC agent directly (ADR-0016). */
+  agent?: 'desk' | 'noc';
 }
 
 /**
- * Calls to the operations agent from the web app (ADR-0015): inbound, or a proactive call about a risk (#137), in the
+ * Calls to the voice agents from the web app (ADR-0015, ADR-0016): inbound to the service desk switchboard, or a
+ * proactive call from the NOC agent about a risk (#137), in the
  * ElevenLabs widget instead of a phone line. The widget is an external service (like the basemap, ADR-0010): its
  * script is only fetched when a call starts, and only when an agent is configured.
  */
@@ -30,8 +33,9 @@ export class VoiceCall {
   private seq = 0;
 
   readonly agentId = this.config?.voiceAgentId ?? '';
+  readonly nocAgentId = this.config?.voiceNocAgentId || this.agentId;
   readonly enabled = this.agentId.length > 0;
-  readonly current = signal<(VoiceCallRequest & { key: number }) | null>(null);
+  readonly current = signal<(VoiceCallRequest & { key: number; agentId: string }) | null>(null);
 
   start(request: VoiceCallRequest): void {
     if (!this.enabled) {
@@ -39,7 +43,8 @@ export class VoiceCall {
     }
     loadWidget();
     // A new key recreates the widget, so each call starts fresh with its own variables.
-    this.current.set({ ...request, key: ++this.seq });
+    const agentId = request.agent === 'noc' ? this.nocAgentId : this.agentId;
+    this.current.set({ ...request, agentId, key: ++this.seq });
   }
 
   close(): void {
@@ -68,21 +73,21 @@ function loadWidget(): void {
   template: `
     @if (call.current(); as c) {
       @for (k of [c.key]; track k) {
-        <section class="call" aria-label="Samtal med driftagenten">
+        <section class="call" aria-label="Samtal med röstagenten">
           <header>
             <span>{{ c.label }}</span>
             <button type="button" aria-label="Stäng samtalet" (click)="call.close()">×</button>
           </header>
           <elevenlabs-convai
-            [attr.agent-id]="call.agentId"
+            [attr.agent-id]="c.agentId"
             variant="expanded"
             [attr.dynamic-variables]="variables()"
             [attr.override-first-message]="c.firstMessage ?? null"
-            action-text="Ring driftagenten"
+            action-text="Ring service desk"
             start-call-text="Starta samtal"
             end-call-text="Lägg på"
             listening-text="Lyssnar…"
-            speaking-text="Driftagenten talar"
+            speaking-text="Agenten talar"
           ></elevenlabs-convai>
         </section>
       }

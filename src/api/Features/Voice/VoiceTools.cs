@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using System.Diagnostics;
 using System.Globalization;
 using System.Security.Claims;
 using System.Text.Json;
@@ -347,35 +346,9 @@ public sealed class VoiceTools(SystemDb system, RequestDb db, GraphHolder holder
         _ => "söder",
     };
 
-    /// <summary>Runs a tool and logs the call (ADR-0015): tool, outcome, time, conversation and verified employee.</summary>
-    private async Task<T> AuditAsync<T>(string tool, Func<Task<T>> run, Func<T, string>? outcome = null, string? employeeId = null)
-    {
-        var sw = Stopwatch.StartNew();
-        var result = "error";
-        try
-        {
-            var value = await run();
-            result = outcome?.Invoke(value) ?? "ok";
-            return value;
-        }
-        catch (McpException)
-        {
-            result = "refused";
-            throw;
-        }
-        finally
-        {
-            await using var cmd = system.Source.CreateCommand("""
-                INSERT INTO voice_tool_call (conversation_id, employee_id, tool, outcome, milliseconds) VALUES ($1, $2, $3, $4, $5)
-                """);
-            cmd.Parameters.Add(new() { Value = Conversation });
-            cmd.Parameters.Add(new() { Value = (object?)(Employee ?? employeeId) ?? DBNull.Value });
-            cmd.Parameters.Add(new() { Value = tool });
-            cmd.Parameters.Add(new() { Value = result });
-            cmd.Parameters.Add(new() { Value = (int)sw.ElapsedMilliseconds });
-            await cmd.ExecuteNonQueryAsync(CancellationToken.None);
-        }
-    }
+    /// <summary>Runs a tool and logs the call (ADR-0015).</summary>
+    private Task<T> AuditAsync<T>(string tool, Func<Task<T>> run, Func<T, string>? outcome = null, string? employeeId = null) =>
+        VoiceAudit.RunAsync(system, User, tool, run, outcome, employeeId);
 }
 
 internal static partial class VoiceLog

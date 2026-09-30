@@ -1,0 +1,33 @@
+{
+  "name": "Växeln: annat avböjs med erbjudande om uppringning",
+  "type": "llm",
+  "chat_history": [
+    {
+      "role": "agent",
+      "time_in_call_secs": 0,
+      "message": "Hej, det här är Saga på service desk, hur kan jag hjälpa dig? Hi, this is Saga at the service desk, how can I help you?"
+    },
+    {
+      "role": "user",
+      "time_in_call_secs": 4,
+      "message": "Hej, jag har en fråga om min lönespecifikation för september."
+    }
+  ],
+  "success_condition": "The agent says it cannot help with that and offers a callback from a person, mentioning the queue or waiting time (it may call queue_status first). It does not hand the call over to IT or NOC and does not try to answer the salary question.",
+  "success_examples": [
+    {
+      "type": "success",
+      "response": "Det kan jag tyvärr inte hjälpa dig med. Vill du att en människa ringer upp dig? Det är cirka åtta minuters kö."
+    }
+  ],
+  "failure_examples": [
+    {
+      "type": "failure",
+      "response": "Jag kopplar dig till IT-självhjälpen."
+    },
+    {
+      "type": "failure",
+      "response": "Din lön betalas ut den 25:e."
+    }
+  ]
+}

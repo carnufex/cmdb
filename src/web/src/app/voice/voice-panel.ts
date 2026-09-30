@@ -58,6 +58,29 @@ export const riskKindLabels: Record<Risk['kind'], string> = {
   battery: 'Reservkraft',
 };
 
+/** GET /api/voice/service-requests (ADR-0016) */
+export interface ServiceRequests {
+  waiting: number;
+  queueMinutes: number;
+  requests: {
+    number: string;
+    kind: 'tag' | 'password' | 'equipment' | 'callback';
+    status: string;
+    employeeId: string | null;
+    callerName: string;
+    summary: string;
+    conversationId: string;
+    createdAt: string;
+  }[];
+}
+
+export const requestKindLabels: Record<ServiceRequests['requests'][number]['kind'], string> = {
+  tag: 'Passertagg',
+  password: 'Lösenord',
+  equipment: 'Utrustning',
+  callback: 'Uppringning',
+};
+
 /** GET /api/voice/activity (ADR-0015) */
 export interface VoiceActivity {
   sms: { toPhone: string; employeeId: string; body: string; createdAt: string }[];
@@ -99,7 +122,7 @@ const FRESH_SMS_MS = 5 * 60_000;
     </header>
     <div class="bar">
       @if (call.enabled) {
-        <button type="button" class="primary" (click)="callAgent()">Ring driftagenten</button>
+        <button type="button" class="primary" (click)="callAgent()">Ring service desk</button>
       }
       <div class="tabs" role="tablist" aria-label="Driftagent">
         @for (t of tabs; track t.key) {
@@ -197,6 +220,35 @@ const FRESH_SMS_MS = 5 * 60_000;
           </section>
         }
         @case ('calls') {
+          @if (serviceRequests(); as sr) {
+            <section aria-labelledby="requests">
+              <h3 id="requests">
+                Service desk <span class="count">{{ sr.requests.length }}</span>
+              </h3>
+              <p class="muted">
+                Uppringningskö: {{ sr.waiting }} väntar, cirka {{ sr.queueMinutes }} minuter.
+              </p>
+              @for (q of sr.requests.slice(0, 8); track q.number) {
+                <details class="row">
+                  <summary>
+                    <span class="status" [attr.data-kind]="q.kind">
+                      <span class="dot" aria-hidden="true"></span>{{ requestKindLabels[q.kind] }}
+                    </span>
+                    <span>{{ q.number }}</span>
+                    <span class="grow">{{ q.callerName }}</span>
+                    <time class="muted" [attr.datetime]="q.createdAt">{{ time(q.createdAt) }}</time>
+                  </summary>
+                  <p>{{ q.summary }}</p>
+                  <p class="muted">
+                    {{ q.employeeId ? 'anst. ' + q.employeeId : 'overifierad' }} · samtal
+                    {{ short(q.conversationId) }}
+                  </p>
+                </details>
+              } @empty {
+                <p class="muted">Inga serviceärenden.</p>
+              }
+            </section>
+          }
           @if (activity(); as a) {
             <section aria-labelledby="calls">
               <h3 id="calls">
@@ -483,6 +535,7 @@ export class VoicePanelComponent {
   protected readonly tools = inject(Tools);
   protected readonly call = inject(VoiceCall);
   protected readonly riskKindLabels = riskKindLabels;
+  protected readonly requestKindLabels = requestKindLabels;
   private readonly panels = inject(PanelStack);
   protected readonly priorityLabels = priorityLabels;
 
@@ -512,6 +565,19 @@ export class VoicePanelComponent {
       this.lastRisks = value;
     }
     return this.lastRisks;
+  });
+
+  private readonly requestsResource = httpResource<ServiceRequests>(() => ({
+    url: '/api/voice/service-requests',
+    params: { t: this.tick() },
+  }));
+  private lastRequests: ServiceRequests | undefined;
+  protected readonly serviceRequests = computed(() => {
+    const value = this.requestsResource.hasValue() ? this.requestsResource.value() : undefined;
+    if (value) {
+      this.lastRequests = value;
+    }
+    return this.lastRequests;
   });
 
   private readonly activityResource = httpResource<VoiceActivity>(() => ({
@@ -576,12 +642,13 @@ export class VoicePanelComponent {
   }
 
   protected callAgent(): void {
-    this.call.start({ variables: {}, label: 'Samtal med driftagenten' });
+    this.call.start({ variables: {}, label: 'Samtal med service desk' });
   }
 
   /** The proactive call (#137): the agent opens with the risk, and verifies the person before any detail. */
   protected callResponsible(risk: Risk): void {
     this.call.start({
+      agent: 'noc',
       label: `Ringer ${risk.responsibleName}: ${riskKindLabels[risk.kind]}`,
       variables: {
         risk_id: risk.id,

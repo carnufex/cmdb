@@ -1,16 +1,30 @@
-# Driftagenten i ElevenLabs
+# Röstagenterna i ElevenLabs
 
-Röstagenten för felanmälan (epic #130, ADR-0015). Här finns allt agenten består av: prompten, runbooks och inställningarna. Skriptet `deploy.py` gör ElevenLabs likt repot.
+Tre agenter (ADR-0015, ADR-0016, #151). Här finns allt de består av: prompter, runbooks och inställningar. Skriptet `deploy.py` gör ElevenLabs likt repot.
+
+- **Service desk (Saga)** svarar alla samtal, på svenska och engelska: "Hej, det här är Saga på service desk, hur kan jag hjälpa dig? Hi, this is Saga at the service desk, how can I help you?"
+  - Passertaggar som slutat fungera löser hon själv, efter verifiering.
+  - IT (lösenord, konto, dator, utrustning) lämnas över till **IT-självhjälpen**.
+  - Nätet (CMDB, fiber, stationer, larm) lämnas över till **NOC-agenten** (Driftagenten).
+  - Allt annat: "Det kan jag tyvärr inte hjälpa dig med. Vill du att en människa ringer upp dig? Det är cirka X minuters kö."
+- **Överlämningen** sker med `transfer_to_agent`. Transkriptet och samtals-id:t följer med, så en verifiering gäller i hela samtalet. IT-självhjälpen och NOC kan lämna tillbaka till service desk.
+- **Varje agent har sin egen MCP-ingång** med bara sina verktyg: `/voice/servicedesk/mcp`, `/voice/it/mcp` och `/voice/mcp` (NOC).
+- **Utgående risksamtal** går direkt till NOC-agenten.
 
 | Fil | Innehåll |
 |---|---|
-| `prompt.md` | Systemprompten (svenska): arbetsgång, verifiering och regler |
+| `servicedesk.md` | Växelns prompt: passertaggar, överlämning och uppringning |
+| `it.md` | IT-självhjälpens prompt: lösenord och utrustning |
+| `prompt.md` | NOC-agentens prompt: arbetsgång, verifiering och regler |
 | `runbooks/*.md` | Kunskapsbasen: länk nere, strömavbrott och fiberbrott (syntetiska) |
-| `deploy.py` | Skapar eller uppdaterar rösten, hemligheten, MCP-servern, kunskapsbasen och agenten |
+| `deploy.py` | Skapar eller uppdaterar rösten, hemligheten, MCP-servrarna, kunskapsbasen och de tre agenterna med överlämningar |
 | `agent.json` | Id:n för det som skapats (inte hemliga) |
 | `e2e.mjs` | Helflödestest mot den riktiga agenten i textläge: `inbound`, `refusal` och `outbound` |
-| `tests/*.json` | Agenttester i ElevenLabs, kopplade till agenten av `deploy.py` |
-| `run_tests.py` | Kör agenttesterna, avslutar med kod 1 vid fel |
+| `tests/*.json` | NOC-agentens agenttester i ElevenLabs |
+| `tests/servicedesk/*.json` | Växelns routningstester: IT, nätet, passertagg och övrigt |
+| `run_tests.py` | Kör agenttesterna (`servicedesk` för växeln), avslutar med kod 1 vid fel |
+
+Varje testkörning kostar ElevenLabs-credits. Kör bara det som täcker ändringen, en gång.
 
 ## Inställningar
 - **Röst:** "Sanna Hartfield" (svensk, Stockholm), TTS-modell `eleven_v4_turbo`, språk `sv` med `en` som extra språk (#147): `language_detection` byter till engelska när uppringaren talar engelska.

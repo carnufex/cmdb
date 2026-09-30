@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Cmdb.DataGen;
 using Microsoft.AspNetCore.Mvc.Testing;
+using ModelContextProtocol;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using Npgsql;
@@ -24,7 +25,8 @@ public sealed partial class VoiceTests(ApiFactory factory)
         var (_, api) = await NetworkFixture.WithScenariosAsync(factory);
         await using var voice = await ConnectAsync(api, NewCall());
         (await voice.ListToolsAsync(cancellationToken: Ct)).Select(t => t.Name).Order()
-            .ShouldBe(["create_incident", "fault_impact", "find_station", "request_verification_code", "risk_details", "station_overview", "verify_caller"]);
+            .ShouldBe(["create_incident", "fault_impact", "find_station", "queue_status", "request_callback", "request_verification_code", "risk_details",
+                "station_overview", "verify_caller"]);
         voice.ServerInstructions.ShouldNotBeNull().ShouldContain("verified");
 
         var body = new StringContent("""{"jsonrpc":"2.0","id":1,"method":"tools/list"}""", System.Text.Encoding.UTF8, "application/json");
@@ -232,6 +234,81 @@ public sealed partial class VoiceTests(ApiFactory factory)
         incident.GetProperty("priority").GetString()!.ShouldBeOneOf("P1", "P2");
     }
 
+    [Fact]
+    public async Task Each_voice_agent_gets_only_its_own_tools()
+    {
+        var (_, api) = await NetworkFixture.WithScenariosAsync(factory);
+        await using var desk = await ConnectAsync(api, NewCall(), "/voice/servicedesk/mcp");
+        (await desk.ListToolsAsync(cancellationToken: Ct)).Select(t => t.Name).Order()
+            .ShouldBe(["queue_status", "report_tag_fault", "request_callback", "request_verification_code", "verify_caller"]);
+        await using var it = await ConnectAsync(api, NewCall(), "/voice/it/mcp");
+        (await it.ListToolsAsync(cancellationToken: Ct)).Select(t => t.Name).Order()
+            .ShouldBe(["equipment_catalog", "order_equipment", "queue_status", "request_callback", "request_verification_code", "reset_password", "verify_caller"]);
+        // The network's tools are not reachable from the switchboard, whatever its prompt says (ADR-0016).
+        (await Should.ThrowAsync<McpProtocolException>(() =>
+            desk.CallToolAsync("fault_impact", new Dictionary<string, object?> { ["reference"] = "site:1" }, cancellationToken: Ct).AsTask()))
+            .Message.ShouldContain("Unknown tool");
+
+        // /mcp serves none of the voice tools.
+        var person = NetworkFixture.Client(api);
+        await using var mcp = await McpClient.CreateAsync(new HttpClientTransport(
+            new HttpClientTransportOptions { Endpoint = new Uri(person.BaseAddress!, "/mcp"), TransportMode = HttpTransportMode.StreamableHttp },
+            person, ownsHttpClient: true), cancellationToken: Ct);
+        var names = (await mcp.ListToolsAsync(cancellationToken: Ct)).Select(t => t.Name).ToList();
+        names.ShouldNotContain("report_tag_fault");
+        names.ShouldNotContain("reset_password");
+        names.ShouldNotContain("verify_caller");
+    }
+
+    [Fact]
+    public async Task The_service_desk_blocks_a_tag_and_IT_resets_a_password_only_for_a_verified_caller_and_texts_the_number()
+    {
+        var (db, api) = await NetworkFixture.WithScenariosAsync(factory);
+        var call = NewCall();
+        await using var desk = await ConnectAsync(api, call, "/voice/servicedesk/mcp");
+        (await desk.CallToolAsync("report_tag_fault", new Dictionary<string, object?> { ["description"] = "Taggen fungerar inte" }, cancellationToken: Ct))
+            .IsError.ShouldBe(true);
+
+        await VerifyAsync(desk, db, "1001");
+        var tag = await CallAsync(desk, "report_tag_fault", new() { ["description"] = "Taggen fungerar inte på entrén" });
+        tag.TryGetProperty("number", out _).ShouldBeFalse();
+        tag.GetProperty("numberSentBySms").GetBoolean().ShouldBeTrue();
+        (await LatestSmsAsync(db, "1001")).ShouldMatch(@"SR-\d{5}.*passertagg");
+
+        // Handed over to IT self-service in the same call: the verification carries over (same conversation id).
+        await using var it = await ConnectAsync(api, call, "/voice/it/mcp");
+        await CallAsync(it, "reset_password", new() { ["account"] = "e-post" });
+        (await LatestSmsAsync(db, "1001")).ShouldContain("återställ lösenordet för e-post");
+        var order = await CallAsync(it, "order_equipment", new() { ["item"] = "headset", ["reason"] = "Det gamla är trasigt" });
+        order.GetProperty("message").GetString()!.ShouldContain("Headset");
+        (await it.CallToolAsync("order_equipment", new Dictionary<string, object?> { ["item"] = "yacht", ["reason"] = "-" }, cancellationToken: Ct))
+            .IsError.ShouldBe(true);
+
+        using var web = NetworkFixture.Client(api);
+        var list = await web.GetFromJsonAsync<JsonElement>("/api/voice/service-requests", Ct);
+        list.GetProperty("requests").EnumerateArray().Where(r => r.GetProperty("conversationId").GetString() == call)
+            .Select(r => r.GetProperty("kind").GetString()).Order().ShouldBe(["equipment", "password", "tag"]);
+    }
+
+    [Fact]
+    public async Task Anyone_can_book_a_callback_and_the_queue_grows_with_it()
+    {
+        var (_, api) = await NetworkFixture.WithScenariosAsync(factory);
+        await using var desk = await ConnectAsync(api, NewCall(), "/voice/servicedesk/mcp");
+        var before = (await CallAsync(desk, "queue_status", [])).GetProperty("minutes").GetInt32();
+        (await desk.CallToolAsync("request_callback", new Dictionary<string, object?> { ["topic"] = "Fråga om fakturan" }, cancellationToken: Ct))
+            .IsError.ShouldBe(true);
+        var booked = await CallAsync(desk, "request_callback", new() { ["topic"] = "Fråga om fakturan", ["name"] = "Alva Test", ["phone"] = "0700000000" });
+        booked.GetProperty("minutes").GetInt32().ShouldBe(before);
+        (await CallAsync(desk, "queue_status", [])).GetProperty("minutes").GetInt32().ShouldBe(before + 5);
+    }
+
+    private static async Task<string> LatestSmsAsync(NpgsqlDataSource db, string employee)
+    {
+        await using var cmd = db.CreateCommand($"SELECT body FROM voice_sms WHERE employee_id = '{employee}' ORDER BY id DESC LIMIT 1");
+        return (string)(await cmd.ExecuteScalarAsync(Ct))!;
+    }
+
     private static string NewCall() => $"conv_{Guid.NewGuid():N}";
 
     private static HttpClient Http(WebApplicationFactory<Program> api, string conversation, string secret = ApiFactory.VoiceSecret)
@@ -242,11 +319,11 @@ public sealed partial class VoiceTests(ApiFactory factory)
         return http;
     }
 
-    private static async Task<McpClient> ConnectAsync(WebApplicationFactory<Program> api, string conversation)
+    private static async Task<McpClient> ConnectAsync(WebApplicationFactory<Program> api, string conversation, string path = "/voice/mcp")
     {
         var http = Http(api, conversation);
         var transport = new HttpClientTransport(
-            new HttpClientTransportOptions { Endpoint = new Uri(http.BaseAddress!, "/voice/mcp"), TransportMode = HttpTransportMode.StreamableHttp },
+            new HttpClientTransportOptions { Endpoint = new Uri(http.BaseAddress!, path), TransportMode = HttpTransportMode.StreamableHttp },
             http,
             ownsHttpClient: true);
         return await McpClient.CreateAsync(transport, cancellationToken: Ct);

@@ -19,3 +19,4 @@ Nya beslut: kopiera närmaste ADR, öka numret och sätt status **Föreslagen**.
 | [0013](0013-lagring-av-historik-och-loggar.md) | Lagring av historik, operationslogg och läslogg (**Föreslagen**, #101) |
 | [0014](0014-kanalisation.md) | Kanalisation: trasé, dukt, subdukt och beläggning (**Föreslagen**, #103) |
 | [0015](0015-driftagent-rostkanal-och-verifiering.md) | Driftagentens röstkanal (ElevenLabs) och verifiering av uppringare med engångskod (#131) |
+| [0016](0016-rostvaxel-med-flera-agenter.md) | Röstväxel: service desk lämnar över till IT-självhjälp och NOC-agent (#151) |
