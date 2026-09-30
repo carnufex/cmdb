@@ -56,6 +56,11 @@ internal static class Cli
             // The operations agent's scenarios (#132) on an already loaded network, without generating anything.
             var system = new NpgsqlConnectionStringBuilder(connection) { CommandTimeout = 0, Options = "-c cmdb.scopes=*" };
             await using var source = CmdbDatabase.CreateDataSource(system.ConnectionString);
+            await CmdbDatabase.MigrateAsync(source);
+            await using (var context = CmdbDatabase.CreateContext(source))
+            {
+                await Cmdb.Database.Voice.VoiceCallerCatalog.SyncAsync(context);
+            }
             await using (var conn = await source.OpenConnectionAsync())
             {
                 await DemoScenarios.SeedAsync(conn, Console.Out, CancellationToken.None);

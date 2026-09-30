@@ -41,7 +41,7 @@ public sealed class VoiceTools(SystemDb system, RequestDb db, GraphHolder holder
 {
     public static readonly IReadOnlySet<string> Names = new HashSet<string>(StringComparer.Ordinal)
     {
-        "find_station", "request_verification_code", "verify_caller", "station_overview", "fault_impact", "create_incident",
+        "find_station", "request_verification_code", "verify_caller", "station_overview", "fault_impact", "create_incident", "risk_details",
     };
 
     private const int TopServices = 5;
@@ -221,6 +221,27 @@ public sealed class VoiceTools(SystemDb system, RequestDb db, GraphHolder holder
         }, r => r.Priority);
     }
 
+    [McpServerTool(Name = "risk_details", Title = "Riskdetaljer", ReadOnly = true, Idempotent = true, OpenWorld = false)]
+    [Description("For a proactive call about a risk (#137): what the risk is, where, which services it threatens and the " +
+        "suggested action. The risk id comes from the call's context (risk_id). Verified callers only; an incident for " +
+        "the risk is created with create_incident on the risk's reference.")]
+    public async Task<Risk> RiskDetails(
+        [Description("The risk id from the call's context, e.g. \"dig-1-4711\".")] string riskId,
+        CancellationToken ct = default)
+    {
+        return await AuditAsync("risk_details", async () =>
+        {
+            RequireVerified();
+            if (holder.Current is not { } graph)
+            {
+                throw new McpException("Nätgrafen laddas, försök igen om några sekunder.");
+            }
+            var risks = await RiskDetection.RunAsync(graph, await masks.GetAsync(graph, Scope, ct), db.Source, Scope, ct);
+            return risks.FirstOrDefault(r => r.Id == riskId.Trim())
+                ?? throw new McpException("Risken finns inte längre, eller ligger utanför uppringarens behörighet.");
+        }, r => r.Kind);
+    }
+
     private async Task<Fault> AnalyseAsync(string reference, CancellationToken ct)
     {
         var (type, id) = Reference(reference);
@@ -269,12 +290,12 @@ public sealed class VoiceTools(SystemDb system, RequestDb db, GraphHolder holder
     {
         var value = reference.Trim();
         var colon = value.IndexOf(':', StringComparison.Ordinal);
-        if (colon > 0 && value[..colon] is "site" or "equipment"
+        if (colon > 0 && value[..colon] is "site" or "equipment" or "cable"
             && long.TryParse(value.AsSpan(colon + 1), NumberStyles.None, CultureInfo.InvariantCulture, out var id))
         {
             return (value[..colon], id);
         }
-        throw new McpException("Ange stationen som \"site:ID\" från find_station, eller utrustning som \"equipment:ID\".");
+        throw new McpException("Ange stationen som \"site:ID\" från find_station, utrustning som \"equipment:ID\" eller kabel som \"cable:ID\".");
     }
 
     private static long SiteId(string station) => Reference(station) is ("site", var id) ? id

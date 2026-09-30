@@ -2,8 +2,10 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
+import { RUNTIME_CONFIG } from '../config';
 import { PanelStack } from '../shell/panels';
-import { Incident, VoiceActivity, VoicePanelComponent } from './voice-panel';
+import { VoiceCall } from './voice-call';
+import { Incident, Risk, VoiceActivity, VoicePanelComponent } from './voice-panel';
 
 describe('operations agent panel', () => {
   const incident: Incident = {
@@ -44,9 +46,33 @@ describe('operations agent panel', () => {
     ],
   };
 
+  const risk: Risk = {
+    id: 'dig-1-4711',
+    kind: 'digging',
+    title: 'Schaktning för fjärrvärmeledning korsar kabel K-004711',
+    description: 'Markentreprenad Exempel AB gräver 2 oktober–9 oktober.',
+    reference: 'cable:4711',
+    siteId: 12,
+    siteCode: 'AGG-0012',
+    siteName: 'Lingonåsen',
+    affectedServices: 30,
+    criticalServices: 4,
+    responsibleEmployeeId: '1001',
+    responsibleName: 'Kim Lindqvist',
+    suggestedAction: 'Kontakta entreprenören före start.',
+  };
+
   beforeEach(() => {
     TestBed.configureTestingModule({
-      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        {
+          provide: RUNTIME_CONFIG,
+          useValue: { oidcAuthority: '', oidcClientId: '', voiceAgentId: 'agent_test' },
+        },
+      ],
     });
   });
 
@@ -63,6 +89,7 @@ describe('operations agent panel', () => {
     const fixture = TestBed.createComponent(VoicePanelComponent);
     await settle(fixture);
     http.expectOne((r) => r.url === '/api/incidents').flush([incident]);
+    http.expectOne((r) => r.url === '/api/risks').flush([risk]);
     http.expectOne((r) => r.url === '/api/voice/activity').flush(activity);
     await settle(fixture);
 
@@ -76,6 +103,25 @@ describe('operations agent panel', () => {
       (fixture.nativeElement as HTMLElement).querySelector('[data-priority="P1"] .dot'),
     ).not.toBeNull();
 
+    expect(text).toContain('Schaktning för fjärrvärmeledning korsar kabel K-004711');
+    expect(text).toContain('4 kritiska av 30 tjänster');
+
+    // The proactive call carries the risk to the agent, which verifies before any detail.
+    const start = vi.spyOn(TestBed.inject(VoiceCall), 'start').mockImplementation(() => undefined);
+    const ring = [
+      ...(fixture.nativeElement as HTMLElement).querySelectorAll<HTMLButtonElement>('button'),
+    ].find((b) => b.textContent?.includes('Ring Kim Lindqvist'))!;
+    ring.click();
+    expect(start).toHaveBeenCalledWith(
+      expect.objectContaining({
+        variables: expect.objectContaining({
+          risk_id: 'dig-1-4711',
+          responsible_employee_id: '1001',
+        }),
+      }),
+    );
+    expect(start.mock.calls[0][0].firstMessage).toContain('verifiera dig');
+
     const open = vi.spyOn(TestBed.inject(PanelStack), 'open');
     (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('button.link')!.click();
     expect(open).toHaveBeenCalledWith({ type: 'site', id: '12' });
@@ -87,6 +133,7 @@ describe('operations agent panel', () => {
     const fixture = TestBed.createComponent(VoicePanelComponent);
     await settle(fixture);
     http.expectOne((r) => r.url === '/api/incidents').flush([]);
+    http.expectOne((r) => r.url === '/api/risks').flush([]);
     http
       .expectOne((r) => r.url === '/api/voice/activity')
       .flush(null, { status: 403, statusText: 'Forbidden' });

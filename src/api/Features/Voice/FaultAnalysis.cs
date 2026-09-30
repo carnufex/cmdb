@@ -38,7 +38,7 @@ public static class IncidentPriority
 }
 
 /// <summary>
-/// What a fault at a site or on equipment does (#133): the impact analysis of the graph (#10), and for each affected
+/// What a fault at a site, on equipment or on a cable does (#133, #137): the impact analysis of the graph (#10), and for each affected
 /// service whether another of its circuits avoids the fault. Two circuits that both run through the fault are false
 /// redundancy: the network looks protected on paper and is not. Within the caller's access scopes (#22).
 /// </summary>
@@ -57,6 +57,14 @@ public static class FaultAnalysis
         {
             siteId = g.SiteId(g.SiteIndexOfEquipment(equipment));
             result = GraphImpact.OfEquipment(g, equipment);
+        }
+        else if (type == "cable" && g.TryGetCable(id, out var cable) && mask.CableVisible(cable))
+        {
+            // A cable belongs to no site; its A end names the place.
+            await using var cmd = db.CreateCommand("SELECT a_site_id FROM cable WHERE id = $1");
+            cmd.Parameters.Add(new() { Value = id });
+            siteId = (long)(await cmd.ExecuteScalarAsync(ct))!;
+            result = GraphImpact.OfCable(g, cable);
         }
         else
         {

@@ -10,6 +10,7 @@ import {
 import { PanelStack } from '../shell/panels';
 import { Tools } from '../shell/tools';
 import { VoiceRoiComponent } from './roi';
+import { VoiceCall } from './voice-call';
 
 /** GET /api/incidents (#135) */
 export interface Incident {
@@ -33,6 +34,29 @@ export interface Incident {
     summary?: string;
   };
 }
+
+/** GET /api/risks (#137) */
+export interface Risk {
+  id: string;
+  kind: 'digging' | 'false-redundancy' | 'battery';
+  title: string;
+  description: string;
+  reference: string;
+  siteId: number;
+  siteCode: string;
+  siteName: string;
+  affectedServices: number;
+  criticalServices: number;
+  responsibleEmployeeId: string;
+  responsibleName: string;
+  suggestedAction: string;
+}
+
+export const riskKindLabels: Record<Risk['kind'], string> = {
+  digging: 'Grävning',
+  'false-redundancy': 'Falsk redundans',
+  battery: 'Reservkraft',
+};
 
 /** GET /api/voice/activity (ADR-0015) */
 export interface VoiceActivity {
@@ -71,6 +95,38 @@ const POLL_MS = 3000;
       </button>
     </header>
     <div class="body">
+      @if (call.enabled) {
+        <button type="button" class="primary" (click)="callAgent()">Ring driftagenten</button>
+      }
+      <section aria-labelledby="risks">
+        <h3 id="risks">Risker</h3>
+        @for (r of risks(); track r.id) {
+          <article class="risk">
+            <p class="meta">
+              <span class="status" [attr.data-kind]="r.kind">
+                <span class="dot" aria-hidden="true"></span>{{ riskKindLabels[r.kind] }}
+              </span>
+              <span>{{ r.criticalServices }} kritiska av {{ r.affectedServices }} tjänster</span>
+            </p>
+            <p class="title">{{ r.title }}</p>
+            <p>{{ r.description }}</p>
+            <p class="muted">Åtgärd: {{ r.suggestedAction }}</p>
+            <p class="actions">
+              <button type="button" class="link" (click)="openSite(r.siteId)">
+                {{ r.siteName }}
+              </button>
+              @if (call.enabled) {
+                <button type="button" class="secondary" (click)="callResponsible(r)">
+                  Ring {{ r.responsibleName }}
+                </button>
+              }
+            </p>
+          </article>
+        } @empty {
+          <p class="muted">Inga risker.</p>
+        }
+      </section>
+
       <section aria-labelledby="incidents">
         <h3 id="incidents">Ärenden</h3>
         @for (i of incidents(); track i.number) {
@@ -248,6 +304,44 @@ const POLL_MS = 3000;
       cursor: pointer;
       margin-bottom: var(--space-2);
     }
+    .risk {
+      padding: var(--space-2) 0;
+      border-bottom: var(--line);
+    }
+    .title {
+      font-weight: 600;
+    }
+    .actions {
+      display: flex;
+      gap: var(--space-2);
+      align-items: center;
+    }
+    [data-kind='digging'] .dot,
+    [data-kind='false-redundancy'] .dot {
+      background: var(--status-removed);
+    }
+    [data-kind='battery'] .dot {
+      background: var(--status-decommissioning);
+    }
+    .primary,
+    .secondary {
+      padding: var(--space-1) var(--space-3);
+      border: var(--line);
+      border-radius: var(--radius-sm);
+      font: inherit;
+      font-size: var(--text-sm);
+      cursor: pointer;
+    }
+    .primary {
+      align-self: flex-start;
+      background: var(--action);
+      color: var(--on-action, #fff);
+      border-color: var(--action);
+    }
+    .secondary {
+      background: var(--surface-2);
+      color: var(--text);
+    }
     .sms {
       padding: var(--space-2);
       border: var(--line);
@@ -272,6 +366,8 @@ const POLL_MS = 3000;
 })
 export class VoicePanelComponent {
   protected readonly tools = inject(Tools);
+  protected readonly call = inject(VoiceCall);
+  protected readonly riskKindLabels = riskKindLabels;
   private readonly panels = inject(PanelStack);
   protected readonly priorityLabels = priorityLabels;
 
@@ -281,6 +377,20 @@ export class VoicePanelComponent {
     url: '/api/incidents',
     params: { t: this.tick() },
   }));
+  private readonly risksResource = httpResource<Risk[]>(() => ({
+    url: '/api/risks',
+    // Risks change slowly: every tenth poll.
+    params: { t: Math.floor(this.tick() / 10) },
+  }));
+  private lastRisks: Risk[] = [];
+  protected readonly risks = computed(() => {
+    const value = this.risksResource.hasValue() ? this.risksResource.value() : undefined;
+    if (value) {
+      this.lastRisks = value;
+    }
+    return this.lastRisks;
+  });
+
   private readonly activityResource = httpResource<VoiceActivity>(() => ({
     url: '/api/voice/activity',
     params: { t: this.tick() },
@@ -311,6 +421,26 @@ export class VoicePanelComponent {
   constructor() {
     const timer = setInterval(() => this.tick.update((t) => t + 1), POLL_MS);
     inject(DestroyRef).onDestroy(() => clearInterval(timer));
+  }
+
+  protected callAgent(): void {
+    this.call.start({ variables: {}, label: 'Samtal med driftagenten' });
+  }
+
+  /** The proactive call (#137): the agent opens with the risk, and verifies the person before any detail. */
+  protected callResponsible(risk: Risk): void {
+    this.call.start({
+      label: `Ringer ${risk.responsibleName}: ${riskKindLabels[risk.kind]}`,
+      variables: {
+        risk_id: risk.id,
+        risk_title: risk.title,
+        responsible_name: risk.responsibleName,
+        responsible_employee_id: risk.responsibleEmployeeId,
+      },
+      firstMessage:
+        `Hej ${risk.responsibleName}, det här är Driftagenten. Jag ringer om en risk i nätet som du ansvarar för. ` +
+        'Innan jag berättar mer behöver jag verifiera dig. Vad är ditt anställningsnummer?',
+    });
   }
 
   protected openSite(id: number): void {

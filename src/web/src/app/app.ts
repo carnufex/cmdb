@@ -15,6 +15,7 @@ import { ActivePlan } from './plans/active-plan';
 import { PlanPanelComponent } from './plans/plan-panel';
 import { GridPanelComponent } from './grid/grid-panel';
 import { ChangelogPanelComponent, ChangelogStore } from './changelog/changelog';
+import { VoiceCallComponent } from './voice/voice-call';
 import { VoicePanelComponent } from './voice/voice-panel';
 
 /** The user as the API sees them (GET /api/me). */
@@ -42,6 +43,7 @@ export interface Me {
     GridPanelComponent,
     ChangelogPanelComponent,
     VoicePanelComponent,
+    VoiceCallComponent,
   ],
   templateUrl: './app.html',
   styleUrl: './app.scss',

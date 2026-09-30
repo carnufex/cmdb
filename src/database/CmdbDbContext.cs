@@ -47,6 +47,7 @@ public sealed class CmdbDbContext(DbContextOptions<CmdbDbContext> options) : DbC
     public DbSet<VoiceSession> VoiceSessions => Set<VoiceSession>();
     public DbSet<VoiceToolCall> VoiceToolCalls => Set<VoiceToolCall>();
     public DbSet<Incident> Incidents => Set<Incident>();
+    public DbSet<PlannedWork> PlannedWorks => Set<PlannedWork>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

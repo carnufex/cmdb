@@ -35,5 +35,18 @@ Entreprenören ser bara det region Nord visar, samma som i webben. En station ut
 3. `fault_impact` ger P1, kritiska tjänster nere och falsk redundans. Agenten förklarar det kort.
 4. `create_incident` skapar ärendet `INC-…` med prioritet P1, och jouren larmas. Ärendet syns i panelen Driftagent med berikningen.
 
-## Kvar att bygga
-- Scenario 2 (grävkonflikt) och scenario 3 (åldrad utrustning och batteri) kommer med #137.
+## Scenario 2: grävkonflikt (proaktivt, #137)
+**Markentreprenad Exempel AB** planerar schaktning för en fjärrvärmeledning om två dagar. Arbetet är ett område på 25 meter runt mitten av den kabel som bär flest kritiska tjänster. `GET /api/risks` hittar korsningen med PostGIS, och påverkansanalysen på kabeln visar tjänsterna. Ansvarig är Kim Lindqvist (1001).
+
+## Scenario 3: gammalt reservkraftbatteri (proaktivt, #137)
+Ett batteri (`acme-bat-100`) på Lingonåsen installerades 2013. Livslängden är 8 år, och risken visar vad stationen bär om reservkraften inte räcker.
+
+Falsk redundans ("Mobilnät Lingonåsen norr", vars båda vägar går via Lingonåsen och Nav 4) listas också som risk.
+
+## Demoflöde (utgående, #137)
+1. Öppna panelen **Driftagent** i webben. Under **Risker** syns grävkonflikten, den falska redundansen och batteriet.
+2. Klicka **Ring Kim Lindqvist** på grävkonflikten. ElevenLabs-widgeten öppnas med risken som dynamiska variabler, och agenten ringer upp: "Jag ringer om en risk i nätet som du ansvarar för. Innan jag berättar mer behöver jag verifiera dig."
+3. Verifiera med 1001 och koden. Agenten anropar `risk_details`, förklarar grävningen och vilka tjänster kabeln bär, och föreslår åtgärden.
+4. Säg "ja, skapa ett ärende". Ärendet skapas på kabeln och syns i panelen.
+
+Telefoni (Twilio) används inte i demon. Samtalet går i webben.

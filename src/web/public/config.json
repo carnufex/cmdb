@@ -1,5 +1,6 @@
 {
   "oidcAuthority": "https://authentik.rosenvall.se/application/o/cmdb/",
   "oidcClientId": "cmdb-web",
-  "basemap": "esri"
+  "basemap": "esri",
+  "voiceAgentId": ""
 }

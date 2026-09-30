@@ -120,6 +120,12 @@ Driftagenten (epic #130, ADR-0015) är en ElevenLabs-agent som tar emot felanmä
   - P2: en kritisk tjänst har kvar en väg, eller en annan tjänst saknar väg.
   - P3: övrigt.
 - **Loggning:** varje verktygsanrop loggas i `voice_tool_call` med verktyg, utfall, tid, samtal och verifierad uppringare.
+- **Proaktiva risker (#137):** `GET /api/risks` hittar risker inom anroparens omfång:
+  - planerat arbete (`planned_work`) som korsar en kabel
+  - falsk redundans, där alla vägar för en tjänst går via samma site
+  - reservkraftbatterier äldre än 8 år
+
+  **Ring ansvarig** i webben öppnar ElevenLabs-widgeten med risken som dynamiska variabler (`risk_id` m.fl.). Agenten verifierar och hämtar sedan risken med `risk_details`. Widgeten laddas först när ett samtal startar och bara om `VOICE_AGENT_ID` är satt.
 
 Demoscenarier och uppringare finns i [demo-scenarier.md](demo-scenarier.md).
 
