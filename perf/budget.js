@@ -142,12 +142,14 @@ export function handleSummary(data) {
       return { ...r, status: 'pending' };
     }
     const p95 = value(data, `server_${r.key}`, 'p(95)');
+    const n = value(data, `server_${r.key}`, 'count') ?? 0;
     return {
       ...r,
-      n: value(data, `server_${r.key}`, 'count') ?? 0,
+      n,
       server: { p50: value(data, `server_${r.key}`, 'p(50)'), p95, max: value(data, `server_${r.key}`, 'max') },
       client: { p50: value(data, `client_${r.key}`, 'p(50)'), p95: value(data, `client_${r.key}`, 'p(95)') },
-      status: p95 === null ? 'no-data' : p95 < r.budget ? 'ok' : 'over',
+      // A failed setup leaves the trends in place with zeros: no requests is no data, not within budget (#126).
+      status: p95 === null || n === 0 ? 'no-data' : p95 < r.budget ? 'ok' : 'over',
     };
   });
   const failed = value(data, 'failures', 'count') ?? 0;
