@@ -24,7 +24,7 @@ public sealed partial class VoiceTests(ApiFactory factory)
         var (_, api) = await NetworkFixture.WithScenariosAsync(factory);
         await using var voice = await ConnectAsync(api, NewCall());
         (await voice.ListToolsAsync(cancellationToken: Ct)).Select(t => t.Name).Order()
-            .ShouldBe(["create_incident", "fault_impact", "find_station", "request_verification_code", "station_overview", "verify_caller"]);
+            .ShouldBe(["create_incident", "fault_impact", "find_station", "request_verification_code", "risk_details", "station_overview", "verify_caller"]);
         voice.ServerInstructions.ShouldNotBeNull().ShouldContain("verified");
 
         var body = new StringContent("""{"jsonrpc":"2.0","id":1,"method":"tools/list"}""", System.Text.Encoding.UTF8, "application/json");
@@ -179,6 +179,50 @@ public sealed partial class VoiceTests(ApiFactory factory)
         // The SMS outbox is only for callers who see the whole network.
         using var regional = NetworkFixture.Client(api, "cmdb-demo-region", ["cmdb-region-nord"]);
         (await regional.GetAsync("/api/voice/activity", Ct)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task Risks_are_found_within_scope_and_a_verified_call_gets_one_and_opens_an_incident()
+    {
+        var (db, api) = await NetworkFixture.WithScenariosAsync(factory);
+        using var web = NetworkFixture.Client(api);
+        var risks = (await web.GetFromJsonAsync<JsonElement>("/api/risks", Ct)).EnumerateArray().ToList();
+        var kinds = risks.Select(r => r.GetProperty("kind").GetString()).ToHashSet();
+        kinds.ShouldBe(["digging", "false-redundancy", "battery"], ignoreOrder: true);
+
+        var dig = risks.First(r => r.GetProperty("kind").GetString() == "digging");
+        dig.GetProperty("criticalServices").GetInt32().ShouldBeGreaterThan(0);
+        dig.GetProperty("responsibleName").GetString().ShouldBe("Kim Lindqvist");
+        dig.GetProperty("reference").GetString()!.ShouldStartWith("cable:");
+        var redundancy = risks.Single(r => r.GetProperty("kind").GetString() == "false-redundancy");
+        redundancy.GetProperty("title").GetString()!.ShouldContain($"Mobilnät {DemoScenarios.Station} norr");
+        redundancy.GetProperty("siteName").GetString().ShouldBe(DemoScenarios.Station);
+        risks.Single(r => r.GetProperty("kind").GetString() == "battery").GetProperty("description").GetString()!
+            .ShouldContain(DemoScenarios.BatteryYear.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+        // The region's view: only risks at what region Nord shows.
+        using var regional = NetworkFixture.Client(api, "cmdb-demo-region", ["cmdb-region-nord"]);
+        var visible = (await regional.GetFromJsonAsync<JsonElement>("/api/risks", Ct)).EnumerateArray().ToList();
+        foreach (var risk in visible)
+        {
+            (await CountAsync(db, $"SELECT count(*) FROM scope_site WHERE scope_key = 'region-nord' AND site_id = {risk.GetProperty("siteId").GetInt64()}"))
+                .ShouldBe(1, risk.GetProperty("id").GetString());
+        }
+
+        // The proactive call: nothing before verification, then the risk, then an incident on its reference.
+        await using var voice = await ConnectAsync(api, NewCall());
+        var id = dig.GetProperty("id").GetString();
+        (await voice.CallToolAsync("risk_details", new Dictionary<string, object?> { ["riskId"] = id }, cancellationToken: Ct)).IsError.ShouldBe(true);
+        await VerifyAsync(voice, db, "1001");
+        var details = await CallAsync(voice, "risk_details", new() { ["riskId"] = id });
+        details.GetProperty("title").GetString().ShouldBe(dig.GetProperty("title").GetString());
+        var incident = await CallAsync(voice, "create_incident", new()
+        {
+            ["reference"] = details.GetProperty("reference").GetString(),
+            ["description"] = "Planerad grävning korsar kabeln, skyddsåtgärd behövs",
+            ["observations"] = "Ansvarig bekräftade i samtal.",
+        });
+        incident.GetProperty("priority").GetString()!.ShouldBeOneOf("P1", "P2");
     }
 
     private static string NewCall() => $"conv_{Guid.NewGuid():N}";

@@ -11,7 +11,8 @@ ENV API_UPSTREAM=http://api:8080 \
     OIDC_AUTHORITY=https://authentik.rosenvall.se/application/o/cmdb/ \
     OIDC_CLIENT_ID=cmdb-web \
     MAP_BASEMAP=esri \
-    NGINX_ENVSUBST_FILTER=^(API_|OIDC_|MAP_)
+    VOICE_AGENT_ID= \
+    NGINX_ENVSUBST_FILTER=^(API_|OIDC_|MAP_|VOICE_)
 COPY nginx/default.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=build /app/dist/web/browser /usr/share/nginx/html
 EXPOSE 8080

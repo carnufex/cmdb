@@ -102,11 +102,72 @@ def knowledge_base(state: dict) -> tuple[list[dict], list[str]]:
     return entries, stale
 
 
+def guardrail(name: str, prompt: str, feedback: str) -> dict:
+    """A custom guardrail: a small model judges each reply before it is spoken. Blocking with retry, so the agent
+    rephrases instead of the call ending; agent/tests and agent/e2e.mjs check that legitimate replies still pass."""
+    return {
+        "is_enabled": True, "name": name, "prompt": prompt, "execution_mode": "blocking", "model": "gemini-3.1-flash-lite",
+        "history_message_count": 8, "history_include_tool_calls": True, "evaluate_full_response_only": False,
+        "trigger_action": {"type": "retry", "feedback": feedback + " Reason: {{trigger_reason}}"},
+    }
+
+
+# Built in: stay on topic and resist prompt injection. Custom: the three things that must never happen, judged on
+# every reply. The server enforces access regardless; these keep the agent from even saying the wrong thing.
+GUARDRAILS = {
+    "version": "1",
+    "focus": {"is_enabled": True},
+    "prompt_injection": {"is_enabled": True},
+    "custom": {"config": {"configs": [
+        guardrail(
+            "Inga nätdetaljer före verifiering",
+            "Evaluate only the agent's current reply. Block it if it discloses network details: names or codes of services "
+            "(for example TJ-0000611 or 'Mobilnät ...'), equipment, cables, how many services are affected, a priority (P1, P2, P3), "
+            "an incident number, or what a risk is about (a place, a cable, digging, a battery), while the conversation history "
+            "contains no verify_caller tool result with status verified. "
+            "Do NOT block: the greeting; the station's name, type, region and status as find_station returned them; asking which "
+            "station, asking for the employee id or the code; saying that a code was sent; explaining that verification is needed; "
+            "an opening that only says there is a risk to talk about without saying what it is; anything after a verify_caller "
+            "result with status verified.",
+            "Your reply disclosed network details before the caller was verified. Ask for the employee id and verify first.",
+        ),
+        guardrail(
+            "Inga ärenden eller prioriteter utan verktygssvar",
+            "Evaluate only the agent's current reply. Block it if it states, as a fact about this call, an incident number, that an "
+            "incident was created, a priority, or that the on-call engineer was notified, while no create_incident or fault_impact "
+            "tool result in the conversation history gives it. Do NOT block: offers to create an incident, questions, plans, "
+            "numbers and priorities that a tool result in the history gives, or reports of tool errors.",
+            "Your reply claimed an incident, a priority or an on-call notification that no tool result confirms. Say only what the tools returned.",
+        ),
+        guardrail(
+            "Aldrig verifieringskoden",
+            "Evaluate only the agent's current reply. Block it if it contains a six-digit number or repeats the verification code "
+            "the caller read out. Do NOT block: asking the caller to read the code, saying that the code was right or wrong, or "
+            "saying how many attempts are left.",
+            "Never repeat the verification code. Only say whether it was right.",
+        ),
+    ]}},
+}
+
+
+def tests(state: dict) -> list[str]:
+    """Agent tests from tests/*.json, created or updated by file name; their ids are attached to the agent."""
+    known = state.get("tests", {})
+    for path in sorted((HERE / "tests").glob("*.json")):
+        body = json.loads(path.read_text(encoding="utf-8"))
+        if path.name in known:
+            request("PUT", f"/v1/convai/agent-testing/{known[path.name]}", body)
+        else:
+            known[path.name] = request("POST", "/v1/convai/agent-testing/create", body)["id"]
+    state["tests"] = known
+    return list(known.values())
+
+
 def criterion(cid: str, name: str, prompt: str) -> dict:
     return {"id": cid, "name": name, "conversation_goal_prompt": prompt, "type": "prompt", "use_knowledge_base": False}
 
 
-def agent_body(voice_id: str, mcp_id: str, kb: list[dict]) -> dict:
+def agent_body(voice_id: str, mcp_id: str, kb: list[dict], test_ids: list[str]) -> dict:
     return {
         "name": NAME,
         "tags": ["cmdb", "driftagent"],
@@ -114,6 +175,10 @@ def agent_body(voice_id: str, mcp_id: str, kb: list[dict]) -> dict:
             "agent": {
                 "first_message": FIRST_MESSAGE,
                 "language": "sv",
+                # Empty for an inbound call; the web app's "Ring ansvarig" sets them for a proactive call (#137).
+                "dynamic_variables": {"dynamic_variable_placeholders": {
+                    "risk_id": "", "risk_title": "", "responsible_name": "", "responsible_employee_id": "",
+                }},
                 "prompt": {
                     "prompt": (HERE / "prompt.md").read_text(encoding="utf-8"),
                     "llm": LLM,
@@ -153,8 +218,10 @@ def agent_body(voice_id: str, mcp_id: str, kb: list[dict]) -> dict:
             },
             # A public test link for the demo, with a hard ceiling on cost.
             "auth": {"enable_auth": False},
-            # Text-only conversations for agent/e2e.mjs, the end-to-end check without audio.
-            "overrides": {"conversation_config_override": {"conversation": {"text_only": True}}},
+            # Text-only conversations for agent/e2e.mjs, and the proactive call's own first message (#137).
+            "overrides": {"conversation_config_override": {"conversation": {"text_only": True}, "agent": {"first_message": True}}},
+            "guardrails": GUARDRAILS,
+            "testing": {"attached_tests": [{"test_id": t} for t in test_ids]},
             "call_limits": {"agent_concurrency_limit": 2, "daily_limit": 60},
             "privacy": {"retention_days": 30},
         },
@@ -167,7 +234,7 @@ def main() -> None:
     state["secret_id"] = secret(state)
     state["mcp_server_id"] = mcp_server(state, state["secret_id"])
     kb, stale = knowledge_base(state)
-    body = agent_body(state["voice_id"], state["mcp_server_id"], kb)
+    body = agent_body(state["voice_id"], state["mcp_server_id"], kb, tests(state))
     if state.get("agent_id"):
         request("PATCH", f"/v1/convai/agents/{state['agent_id']}", body)
     else:

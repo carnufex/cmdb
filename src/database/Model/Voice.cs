@@ -152,3 +152,34 @@ internal sealed class IncidentConfiguration : IEntityTypeConfiguration<Incident>
         e.HasIndex(x => x.CreatedAt);
     }
 }
+
+/// <summary>
+/// Planned work in the field (#137): digging, construction, track work. Where it intersects a cable route, the
+/// proactive agent finds a risk and calls the person responsible for the network there.
+/// </summary>
+public class PlannedWork
+{
+    public long Id { get; set; }
+    public required string Title { get; set; }
+    public string Description { get; set; } = "";
+    public required string Contractor { get; set; }
+
+    /// <summary>The employee responsible for the network where the work is (a voice caller), who gets the call.</summary>
+    public required string ResponsibleEmployeeId { get; set; }
+
+    /// <summary>Where the work is, in EPSG:3006.</summary>
+    public required NetTopologySuite.Geometries.Polygon Area { get; set; }
+    public DateTimeOffset StartsAt { get; set; }
+    public DateTimeOffset EndsAt { get; set; }
+}
+
+internal sealed class PlannedWorkConfiguration : IEntityTypeConfiguration<PlannedWork>
+{
+    public void Configure(EntityTypeBuilder<PlannedWork> e)
+    {
+        e.ToTable("planned_work", t => t.HasCheckConstraint("ck_planned_work_time", "ends_at > starts_at"));
+        e.Property(x => x.Area).HasColumnType("geometry(Polygon,3006)");
+        e.Property(x => x.Description).HasDefaultValue("").HasSentinel(null!);
+        e.HasIndex(x => x.Area).HasMethod("gist");
+    }
+}
