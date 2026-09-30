@@ -144,7 +144,7 @@ public sealed class GraphDeltaTests
         compacted.IsOverlay.ShouldBeFalse();
         compacted.Version.ShouldBe("40");
         Adjacency(compacted).ShouldBe(Adjacency(graph));
-        var flat = GraphChanges.Flatten(graph, batches);
+        var flat = GraphChanges.Flatten(graph, batches).ShouldNotBeNull();
         flat.IsOverlay.ShouldBeFalse();
         Bytes(flat).ShouldBe(Bytes(compacted));
         // The delta shares the base's arrays and leaves production as it was.
@@ -177,8 +177,9 @@ public sealed class GraphDeltaTests
         var delta = GraphChanges.TryDelta(production, batch).ShouldNotBeNull();
         delta.OverlayNodes.ShouldBe(0);
 
-        Bytes(GraphChanges.Flatten(delta, [batch])).ShouldBe(Bytes(GraphChanges.Compact(production, [batch])));
-        Bytes(GraphChanges.Flatten(delta, [batch])).ShouldNotBe(Bytes(production));
+        var flat = GraphChanges.Flatten(delta, [batch]).ShouldNotBeNull();
+        Bytes(flat).ShouldBe(Bytes(GraphChanges.Compact(production, [batch])));
+        Bytes(flat).ShouldNotBe(Bytes(production));
     }
 
     private static byte[] Bytes(Cmdb.Graph.Graph g)
@@ -211,7 +212,7 @@ public sealed class GraphDeltaTests
     }
 
     [Fact]
-    public void Objects_whose_structure_is_unchanged_stay_a_delta_and_new_or_moved_ones_rebuild()
+    public void Objects_whose_structure_is_unchanged_stay_a_delta_and_moved_or_removed_ones_rebuild()
     {
         List<(long, long, EdgeKind)> connections = [(1, 2, EdgeKind.Patch)];
         var data = Network(connections);
@@ -246,13 +247,7 @@ public sealed class GraphDeltaTests
         movedKeys.Equipment.Add(100);
         GraphChanges.TryDelta(production, new GraphChangeBatch("3", false, movedKeys, moved, 1)).ShouldBeNull();
 
-        // New equipment, a removed cable and a changed circuit are structure too.
-        var added = new GraphKeys();
-        added.Equipment.Add(999);
-        var addedRows = new GraphData();
-        addedRows.EquipmentIds.Add(999);
-        addedRows.EquipmentSites.Add(1);
-        GraphChanges.TryDelta(production, new GraphChangeBatch("4", false, added, addedRows, 1)).ShouldBeNull();
+        // A removed cable and a changed circuit are structure too.
         var removed = new GraphKeys();
         removed.Cables.Add(501);
         GraphChanges.TryDelta(production, new GraphChangeBatch("5", false, removed, new GraphData(), 1)).ShouldBeNull();
@@ -260,8 +255,122 @@ public sealed class GraphDeltaTests
         circuit.Circuits.Add(1);
         GraphChanges.TryDelta(production, new GraphChangeBatch("6", false, circuit, new GraphData(), 1)).ShouldBeNull();
 
-        // A connection to a terminal the graph does not have yet waits for the rebuild.
+        // A connection to a terminal that is neither in the graph nor new in the batch waits for the rebuild.
         connections.Add((3, 77777, EdgeKind.Patch));
         GraphChanges.TryDelta(production, Batch("7", [3, 77777], connections)).ShouldBeNull();
+
+        // A new cable whose conductor does not have two ends.
+        var odd = new GraphKeys();
+        odd.Cables.Add(900);
+        var oddRows = new GraphData();
+        oddRows.CableIds.Add(900);
+        oddRows.CableLifecycles.Add((byte)Lifecycle.Planned);
+        oddRows.ConductorIds.Add(950);
+        oddRows.ConductorCables.Add(900);
+        oddRows.EndTerminals.Add(20005);
+        oddRows.EndConductors.Add(950);
+        GraphChanges.TryDelta(production, new GraphChangeBatch("8", false, odd, oddRows, 1)).ShouldBeNull();
+    }
+
+    /// <summary>
+    /// A batch as the feed reads it when equipment 200 is installed at site 0 (older than every site in the graph) with
+    /// <paramref name="ports"/>, cable 900 is pulled with conductor 950 between <paramref name="ends"/>, and the first
+    /// new port is patched to port 5 and the second spliced to the cable.
+    /// </summary>
+    private static (GraphChangeBatch Batch, GraphData Rows) Installation(long[] ports, long[] ends)
+    {
+        var keys = new GraphKeys();
+        keys.Equipment.Add(200);
+        keys.Cables.Add(900);
+        keys.Terminals.UnionWith([ports[0], 5, ports[1], ends[0]]);
+        var rows = new GraphData();
+        rows.EquipmentIds.Add(200);
+        rows.EquipmentSites.Add(0);
+        rows.PortTerminals.AddRange(ports);
+        rows.PortEquipment.AddRange(ports.Select(_ => 200L));
+        rows.CableIds.Add(900);
+        rows.CableLifecycles.Add((byte)Lifecycle.Planned);
+        rows.ConductorIds.Add(950);
+        rows.ConductorCables.Add(900);
+        rows.EndTerminals.AddRange(ends);
+        rows.EndConductors.AddRange([950, 950]);
+        rows.ConnectionA.AddRange([ports[0], ports[1]]);
+        rows.ConnectionB.AddRange([5, ends[0]]);
+        rows.ConnectionKinds.AddRange([(byte)EdgeKind.Patch, (byte)EdgeKind.Splice]);
+        rows.ConnectionLifecycles.AddRange([(byte)Lifecycle.Planned, (byte)Lifecycle.Planned]);
+        return (new GraphChangeBatch("2", false, keys, rows, 6), rows);
+    }
+
+    private static GraphData With(GraphData data, GraphData rows)
+    {
+        data.EquipmentIds.AddRange(rows.EquipmentIds);
+        data.EquipmentSites.AddRange(rows.EquipmentSites);
+        data.PortTerminals.AddRange(rows.PortTerminals);
+        data.PortEquipment.AddRange(rows.PortEquipment);
+        data.CableIds.AddRange(rows.CableIds);
+        data.CableLifecycles.AddRange(rows.CableLifecycles);
+        data.ConductorIds.AddRange(rows.ConductorIds);
+        data.ConductorCables.AddRange(rows.ConductorCables);
+        data.EndTerminals.AddRange(rows.EndTerminals);
+        data.EndConductors.AddRange(rows.EndConductors);
+        data.ConnectionA.AddRange(rows.ConnectionA);
+        data.ConnectionB.AddRange(rows.ConnectionB);
+        data.ConnectionKinds.AddRange(rows.ConnectionKinds);
+        data.ConnectionLifecycles.AddRange(rows.ConnectionLifecycles);
+        return data;
+    }
+
+    [Fact]
+    public void New_equipment_and_cables_join_the_delta_and_fold_in_as_a_rebuild_would_build_them()
+    {
+        List<(long, long, EdgeKind)> connections = [(1, 2, EdgeKind.Patch)];
+        var production = GraphBuilder.Build(Network(connections), "1");
+        // Ports out of order, as rows may come: the arrays get them sorted.
+        var (batch, rows) = Installation([20004, 20001, 20003, 20002], [20005, 20006]);
+        var built = GraphBuilder.Build(With(Network(connections), rows), "2");
+
+        var delta = GraphChanges.TryDelta(production, batch).ShouldNotBeNull();
+
+        delta.TryGetEquipment(200, out var equipment).ShouldBeTrue();
+        delta.SiteId(delta.SiteIndexOfEquipment(equipment)).ShouldBe(0);
+        delta.TryGetNode(20004, out var port).ShouldBeTrue();
+        GraphTrace.Physical(delta, port).Nodes.Select(delta.TerminalId).ShouldBe([20004, 5]);
+        delta.TryGetNode(20001, out port);
+        GraphTrace.Physical(delta, port).Nodes.Select(delta.TerminalId).ShouldBe([20001, 20005, 20006]);
+        delta.TryGetCable(900, out _).ShouldBeTrue();
+        delta.CableCount.ShouldBe(production.CableCount + 1);
+        delta.SiteCount.ShouldBe(production.SiteCount + 1);
+
+        // A plan's planned objects come after the delta's new ones.
+        var (plan, issues) = delta.WithChanges([new GraphNewEquipment(-1, 0, [-10001])]);
+        issues.ShouldBeEmpty();
+        plan.TryGetEquipment(-1, out var planned).ShouldBeTrue();
+        planned.ShouldBeGreaterThan(equipment);
+        plan.EquipmentAt(plan.SiteIndexOfEquipment(planned)).ToArray().ShouldBe([equipment, planned]);
+
+        var flat = GraphChanges.Flatten(delta, [batch]).ShouldNotBeNull();
+        flat.IsOverlay.ShouldBeFalse();
+        Bytes(flat).ShouldBe(Bytes(built));
+        Bytes(GraphChanges.Compact(production, [batch])).ShouldBe(Bytes(built));
+        flat.TryGetEquipment(200, out equipment).ShouldBeTrue();
+        flat.PortsOf(equipment).ToArray().Select(flat.TerminalId).ShouldBe([20001, 20002, 20003, 20004]);
+        flat.EquipmentAt(flat.SiteIndexOfEquipment(equipment)).ToArray().ShouldBe([equipment]);
+        flat.TryGetCable(900, out var cable).ShouldBeTrue();
+        flat.EndsOf(cable).ToArray().Select(flat.TerminalId).ShouldBe([20005, 20006]);
+    }
+
+    [Fact]
+    public void New_ids_below_the_arrays_own_stay_a_delta_until_a_rebuild_from_rows()
+    {
+        List<(long, long, EdgeKind)> connections = [(1, 2, EdgeKind.Patch)];
+        var production = GraphBuilder.Build(Network(connections), "1");
+        // Terminal ids below the conductor ends 10001 and up cannot simply follow the arrays.
+        var (batch, rows) = Installation([5001, 5002], [5003, 5004]);
+
+        var delta = GraphChanges.TryDelta(production, batch).ShouldNotBeNull();
+        delta.TryGetNode(5001, out _).ShouldBeTrue();
+
+        GraphChanges.Flatten(delta, [batch]).ShouldBeNull();
+        Bytes(GraphChanges.Compact(production, [batch])).ShouldBe(Bytes(GraphBuilder.Build(With(Network(connections), rows), "2")));
     }
 }

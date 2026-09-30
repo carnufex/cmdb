@@ -115,17 +115,34 @@ public sealed class ChangeStreamTests(ApiFactory factory)
     }
 
     [Fact]
-    public async Task Connection_changes_become_deltas_and_compacting_them_gives_a_fresh_load()
+    public async Task Connections_and_new_equipment_become_deltas_and_folding_them_in_gives_a_fresh_load()
     {
         await using var db = await SmallNetworkAsync(8);
         var feed = new PostgresGraphChangeFeed(db);
         var before = await GraphLoader.LoadAsync(db, Ct);
         var (a, b) = await FreePortsAsync(db);
 
-        // Patching, a removed splice and a renamed cable: no structure changes, so every batch is a delta (#81).
+        // Patching, a removed splice, a cable lifecycle (#81) and new equipment with its ports patched together (#119):
+        // every batch is a delta.
         await Exec(db, $"INSERT INTO connection (a_terminal_id, b_terminal_id, kind, lifecycle) VALUES ({a}, {b}, 'patch', 'planned')");
         await Exec(db, "DELETE FROM connection WHERE id = (SELECT id FROM connection WHERE kind = 'splice' ORDER BY id LIMIT 1)");
         await Exec(db, "UPDATE cable SET lifecycle = 'decommissioning' WHERE id = (SELECT min(id) FROM cable)");
+        await Exec(db, """
+            WITH e AS (
+                INSERT INTO equipment (equipment_type_id, site_id, location_id, name, lifecycle)
+                SELECT t.id, l.site_id, l.id, 'Delta test', 'planned'
+                FROM equipment_type t, (SELECT id, site_id FROM location WHERE kind = 'rack' ORDER BY id LIMIT 1) l
+                WHERE t.key = 'acme-bb-6'
+                RETURNING id
+            ), t AS (INSERT INTO terminal (kind) SELECT 'port' FROM generate_series(1, 2) RETURNING id),
+            p AS (
+                INSERT INTO port (terminal_id, equipment_id, name, port_type, position)
+                SELECT t.id, e.id, 'x' || row_number() OVER (ORDER BY t.id), 'sfp', (row_number() OVER (ORDER BY t.id))::int FROM t, e
+                RETURNING terminal_id
+            )
+            INSERT INTO connection (a_terminal_id, b_terminal_id, kind, lifecycle) SELECT min(terminal_id), max(terminal_id), 'patch', 'planned' FROM p
+            """);
+        var equipment = await Scalar(db, "SELECT id FROM equipment WHERE name = 'Delta test'");
 
         var target = await Scalar(db, "SELECT pg_snapshot_xmax(pg_current_snapshot())::text::bigint");
         var graph = before;
@@ -143,11 +160,15 @@ public sealed class ChangeStreamTests(ApiFactory factory)
             await Task.Delay(20, Ct);
         }
         graph.IsOverlay.ShouldBeTrue();
-        graph.OverlayNodes.ShouldBeGreaterThanOrEqualTo(4);
+        graph.OverlayNodes.ShouldBeGreaterThanOrEqualTo(6);
+        graph.TryGetEquipment(equipment, out var added).ShouldBeTrue();
+        var ports = graph.PortsOf(added).ToArray();
+        ports.Length.ShouldBe(2);
+        graph.Neighbours(ports[0]).ToArray().ShouldBe([ports[1]]);
 
-        var compacted = GraphChanges.Compact(before, batches);
-        var fresh = GraphBuilder.Build(GraphData.From(await GraphLoader.LoadAsync(db, Ct)), compacted.Version);
-        Bytes(compacted).ShouldBe(Bytes(fresh));
+        var fresh = GraphBuilder.Build(GraphData.From(await GraphLoader.LoadAsync(db, Ct)), graph.Version);
+        Bytes(GraphChanges.Compact(before, batches)).ShouldBe(Bytes(fresh));
+        Bytes(GraphChanges.Flatten(graph, batches).ShouldNotBeNull()).ShouldBe(Bytes(fresh));
         graph.TryGetNode(a, out var node).ShouldBeTrue();
         graph.Neighbours(node).ToArray().Select(graph.TerminalId).ShouldContain(b);
     }

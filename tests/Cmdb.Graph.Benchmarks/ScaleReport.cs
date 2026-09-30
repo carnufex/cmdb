@@ -6,9 +6,10 @@ using Cmdb.DataGen;
 namespace Cmdb.Graph.Benchmarks;
 
 /// <summary>
-/// How the graph grows with the network (#81): build time, memory at rest, snapshot size and read time, a change
-/// batch as a delta, folding the delta into the arrays, and a rebuild from rows, with the managed heap's peak (over the
-/// graph at rest, garbage included) while folding and rebuilding.
+/// How the graph grows with the network (#81, #119): build time, memory at rest, snapshot size and read time, change
+/// batches as a delta (patches, and new equipment with 24 patched ports), folding the delta with the new equipment into
+/// the arrays, and a rebuild from rows, with how far the managed heap rises (garbage included) while folding and
+/// rebuilding.
 /// <c>dotnet run -c Release --project tests/Cmdb.Graph.Benchmarks -- scale full 2x 4x</c>
 /// </summary>
 internal static class ScaleReport
@@ -16,8 +17,8 @@ internal static class ScaleReport
     public static void Run(IReadOnlyList<string> scales)
     {
         Console.OutputEncoding = System.Text.Encoding.UTF8;
-        Console.WriteLine("| Skala | Terminaler | Kanter | Bygga | Minne i vila | Snapshot | Läsa snapshot | Delta 2 terminaler | Delta 100 terminaler | Kompaktering av delta | Topp | Ombyggnad från rader | Topp |");
-        Console.WriteLine("|---|---|---|---|---|---|---|---|---|---|---|---|---|");
+        Console.WriteLine("| Skala | Terminaler | Kanter | Bygga | Minne i vila | Snapshot | Läsa snapshot | Delta 2 terminaler | Delta 100 terminaler | Delta ny utrustning | Kompaktering av delta | Topp | Ombyggnad från rader | Topp |");
+        Console.WriteLine("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|");
         foreach (var scale in scales)
         {
             Measure(scale);
@@ -49,14 +50,17 @@ internal static class ScaleReport
         var deltaSmall = Median(() => GraphChanges.TryDelta(graph, small) ?? throw new InvalidOperationException("not a delta"));
         var deltaLarge = Median(() => GraphChanges.TryDelta(graph, large) ?? throw new InvalidOperationException("not a delta"));
 
-        var delta = GraphChanges.TryDelta(graph, large)!;
-        var (flatten, flattenPeak) = Peak(() => GraphChanges.Flatten(delta, [large]));
+        var installation = Installation(graph, free.Skip(100).Take(24).ToArray());
+        var deltaInstallation = Median(() => GraphChanges.TryDelta(graph, installation) ?? throw new InvalidOperationException("not a delta"));
+
+        var delta = GraphChanges.TryDelta(graph, installation)!;
+        var (flatten, flattenPeak) = Peak(() => GraphChanges.Flatten(delta, [installation]) ?? throw new InvalidOperationException("not appendable"));
         delta = null;
-        var (rebuild, rebuildPeak) = Peak(() => GraphChanges.Compact(graph, [large]));
+        var (rebuild, rebuildPeak) = Peak(() => GraphChanges.Compact(graph, [installation]));
         GC.KeepAlive(graph);
 
         Console.WriteLine(string.Create(CultureInfo.InvariantCulture,
-            $"| {scaleName} | {graph.NodeCount / 1e6:0.0} M | {graph.EdgeCount / 1e6:0.0} M | {build.TotalSeconds:0.0} s | {Mb(rest)} | {Mb(snapshotBytes)} | {readTime.TotalSeconds:0.0} s | {deltaSmall:0.00} ms | {deltaLarge:0.00} ms | {flatten.TotalSeconds:0.00} s | +{Mb(flattenPeak)} | {rebuild.TotalSeconds:0.0} s | +{Mb(rebuildPeak)} |"));
+            $"| {scaleName} | {graph.NodeCount / 1e6:0.0} M | {graph.EdgeCount / 1e6:0.0} M | {build.TotalSeconds:0.0} s | {Mb(rest)} | {Mb(snapshotBytes)} | {readTime.TotalSeconds:0.0} s | {deltaSmall:0.00} ms | {deltaLarge:0.00} ms | {deltaInstallation:0.00} ms | {flatten.TotalSeconds:0.00} s | +{Mb(flattenPeak)} | {rebuild.TotalSeconds:0.0} s | +{Mb(rebuildPeak)} |"));
     }
 
     /// <summary>How long the work takes and how far the managed heap rose meanwhile, garbage included.</summary>
@@ -90,8 +94,34 @@ internal static class ScaleReport
         var data = NetworkGraph.From(network);
         var connected = new HashSet<long>(data.ConnectionA);
         connected.UnionWith(data.ConnectionB);
-        var free = data.PortTerminals.Where(p => !connected.Contains(p)).Take(100).ToArray();
+        var free = data.PortTerminals.Where(p => !connected.Contains(p)).Take(124).ToArray();
         return (data, free);
+    }
+
+    /// <summary>
+    /// New equipment at the first equipment's site, with 24 ports above every terminal id, each patched to one of
+    /// <paramref name="free"/>, as the change feed would read it.
+    /// </summary>
+    private static GraphChangeBatch Installation(Graph graph, long[] free)
+    {
+        var keys = new GraphKeys();
+        var rows = new GraphData();
+        var equipment = graph.EquipmentIds[^1] + 1;
+        keys.Equipment.Add(equipment);
+        rows.EquipmentIds.Add(equipment);
+        rows.EquipmentSites.Add(graph.SiteId(graph.SiteIndexOfEquipment(0)));
+        for (var i = 0; i < free.Length; i++)
+        {
+            var port = graph.TerminalIds[^1] + 1 + i;
+            rows.PortTerminals.Add(port);
+            rows.PortEquipment.Add(equipment);
+            keys.Terminals.UnionWith([port, free[i]]);
+            rows.ConnectionA.Add(free[i]);
+            rows.ConnectionB.Add(port);
+            rows.ConnectionKinds.Add((byte)EdgeKind.Patch);
+            rows.ConnectionLifecycles.Add((byte)Lifecycle.Planned);
+        }
+        return new GraphChangeBatch("1", false, keys, rows, keys.Count);
     }
 
     /// <summary>Patches between pairs of free ports, as the change feed would read them.</summary>

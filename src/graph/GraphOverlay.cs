@@ -107,14 +107,11 @@ public sealed partial class Graph
 
     /// <summary>
     /// This view as production (#81): changes from the change stream applied as a delta, at a new position. It is its
-    /// own <see cref="Base"/>, so plan views are made on top of it. A delta with new objects does not qualify.
+    /// own <see cref="Base"/>, so plan views are made on top of it. New equipment and cables (#119) are production
+    /// objects here, with indexes after the arrays' own, and a plan's planned objects come after those.
     /// </summary>
     internal Graph AsProduction(string version)
     {
-        if (_overlay is { } o && o.TerminalIds.Count + o.EquipmentIds.Count + o.CableIds.Count + o.SiteIds.Count > 0)
-        {
-            throw new InvalidOperationException("A production delta cannot hold new objects.");
-        }
         var graph = (Graph)MemberwiseClone();
         graph._base = null;
         graph._version = version;
