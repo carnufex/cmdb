@@ -69,6 +69,17 @@ export function registerCoreCommands(): void {
       },
     },
     {
+      id: 'tools.grid',
+      label: 'Kalkylark',
+      hint: 'Verktyg',
+      keywords: ['excel', 'massredigering', 'attribut', 'lasso', 'urval'],
+      run: () => {
+        if (tools.open() !== 'grid') {
+          tools.toggle('grid');
+        }
+      },
+    },
+    {
       id: 'tools.perf',
       label: 'Prestandamätning',
       hint: 'Verktyg',

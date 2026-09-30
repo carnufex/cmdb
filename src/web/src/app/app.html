@@ -28,6 +28,14 @@
     >
       Planer
     </button>
+    <button
+      type="button"
+      class="text-button tool-button"
+      [attr.aria-pressed]="tools.open() === 'grid'"
+      (click)="tools.toggle('grid')"
+    >
+      Kalkylark
+    </button>
     @if (plan.id() !== null) {
       <span class="plan-chip" role="status">
         <span class="dot" aria-hidden="true"></span>
@@ -126,6 +134,8 @@
       <aside class="tool" aria-label="Innehåll"><cmdb-tree-panel /></aside>
     } @else if (tools.open() === 'plans') {
       <aside class="tool" aria-label="Planer"><cmdb-plan-panel /></aside>
+    } @else if (tools.open() === 'grid') {
+      <aside class="tool wide" aria-label="Kalkylark"><cmdb-grid-panel /></aside>
     } @else if (tools.open() === 'perf') {
       <aside class="tool wide" aria-label="Prestanda"><cmdb-perf-panel /></aside>
     }

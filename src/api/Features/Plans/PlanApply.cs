@@ -49,6 +49,10 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx)
                     WHERE a_terminal_id = least($1, $2) AND b_terminal_id = greatest($1, $2) AND valid_to IS NULL
                     """, ct, p.GetProperty("a").GetInt64(), p.GetProperty("b").GetInt64()) > 0;
 
+            case "set_attributes":
+                return await ExecuteAsync($"UPDATE {Table(p)} SET attributes = jsonb_strip_nulls(attributes || $2::jsonb) WHERE id = $1", ct,
+                    p.GetProperty("id").GetInt64(), p.GetProperty("attributes").GetRawText()) > 0;
+
             case "set_lifecycle":
                 return await ExecuteAsync($"UPDATE {Table(p)} SET lifecycle = $2::lifecycle_state WHERE id = $1", ct,
                     p.GetProperty("id").GetInt64(), p.GetProperty("lifecycle").GetString()!) > 0;

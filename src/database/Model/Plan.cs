@@ -102,7 +102,7 @@ internal sealed class PlanOperationConfiguration : IEntityTypeConfiguration<Plan
         e.ToTable("plan_operation", t =>
         {
             t.HasCheckConstraint("ck_plan_operation_kind",
-                "kind IN ('connect', 'disconnect', 'set_lifecycle', 'rename', 'create_site', 'create_equipment', 'create_cable')");
+                "kind IN ('connect', 'disconnect', 'set_lifecycle', 'rename', 'set_attributes', 'create_site', 'create_equipment', 'create_cable')");
             t.HasCheckConstraint("ck_plan_operation_payload", "jsonb_typeof(payload) = 'object'");
         });
         e.Property(x => x.Payload).HasColumnType("jsonb").HasDefaultValueSql("'{}'");

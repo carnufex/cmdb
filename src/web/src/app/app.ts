@@ -13,6 +13,7 @@ import { PerfPanelComponent } from './perf/perf-panel';
 import { TreePanelComponent } from './tree/tree-panel';
 import { ActivePlan } from './plans/active-plan';
 import { PlanPanelComponent } from './plans/plan-panel';
+import { GridPanelComponent } from './grid/grid-panel';
 
 /** The user as the API sees them (GET /api/me). */
 export interface Me {
@@ -36,6 +37,7 @@ export interface Me {
     PerfPanelComponent,
     TreePanelComponent,
     PlanPanelComponent,
+    GridPanelComponent,
   ],
   templateUrl: './app.html',
   styleUrl: './app.scss',

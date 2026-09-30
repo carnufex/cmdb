@@ -53,6 +53,10 @@ export class MapView {
   readonly picking = signal(false);
   readonly picked = signal<{ code: string; seq: number } | null>(null);
 
+  /** While true, the map draws a polygon (#27, a lasso); when closed, its ring lands in {@link lasso}. */
+  readonly lassoing = signal(false);
+  readonly lasso = signal<{ ring: number[][]; seq: number } | null>(null);
+
   /**
    * Set by the map while it is shown: animates the view over the country and returns frame times in ms.
    * Used by the performance panel (#56).
@@ -75,6 +79,11 @@ export class MapView {
 
   showRoute(route: Omit<Route, 'seq'>): void {
     this.route.set({ ...route, seq: ++this.seq });
+  }
+
+  closeLasso(ring: number[][]): void {
+    this.lassoing.set(false);
+    this.lasso.set({ ring, seq: ++this.seq });
   }
 
   pick(code: string): void {

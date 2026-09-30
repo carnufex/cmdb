@@ -20,6 +20,8 @@ import VectorSource from 'ol/source/Vector';
 import Feature from 'ol/Feature';
 import OlPoint from 'ol/geom/Point';
 import LineString from 'ol/geom/LineString';
+import Polygon from 'ol/geom/Polygon';
+import Draw from 'ol/interaction/Draw';
 import { Geometry } from 'ol/geom';
 import { Circle, Fill, Stroke, Style } from 'ol/style';
 import TileState from 'ol/TileState';
@@ -83,6 +85,7 @@ export class MapComponent {
   private marks?: VectorLayer<VectorSource<Feature<OlPoint>>>;
   private route?: VectorLayer<VectorSource<Feature<Geometry>>>;
   private planned?: VectorLayer<VectorSource<Feature<Geometry>>>;
+  private lassoDraw?: Draw;
   private palette?: Palette;
 
   constructor() {
@@ -116,6 +119,24 @@ export class MapComponent {
       const route = this.mapView.route();
       if (this.route && this.map) {
         this.showRoute(route);
+      }
+    });
+    // A lasso (#27): the map draws a polygon until it is closed, then hands its ring on.
+    effect(() => {
+      const on = this.mapView.lassoing();
+      if (!this.map) {
+        return;
+      }
+      if (on && !this.lassoDraw) {
+        this.lassoDraw = new Draw({ source: new VectorSource(), type: 'Polygon' });
+        this.lassoDraw.on('drawend', (e) => {
+          const ring = (e.feature.getGeometry() as Polygon).getCoordinates()[0];
+          this.mapView.closeLasso(ring.map((p) => [Math.round(p[0]), Math.round(p[1])]));
+        });
+        this.map.addInteraction(this.lassoDraw);
+      } else if (!on && this.lassoDraw) {
+        this.map.removeInteraction(this.lassoDraw);
+        this.lassoDraw = undefined;
       }
     });
     // What the active plan creates (#107): planned sites and cables, dashed in the planned colour.
