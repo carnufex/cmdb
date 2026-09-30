@@ -25,7 +25,7 @@ STATE = HERE / "agent.json"
 API = "https://api.elevenlabs.io"
 
 NAME = "CMDB Driftagent"
-LLM = "deepseek-v41-flash"  # #147: trying it instead of claude-haiku-4-5; no reasoning, for latency
+LLM = "claude-haiku-4-5"  # deepseek-v41-flash was tried in #147 and dropped
 TTS_MODEL = "eleven_v4_turbo"
 # "Sanna Hartfield - Direct and Natural": Swedish, Stockholm, conversational (shared library).
 VOICE = {"public_owner_id": "3d1fa6a5595e0a31fff8d7c1a2f2794b91ca87ddd200066dfbdfcef662a65a1b", "voice_id": "4xkUqaR9MYOJHoaC1Nak",
@@ -104,12 +104,16 @@ def knowledge_base(state: dict) -> tuple[list[dict], list[str]]:
     return entries, stale
 
 
+# flash-lite ended legitimate calls on generic words and the station code (#147); a stronger judge.
+GUARDRAIL_MODEL = "gemini-3.5-flash"
+
+
 def guardrail(name: str, prompt: str) -> dict:
     """A custom guardrail: a small model judges each reply while it is spoken. Streaming, not blocking: a blocking
     guardrail held every reply back about 2.5 s (#145), and ElevenLabs only allows end_call in streaming mode, so a
     violation ends the call. agent/tests and agent/e2e.mjs check that legitimate replies still pass."""
     return {
-        "is_enabled": True, "name": name, "prompt": prompt, "execution_mode": "streaming", "model": "gemini-3.1-flash-lite",
+        "is_enabled": True, "name": name, "prompt": prompt, "execution_mode": "streaming", "model": GUARDRAIL_MODEL,
         "history_message_count": 8, "history_include_tool_calls": True, "evaluate_full_response_only": False,
         "trigger_action": {"type": "end_call"},
     }
@@ -126,14 +130,17 @@ GUARDRAILS = {
     "custom": {"config": {"configs": [
         guardrail(
             "Inga nätdetaljer före verifiering",
-            "Evaluate only the agent's current reply. Block it if it discloses network details: names or codes of services "
-            "(for example TJ-0000611 or 'Mobilnät ...'), equipment, cables, how many services are affected, a priority (P1, P2, P3), "
-            "an incident number, or what a risk is about (a place, a cable, digging, a battery), while the conversation history "
-            "contains no verify_caller tool result with status verified. "
-            "Do NOT block: the greeting; the station's name, type, region and status as find_station returned them; asking which "
-            "station, asking for the employee id or the code; saying that a code was sent; explaining that verification is needed; "
-            "an opening that only says there is a risk to talk about without saying what it is; anything after a verify_caller "
-            "result with status verified.",
+            "Evaluate only the agent's current reply. Block it ONLY if it contains a concrete network detail while the "
+            "conversation history contains no verify_caller tool result with status verified. Concrete details are: a service "
+            "code or name (for example TJ-0000611 or 'Mobilnät Lingonåsen norr'), an equipment or cable name or id, a number of "
+            "affected services, a priority (P1, P2, P3), an incident number, or what a risk is about (a place, a cable, digging, "
+            "a battery, dates). "
+            "These are NOT details and must never be blocked: generic words such as 'equipment', 'services', 'connections', "
+            "'utrustning', 'tjänster' or 'kopplingar' used to say what verification protects; the greeting; the station's "
+            "name, code (for example AGG-1191, also spoken as 'agg elva nittioett'), type, region and status as find_station returned them; asking which station, for the employee id or for "
+            "the code; saying that a code was sent; refusing or explaining that verification is needed; an opening that only "
+            "says there is a risk to talk about; anything after a verify_caller result with status verified. When unsure, do "
+            "not block: blocking ends the call.",
         ),
     ]}},
 }
@@ -171,7 +178,7 @@ def agent_body(voice_id: str, mcp_id: str, kb: list[dict], test_ids: list[str]) 
                 "prompt": {
                     "prompt": (HERE / "prompt.md").read_text(encoding="utf-8"),
                     "llm": LLM,
-                    "reasoning_effort": "none",
+                    "reasoning_effort": None,  # explicit: a PATCH keeps a value left by another LLM
                     "temperature": 0.2,
                     "mcp_server_ids": [mcp_id],
                     "knowledge_base": kb,

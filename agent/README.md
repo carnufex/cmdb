@@ -14,7 +14,7 @@ Röstagenten för felanmälan (epic #130, ADR-0015). Här finns allt agenten bes
 
 ## Inställningar
 - **Röst:** "Sanna Hartfield" (svensk, Stockholm), TTS-modell `eleven_v4_turbo`, språk `sv` med `en` som extra språk (#147): `language_detection` byter till engelska när uppringaren talar engelska.
-- **LLM:** `deepseek-v41-flash` utan resonemang (`reasoning_effort: none`), temperatur 0,2. Provas i stället för `claude-haiku-4-5` (#147); byt tillbaka i `LLM` i `deploy.py`.
+- **LLM:** `claude-haiku-4-5`, temperatur 0,2. `deepseek-v41-flash` provades i #147 (0,89 s mot 1,09 s till svar) men valdes bort.
 - **MCP:** `https://cmdb.rosenvall.se/voice/mcp`.
   - Hemligheten ligger som en hemlighet i arbetsytan (`cmdb-voice-secret`, värdet från Bitwarden `CMDB_VOICE_SECRET`).
   - Samtals-id:t skickas i `X-Conversation-Id` (`system__conversation_id`).
@@ -22,7 +22,7 @@ Röstagenten för felanmälan (epic #130, ADR-0015). Här finns allt agenten bes
 - **Kostnadstak:** högst 2 samtidiga samtal och 60 samtal per dygn. Den publika testlänken kräver ingen inloggning.
 - **Guardrails:**
   - `focus` och `prompt_injection` är inbyggda och kostar ingen mätbar tid.
-  - En egen guardrail, *inga nätdetaljer före verifiering*, bedömer svaret medan det talas (strömmande). Ett brott lägger på samtalet.
+  - En egen guardrail, *inga nätdetaljer före verifiering*, bedömer svaret medan det talas (strömmande). Ett brott lägger på samtalet. Bedömningsmodellen är `gemini-3.5-flash`: `gemini-3.1-flash-lite` lade på legitima samtal (allmänna ord som "tjänster" och stationskoden, #147).
   - Blockerande guardrails höll tillbaka varje svar cirka 2,5 s (3,5 s median mot 0,94 s utan, #145) och används inte.
 - **Ärendenummer:** läses aldrig upp. `create_incident` skickar numret med SMS till uppringaren, och agenten säger "Jag smsar dig ärendenumret efter samtalet. Kan jag hjälpa dig med något mer?".
 - **Utgående samtal (#137):** webbens "Ring ansvarig" skickar risken som dynamiska variabler (`risk_id`, `risk_title`, `responsible_name`, `responsible_employee_id`) och ett eget första meddelande.
