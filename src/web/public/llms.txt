@@ -45,3 +45,7 @@ a person applies.
 - "What is around RAD-000007?" → `get_object`, then `neighbourhood`
 
 Source and design decisions: https://github.com/carnufex/cmdb (docs/agenter.md, docs/adr/0011-agentic-first-mcp.md)
+
+## I ett skal
+
+Kodagenter i en terminal använder med fördel CLI:t `cmdb` (samma API, kompakt text, `--json`): binärer finns under GitHub-releaser `cli-v*` i carnufex/cmdb. Se docs/agenter.md.

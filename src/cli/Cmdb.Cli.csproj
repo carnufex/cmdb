@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Cmdb.Cli</RootNamespace>
+    <AssemblyName>cmdb</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- One file per platform, no runtime needed (#86): scripts/cli-release.sh publishes self-contained single files. -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Cmdb.Api.IntegrationTests" />
+  </ItemGroup>
+</Project>
