@@ -18,3 +18,4 @@ Nya beslut: kopiera närmaste ADR, öka numret och sätt status **Föreslagen**.
 | [0012](0012-rls-for-direkt-databasatkomst.md) | Var Postgres RLS gäller (direkt databasåtkomst, #96) |
 | [0013](0013-lagring-av-historik-och-loggar.md) | Lagring av historik, operationslogg och läslogg (**Föreslagen**, #101) |
 | [0014](0014-kanalisation.md) | Kanalisation: trasé, dukt, subdukt och beläggning (**Föreslagen**, #103) |
+| [0015](0015-driftagent-rostkanal-och-verifiering.md) | Driftagentens röstkanal (ElevenLabs) och verifiering av uppringare med engångskod (#131) |
