@@ -1,5 +1,6 @@
 import { inject, Injectable } from '@angular/core';
 import { Auth } from '../auth/auth';
+import { GraphView } from '../graph/graph-view';
 import { GRID, HOME_EXTENT } from '../map/map-grid';
 import { MapView } from '../map/map-view';
 import { examples, QueryFields, toRequest } from '../query/query-model';
@@ -19,6 +20,8 @@ interface Hit {
 }
 
 const RUNS = 30;
+/** Sites in the neighbourhood graph when its frame time is measured (#89). */
+export const GRAPH_NODES = 2000;
 const WARMUP = 3;
 
 /**
@@ -30,6 +33,7 @@ const WARMUP = 3;
 export class PerfRunner {
   private readonly auth = inject(Auth);
   private readonly mapView = inject(MapView);
+  private readonly graphView = inject(GraphView);
 
   async run(onProgress: (p: Progress) => void, signal: AbortSignal): Promise<Measurement[]> {
     const results: Measurement[] = [];
@@ -123,6 +127,23 @@ export class PerfRunner {
         summarize(
           'render',
           'Kartrendering (bildtid)',
+          frames.map((f) => ({ server: null, browser: f })),
+          33,
+          'mål ≥ 30 fps, ej i budgeten',
+        ),
+      );
+    }
+
+    // The neighbourhood graph (#89), when its lens is open: grown from a hub to 2 000 sites.
+    const graph = this.graphView.renderBenchmark;
+    const hub = hits.find((h) => h.type === 'site' && h.code.startsWith('HUB'));
+    if (graph && hub) {
+      onProgress({ label: `Grannskapsgraf: expanderar från ${hub.code}`, done: 0, total: 1 });
+      const { nodes, frames } = await graph(hub.id, GRAPH_NODES, signal);
+      results.push(
+        summarize(
+          'graph',
+          `Grannskapsgraf (bildtid, ${nodes} siter)`,
           frames.map((f) => ({ server: null, browser: f })),
           33,
           'mål ≥ 30 fps, ej i budgeten',
