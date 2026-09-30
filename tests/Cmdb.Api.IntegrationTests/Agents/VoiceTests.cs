@@ -91,10 +91,17 @@ public sealed partial class VoiceTests(ApiFactory factory)
         });
         incident.GetProperty("priority").GetString().ShouldBe("P1");
         incident.GetProperty("onCallNotified").GetBoolean().ShouldBeTrue();
-        var number = incident.GetProperty("number").GetString()!;
+        // The number is not for the agent to read out: the caller gets it by SMS (#145).
+        incident.TryGetProperty("number", out _).ShouldBeFalse();
+        incident.GetProperty("numberSentBySms").GetBoolean().ShouldBeTrue();
 
         using var web = NetworkFixture.Client(api);
-        var listed = (await web.GetFromJsonAsync<JsonElement>("/api/incidents", Ct)).EnumerateArray().Single(i => i.GetProperty("number").GetString() == number);
+        var listed = (await web.GetFromJsonAsync<JsonElement>("/api/incidents", Ct)).EnumerateArray().Single(i => i.GetProperty("conversationId").GetString() == call);
+        var number = listed.GetProperty("number").GetString()!;
+        await using (var sms = db.CreateCommand("SELECT body FROM voice_sms WHERE employee_id = '1001' ORDER BY id DESC LIMIT 1"))
+        {
+            ((string)(await sms.ExecuteScalarAsync(Ct))!).ShouldContain(number);
+        }
         listed.GetProperty("priority").GetString().ShouldBe("P1");
         listed.GetProperty("conversationId").GetString().ShouldBe(call);
         listed.GetProperty("reportedBy").GetString()!.ShouldContain("Kim Lindqvist");

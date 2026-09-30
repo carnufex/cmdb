@@ -20,12 +20,11 @@ Röstagenten för felanmälan (epic #130, ADR-0015). Här finns allt agenten bes
   - Samtals-id:t skickas i `X-Conversation-Id` (`system__conversation_id`).
   - Verktygen godkänns automatiskt. Behörigheten ligger i CMDB:n, inte i agenten.
 - **Kostnadstak:** högst 2 samtidiga samtal och 60 samtal per dygn. Den publika testlänken kräver ingen inloggning.
-- **Guardrails** (varje svar bedöms innan det läses upp):
-  - `focus` och `prompt_injection` är inbyggda.
-  - Tre egna guardrails spärrar och ber agenten formulera om (*retry*), i stället för att lägga på:
-    - inga nätdetaljer före verifiering
-    - inga ärenden eller prioriteter utan verktygssvar
-    - aldrig verifieringskoden
+- **Guardrails:**
+  - `focus` och `prompt_injection` är inbyggda och kostar ingen mätbar tid.
+  - En egen guardrail, *inga nätdetaljer före verifiering*, bedömer svaret medan det talas (strömmande). Ett brott lägger på samtalet.
+  - Blockerande guardrails höll tillbaka varje svar cirka 2,5 s (3,5 s median mot 0,94 s utan, #145) och används inte.
+- **Ärendenummer:** läses aldrig upp. `create_incident` skickar numret med SMS till uppringaren, och agenten säger "Jag smsar dig ärendenumret efter samtalet. Kan jag hjälpa dig med något mer?".
 - **Utgående samtal (#137):** webbens "Ring ansvarig" skickar risken som dynamiska variabler (`risk_id`, `risk_title`, `responsible_name`, `responsible_employee_id`) och ett eget första meddelande.
 - **Utvärdering efter varje samtal:**
   - verifiering före detaljer

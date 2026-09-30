@@ -28,7 +28,8 @@ public sealed record SpokenService(string Code, string Name, string Type, bool C
 public sealed record FaultImpact(string Reference, string Station, string StationName, string Priority, int AffectedServices, int ServicesDown,
     int CriticalDown, int FalseRedundancy, string Summary, IReadOnlyList<SpokenService> TopServices);
 
-public sealed record IncidentCreated(string Number, string Priority, string Station, string Summary, bool OnCallNotified);
+/// <summary>No incident number: the agent does not read it out, the caller gets it by SMS (#145).</summary>
+public sealed record IncidentCreated(string Priority, string Station, string Summary, bool OnCallNotified, bool NumberSentBySms);
 
 /// <summary>
 /// The operations agent's tools (ADR-0015, #133, #134, #135), served only on <c>/voice/mcp</c>. Answers are short and
@@ -177,8 +178,8 @@ public sealed class VoiceTools(SystemDb system, RequestDb db, GraphHolder holder
 
     [McpServerTool(Name = "create_incident", Title = "Skapa ärende", ReadOnly = false, Idempotent = false, OpenWorld = false)]
     [Description("Creates an incident for the reported fault. The server enriches it with the impact (services, redundancy) " +
-        "and sets the priority by rules; P1 notifies the on-call engineer. Read the incident number and priority back to " +
-        "the caller. Verified callers only; confirm the station with the caller first.")]
+        "and sets the priority by rules; P1 notifies the on-call engineer. The incident number is sent to the caller by SMS, " +
+        "not returned here. Verified callers only; confirm the station with the caller first.")]
     public async Task<IncidentCreated> CreateIncident(
         [Description("\"site:ID\" or \"equipment:ID\" where the fault is.")] string reference,
         [Description("What is wrong, in one sentence, e.g. \"Ingen länk på Lingonåsen sedan 14.10\".")] string description,
@@ -217,7 +218,13 @@ public sealed class VoiceTools(SystemDb system, RequestDb db, GraphHolder holder
             {
                 VoiceLog.OnCall(logger, number, fault.SiteCode, fault.CriticalDown);
             }
-            return new IncidentCreated(number, fault.Priority, fault.SiteName, Summary(fault), notified);
+            var caller = await VoiceSessions.CallerAsync(db.Source, Employee!, ct);
+            if (caller is not null)
+            {
+                await VoiceSessions.SmsAsync(db.Source, caller,
+                    $"Driftagenten: ärende {number} ({fault.Priority}) för {fault.SiteName} är skapat.{(notified ? " Jouren är larmad." : "")}", ct);
+            }
+            return new IncidentCreated(fault.Priority, fault.SiteName, Summary(fault), notified, caller is not null);
         }, r => r.Priority);
     }
 
