@@ -19,5 +19,11 @@
       "name": "Runbook: strömavbrott eller reservkraft (syntetisk)"
     }
   },
-  "agent_id": "agent_5601m3sj3df0f6jvg4w1bj13m92g"
+  "agent_id": "agent_5601m3sj3df0f6jvg4w1bj13m92g",
+  "tests": {
+    "01-bekraftar-stationen.json": "test_7901m3smb3tgee5t403cqbnaycs2",
+    "02-verifiering-fore-detaljer.json": "test_4201m3smb425fctraaqdfg53hn9m",
+    "03-ingen-kod-ingen-injektion.json": "test_5001m3smb4aee00vsrm2m9eyrjey",
+    "04-utgaende-verifierar-forst.json": "test_5901m3smb4jpefatkbv5ca4gmfs8"
+  }
 }
