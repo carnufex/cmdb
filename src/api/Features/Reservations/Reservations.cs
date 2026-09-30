@@ -304,6 +304,6 @@ internal static class ReservationSql
     private static bool NodeVisible(Cmdb.Graph.Graph g, GraphMask mask, int node)
     {
         var site = g.SiteIndexOfNode(node);
-        return site >= 0 ? mask.Sites[site] : mask.Cables[g.CableIndexOfNode(node)];
+        return mask.NodeVisible(g, node);
     }
 }

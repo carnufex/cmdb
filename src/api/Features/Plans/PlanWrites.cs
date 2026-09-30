@@ -79,12 +79,22 @@ public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views
         }
         var mask = await masks.GetAsync(graph, scope, ct);
         string payload;
-        if (req.Kind is "connect" or "disconnect")
+        if (req.Kind is "create_site" or "create_equipment" or "create_cable")
         {
-            // Terminals must exist in production and be inside the caller's scopes; outside, they do not exist.
+            var (created, error) = await CreationAsync(scope, view, req, ct);
+            if (created is null)
+            {
+                return PlanWrite.Fail<PlanOperationView>(PlanWriteFailure.Invalid, error!);
+            }
+            payload = created;
+        }
+        else if (req.Kind is "connect" or "disconnect")
+        {
+            // Terminals must exist in the plan's view (production or planned) and be inside the caller's scopes; outside,
+            // they do not exist.
             foreach (var terminal in new[] { req.A!.Value, req.B!.Value })
             {
-                if (!graph.TryGetNode(terminal, out var node) || !Visible(graph, mask, node))
+                if (!view.Graph.TryGetNode(terminal, out var node) || !Visible(view.Graph, mask, node))
                 {
                     return PlanWrite.Fail<PlanOperationView>(PlanWriteFailure.Invalid, $"Terminal {terminal} finns inte.");
                 }
@@ -124,12 +134,95 @@ public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views
 
         var after = (await views.GetAsync(graph, req.Id, scope, ct))!;
         var op = after.Chain.Operations.Single(o => o.Id == opId);
-        return new((await PlanSql.DescribeAsync(db, graph, mask, scope, [op], after.Problems, ct)).Single());
+        return new((await PlanSql.DescribeAsync(db, graph, mask, scope, [op], after.Problems, ct, after.Chain.Operations)).Single());
+    }
+
+    /// <summary>
+    /// Checks a create operation (#107) and gives its payload: sites it refers to must exist and be visible, or be
+    /// planned in the plan's view; a planned site must lie inside the caller's scopes; codes must be new.
+    /// </summary>
+    private async Task<(string? Payload, string? Error)> CreationAsync(UserScope scope, PlanView view, AddOperationRequest req, CancellationToken ct)
+    {
+        async Task<string?> SiteProblem(long site)
+        {
+            if (site < 0)
+            {
+                return view.Chain.Operations.Any(o => o.Kind == "create_site" && Planned.ObjectId(o.Id) == site)
+                    ? null : $"Den planerade siten {site} finns inte i planen.";
+            }
+            return await PlanSql.ObjectVisibleAsync(db, "site", site, scope, ct) ? null : $"Site {site} finns inte.";
+        }
+
+        switch (req.Kind)
+        {
+            case "create_site":
+                {
+                    var code = req.Code!.Trim();
+                    if (view.Chain.Operations.Any(o => o.Kind == "create_site" && o.Payload.GetProperty("code").GetString() == code))
+                    {
+                        return (null, $"Koden {code} används redan i planen.");
+                    }
+                    await using (var cmd = db.CreateCommand("SELECT EXISTS (SELECT 1 FROM site WHERE code = $1)"))
+                    {
+                        cmd.Parameters.Add(new() { Value = code });
+                        if ((bool)(await cmd.ExecuteScalarAsync(ct))!)
+                        {
+                            return (null, $"Koden {code} används redan.");
+                        }
+                    }
+                    if (!await InsideScopeAsync(scope, req.X!.Value, req.Y!.Value, req.SiteType!, ct))
+                    {
+                        return (null, "Positionen ligger utanför ditt omfång.");
+                    }
+                    return (System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        code,
+                        name = req.Name!.Trim(),
+                        siteType = req.SiteType,
+                        x = Math.Round(req.X!.Value, 1),
+                        y = Math.Round(req.Y!.Value, 1),
+                    }), null);
+                }
+            case "create_equipment":
+                return await SiteProblem(req.SiteId!.Value) is { } equipmentSite
+                    ? (null, equipmentSite)
+                    : (System.Text.Json.JsonSerializer.Serialize(new { site = req.SiteId, typeKey = req.TypeKey, name = req.Name!.Trim() }), null);
+            default:
+                foreach (var site in new[] { req.ASiteId!.Value, req.BSiteId!.Value })
+                {
+                    if (await SiteProblem(site) is { } cableSite)
+                    {
+                        return (null, cableSite);
+                    }
+                }
+                return (System.Text.Json.JsonSerializer.Serialize(new { a = req.ASiteId, b = req.BSiteId, typeKey = req.TypeKey }), null);
+        }
+    }
+
+    /// <summary>Whether a new site of the type at the point is inside one of the caller's scopes.</summary>
+    private async Task<bool> InsideScopeAsync(UserScope scope, double x, double y, string siteType, CancellationToken ct)
+    {
+        if (scope.Unrestricted)
+        {
+            return true;
+        }
+        await using var cmd = db.CreateCommand("""
+            SELECT EXISTS (
+                SELECT 1 FROM access_scope a
+                WHERE a.key = ANY($1)
+                  AND (a.area IS NULL OR ST_Intersects(a.area, ST_SetSRID(ST_MakePoint($2, $3), 3006)))
+                  AND (cardinality(a.site_types) = 0 OR $4 = ANY(a.site_types)))
+            """);
+        cmd.Parameters.Add(new() { Value = scope.Keys });
+        cmd.Parameters.Add(new() { Value = x });
+        cmd.Parameters.Add(new() { Value = y });
+        cmd.Parameters.Add(new() { Value = siteType });
+        return (bool)(await cmd.ExecuteScalarAsync(ct))!;
     }
 
     private static bool Visible(Cmdb.Graph.Graph g, GraphMask mask, int node)
     {
         var site = g.SiteIndexOfNode(node);
-        return site >= 0 ? mask.Sites[site] : mask.Cables[g.CableIndexOfNode(node)];
+        return mask.NodeVisible(g, node);
     }
 }

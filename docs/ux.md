@@ -73,6 +73,7 @@ Snabbsöket (Ctrl+K) hittar objekt på namn och kod. För frågor som *alla radi
 - **Ändringar görs där objekten finns.** Välj en port i utrustningspanelen:
   - *Koppla bort i planen* bryter en koppling som finns i planens vy.
   - *Koppla i planen…* väljer första änden. Välj sedan en port på valfri utrustning och *Koppla … hit*.
+- **Nytt i planen (#107):** *Ny site* placeras vid kartans mittpunkt. *Ny utrustning* och *Ny kabel* anges med sitekod, befintlig eller planerad. Planerade objekt ritas streckat violetta i kartan, och länkarna till dem öppnar inget, eftersom de inte finns i produktion än. Deras portar och fibrer kopplas som andra i planen och syns i spårningen som *(planerad)*.
 - *För in i produktion* och *Avbryt planen* kräver en bekräftelse. Planer som bygger på planen och som påverkas flaggas, och det står i panelen vilka det gäller.
 - Detaljpanelerna (site, utrustning och kabel) visar produktion. Det som skiljer i planen syns i planpanelen, i spårning och i påverkan.
 - **Reservationer och konflikter (#25):**

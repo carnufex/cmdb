@@ -114,6 +114,45 @@ public sealed class PlanToolTests(ApiFactory factory)
         Text(refused).ShouldContain("may read but not propose");
     }
 
+    [Fact]
+    public async Task An_agent_plans_a_new_site_with_equipment_and_patches_to_it()
+    {
+        var (db, api) = await NetworkAsync(33);
+        await using var dbScope = db;
+        await using var apiScope = api;
+        var (from, _) = await TwoEquipmentWithFreePortsAsync(db, 2);
+        await using var agent = await ConnectAsync(api, AgentToken());
+        var plan = Json(await agent.CallToolAsync("create_plan", new Dictionary<string, object?> { ["name"] = "Ny nod" }, cancellationToken: Ct))
+            .GetProperty("ref").GetString()!;
+
+        var site = Json(await agent.CallToolAsync("add_to_plan", new Dictionary<string, object?>
+        {
+            ["plan"] = plan,
+            ["operations"] = new[] { new { kind = "create_site", code = "NOD-AGENT-1", name = "Agentens nod", siteType = "cabinet", x = 600000.0, y = 7000000.0 } },
+        }, cancellationToken: Ct)).GetProperty("added")[0].GetProperty("target").GetString()!;
+        site.ShouldStartWith("site:-");
+        var equipment = Json(await agent.CallToolAsync("add_to_plan", new Dictionary<string, object?>
+        {
+            ["plan"] = plan,
+            ["operations"] = new[] { new { kind = "create_equipment", site, typeKey = "acme-ax-24", name = "NOD-AGENT-1 AX-24 1" } },
+        }, cancellationToken: Ct)).GetProperty("added")[0].GetProperty("target").GetString()!;
+        equipment.ShouldStartWith("equipment:-");
+
+        var patched = Json(await agent.CallToolAsync("connect_ports", new Dictionary<string, object?>
+        {
+            ["plan"] = plan,
+            ["from"] = equipment,
+            ["fromPort"] = "ge-0/0/1",
+            ["to"] = $"equipment:{from}",
+            ["toPort"] = "1",
+            ["count"] = 2,
+        }, cancellationToken: Ct));
+        patched.GetProperty("added").GetArrayLength().ShouldBe(2);
+        patched.GetProperty("added")[0].GetProperty("summary").GetString()!.ShouldContain("(planerad)");
+        var preview = Json(await agent.CallToolAsync("preview_plan", new Dictionary<string, object?> { ["plan"] = plan }, cancellationToken: Ct));
+        preview.GetProperty("problems").GetInt32().ShouldBe(0);
+    }
+
     private async Task<(NpgsqlDataSource Db, WebApplicationFactory<Program> Api)> NetworkAsync(int seed)
     {
         var db = await factory.NewDatabaseAsync();

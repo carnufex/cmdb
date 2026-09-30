@@ -83,6 +83,7 @@ public sealed class TraceEndpoint(GraphHolder holder, RequestDb db, ScopeMasks m
             await Send.ResultAsync(TypedResults.Problem("The network graph is still loading; try again shortly.", statusCode: StatusCodes.Status503ServiceUnavailable));
             return;
         }
+        IReadOnlyDictionary<long, TraceHop>? planned = null;
         if (req.Plan is { } planId)
         {
             if (await plans.GetAsync(graph, planId, HttpContext.Scope(), ct) is not { } view)
@@ -91,9 +92,10 @@ public sealed class TraceEndpoint(GraphHolder holder, RequestDb db, ScopeMasks m
                 return;
             }
             graph = view.Graph;
+            planned = (await Cmdb.Api.Features.Plans.PlannedNames.BuildAsync(db, view.Chain.Operations, ct)).Terminals;
         }
         var mask = await masks.GetAsync(graph, HttpContext.Scope(), ct);
-        var result = await RunAsync(graph, mask, db, req.Terminal, req.Service, req.Circuit, ct);
+        var result = await RunAsync(graph, mask, db, req.Terminal, req.Service, req.Circuit, ct, planned);
         if (result is not null && req.Geometry)
         {
             result = result with { Route = await RouteAsync(db, result.Sites, result.Cables, HttpContext.Scope(), ct) };
@@ -112,7 +114,8 @@ public sealed class TraceEndpoint(GraphHolder holder, RequestDb db, ScopeMasks m
     /// with a placeholder hop; circuits and services outside it are counted in <see cref="TraceResult.Hidden"/>;
     /// terminals outside it on a visible circuit are placeholders.
     /// </remarks>
-    internal static async Task<TraceResult?> RunAsync(Cmdb.Graph.Graph g, GraphMask mask, NpgsqlDataSource db, long? terminal, long? service, long? circuit, CancellationToken ct)
+    internal static async Task<TraceResult?> RunAsync(Cmdb.Graph.Graph g, GraphMask mask, NpgsqlDataSource db, long? terminal, long? service, long? circuit, CancellationToken ct,
+        IReadOnlyDictionary<long, TraceHop>? planned = null)
     {
         var sw = Stopwatch.StartNew();
         PhysicalPath? physical = null;
@@ -182,6 +185,10 @@ public sealed class TraceEndpoint(GraphHolder holder, RequestDb db, ScopeMasks m
             }
         }
         var names = await TraceNames.LoadAsync(db, [.. terminalIds], [.. steps.Select(x => g.CircuitId(x.Circuit))], [.. services.Select(g.ServiceId)], ct);
+        if (planned is not null)
+        {
+            names.AddPlanned(planned);
+        }
 
         TracePath? path = null;
         if (physical is not null)
@@ -402,6 +409,15 @@ internal sealed class TraceNames
     /// <summary>A terminal outside the caller's scope (#22): no id, no names, only that the path goes on.</summary>
     public static TraceHop Placeholder(EdgeKind? edge) =>
         new(0, "hidden", edge is { } e ? TraceEndpoint.Edge(e) : null, "Utanför ditt omfång", null, null, null, null);
+
+    /// <summary>Names for terminals a plan creates (#107), which the database does not know yet.</summary>
+    public void AddPlanned(IReadOnlyDictionary<long, TraceHop> planned)
+    {
+        foreach (var (id, hop) in planned)
+        {
+            _terminals[id] = (hop.Kind, hop.Label, hop.Equipment, hop.Cable, hop.Site, hop.Conductor);
+        }
+    }
 
     public TraceHop Hop(long terminal, EdgeKind? edge)
     {

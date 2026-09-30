@@ -89,6 +89,7 @@ describe('PlanPanelComponent', () => {
       extent: [500000, 6600000, 500000, 6600000],
       problems: changes.filter((c) => c.problem).length,
       elapsedMs: 4.2,
+      planned: null,
     };
     http.expectOne('/api/plans').flush([dependency, plan]);
     http.expectOne(`/api/plans/${plan.id}`).flush(detail);

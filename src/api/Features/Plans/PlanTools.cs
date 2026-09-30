@@ -12,8 +12,9 @@ namespace Cmdb.Api.Features.Plans;
 public sealed record AgentPlan(string Ref, string Name, string Status, string? Flag, int Operations, int Conflicts, string CreatedBy,
     string CreatedVia, IReadOnlyList<string> DependsOn, string Url);
 
+/// <param name="Target">The object the change is about; for a create, the planned object's ref (negative id) to use later.</param>
 public sealed record AgentPlanChange(string Ref, string Plan, string Kind, string Summary, string? Problem, IReadOnlyList<string> Conflicts,
-    bool Blocked);
+    bool Blocked, string? Target = null);
 
 /// <summary>A plan's view as an agent sees it: every change against production, what does not fit, and the link for a person.</summary>
 public sealed record AgentPlanPreview(AgentPlan Plan, IReadOnlyList<AgentPlanChange> Changes, int Problems, int Conflicts,
@@ -24,7 +25,7 @@ public sealed record AgentPlanAdded(AgentPlan Plan, IReadOnlyList<AgentPlanChang
 /// <summary>One change for <c>add_to_plan</c>.</summary>
 public sealed class AgentPlanOperation
 {
-    [Description("connect, disconnect, set_lifecycle or rename.")]
+    [Description("connect, disconnect, set_lifecycle, rename, create_site, create_equipment or create_cable.")]
     public string Kind { get; set; } = "";
 
     [Description("connect/disconnect: the first terminal id (ports and conductor ends have terminal ids in get_object).")]
@@ -42,8 +43,32 @@ public sealed class AgentPlanOperation
     [Description("set_lifecycle: planned, under_construction, in_service, decommissioning or removed.")]
     public string? Lifecycle { get; set; }
 
-    [Description("rename: the new name.")]
+    [Description("rename, create_site, create_equipment: the name.")]
     public string? Name { get; set; }
+
+    [Description("create_site: a new, unique site code.")]
+    public string? Code { get; set; }
+
+    [Description("create_site: hub, aggregation, radio, cabinet or splice.")]
+    public string? SiteType { get; set; }
+
+    [Description("create_site: position in SWEREF 99 TM (EPSG:3006), metres east.")]
+    public double? X { get; set; }
+
+    [Description("create_site: metres north.")]
+    public double? Y { get; set; }
+
+    [Description("create_equipment: an equipment model key; create_cable: a cable type key (describe_catalog).")]
+    public string? TypeKey { get; set; }
+
+    [Description("create_equipment: the site, \"site:12\", or a planned one from this plan (its ref in the answer, e.g. \"site:-3\").")]
+    public string? Site { get; set; }
+
+    [Description("create_cable: the site at the A end, existing or planned.")]
+    public string? ASite { get; set; }
+
+    [Description("create_cable: the site at the B end.")]
+    public string? BSite { get; set; }
 }
 
 /// <summary>
@@ -119,6 +144,14 @@ public sealed class PlanTools(RequestDb db, PlanWrites writes, PlanViews views, 
                 ObjectId = id,
                 Lifecycle = op.Lifecycle,
                 Name = op.Name,
+                Code = op.Code,
+                SiteType = op.SiteType,
+                X = op.X,
+                Y = op.Y,
+                TypeKey = op.TypeKey,
+                SiteId = op.Site is null ? null : ParseRef(op.Site, "site", planned: true),
+                ASiteId = op.ASite is null ? null : ParseRef(op.ASite, "site", planned: true),
+                BSiteId = op.BSite is null ? null : ParseRef(op.BSite, "site", planned: true),
             });
         }
         return await AddAllAsync(planId, requests, ct);
@@ -144,8 +177,8 @@ public sealed class PlanTools(RequestDb db, PlanWrites writes, PlanViews views, 
         {
             throw new McpException("count is 1–96.");
         }
-        var a = await PortRunAsync(from, fromPort, count, ct);
-        var b = await PortRunAsync(to, toPort, count, ct);
+        var a = await PortRunAsync(planId, from, fromPort, count, ct);
+        var b = await PortRunAsync(planId, to, toPort, count, ct);
         return await AddAllAsync(planId, [.. a.Zip(b, (x, y) => new AddOperationRequest
         {
             Id = planId,
@@ -203,13 +236,13 @@ public sealed class PlanTools(RequestDb db, PlanWrites writes, PlanViews views, 
     }
 
     /// <summary>Terminal ids of <paramref name="count"/> ports from the start port, in front-panel order.</summary>
-    private async Task<List<long>> PortRunAsync(string equipment, string start, int count, CancellationToken ct)
+    private async Task<List<long>> PortRunAsync(long planId, string equipment, string start, int count, CancellationToken ct)
     {
         var scope = Http.Scope();
         long id;
         if (equipment.StartsWith("equipment:", StringComparison.Ordinal))
         {
-            id = ParseRef(equipment, "equipment");
+            id = ParseRef(equipment, "equipment", planned: true);
         }
         else
         {
@@ -228,13 +261,23 @@ public sealed class PlanTools(RequestDb db, PlanWrites writes, PlanViews views, 
                 ? $"No equipment named \"{equipment}\". Use search."
                 : $"Several equipment are named \"{equipment}\"; use its reference \"equipment:ID\".");
         }
+        var ports = new List<(long Terminal, string Name, int Position)>();
+        if (id < 0)
+        {
+            // Planned equipment (#107): its ports come from the model's template, with planned terminal ids.
+            var chain = await PlanViews.LoadChainAsync(db, planId, ct);
+            var op = chain?.Operations.FirstOrDefault(o => o.Kind == "create_equipment" && Planned.ObjectId(o.Id) == id)
+                ?? throw new McpException($"No planned equipment:{id} in plan:{planId}.");
+            var type = Cmdb.Catalog.TypeCatalog.Embedded.Find(op.Payload.GetProperty("typeKey").GetString()!)!;
+            ports.AddRange(Cmdb.Catalog.PortExpansion.Expand(type).Select(p => (Planned.Terminal(op.Id, p.Position), p.Name, p.Position)));
+            return Run(ports, id, start, count);
+        }
         await using var cmd = db.CreateCommand($"""
             SELECT p.terminal_id, p.name, p.position FROM port p JOIN equipment e ON e.id = p.equipment_id
             WHERE e.id = $1 AND {ScopeSql.Site("e.site_id", 2)} ORDER BY p.position
             """);
         cmd.Parameters.Add(new() { Value = id });
         cmd.Parameters.Add(scope.Parameter());
-        var ports = new List<(long Terminal, string Name, int Position)>();
         await using (var reader = await cmd.ExecuteReaderAsync(ct))
         {
             while (await reader.ReadAsync(ct))
@@ -242,6 +285,11 @@ public sealed class PlanTools(RequestDb db, PlanWrites writes, PlanViews views, 
                 ports.Add((reader.GetInt64(0), reader.GetString(1), reader.GetInt32(2)));
             }
         }
+        return Run(ports, id, start, count);
+    }
+
+    private static List<long> Run(List<(long Terminal, string Name, int Position)> ports, long id, string start, int count)
+    {
         if (ports.Count == 0)
         {
             throw new McpException($"No equipment with id {id}.");
@@ -273,12 +321,13 @@ public sealed class PlanTools(RequestDb db, PlanWrites writes, PlanViews views, 
 
     private static AgentPlanChange ToAgent(PlanOperationView c, Dictionary<long, string> names) => new(
         AgentLinks.Ref("operation", c.Id), names.GetValueOrDefault(c.PlanId) ?? AgentLinks.Ref("plan", c.PlanId), c.Kind, c.Summary,
-        c.Problem, c.Conflicts, c.Blocked);
+        c.Problem, c.Conflicts, c.Blocked, c.Target is { Id: not 0 } t ? AgentLinks.Ref(t.Type, t.Id) : null);
 
-    private static long ParseRef(string reference, string type)
+    /// <param name="planned">Also accept a planned object's negative id (#107).</param>
+    private static long ParseRef(string reference, string type, bool planned = false)
     {
         var text = reference.StartsWith(type + ":", StringComparison.Ordinal) ? reference[(type.Length + 1)..] : reference;
-        return long.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out var id) && id > 0
+        return long.TryParse(text, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var id) && (id > 0 || (planned && id < 0))
             ? id
             : throw new McpException($"\"{reference}\" is not a {type} reference like \"{type}:12\".");
     }

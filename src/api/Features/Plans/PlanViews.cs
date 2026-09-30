@@ -20,13 +20,64 @@ public sealed record PlanOp(long Id, long PlanId, int Seq, string Kind, JsonElem
     public string? ObjectType => Payload.TryGetProperty("type", out var t) ? t.GetString() : null;
     public long ObjectId => Payload.GetProperty("id").GetInt64();
 
-    /// <summary>What the operation does to the graph, if anything: connects and disconnects.</summary>
+    /// <summary>A connect or disconnect: the connection it adds or removes.</summary>
     public GraphEdgeChange? Edge => Kind switch
     {
         "connect" => new GraphEdgeChange(A, B, PlanKinds.Edge(ConnectionKind!), Add: true),
         "disconnect" => new GraphEdgeChange(A, B, EdgeKind.Patch, Add: false),
         _ => null,
     };
+
+    /// <summary>
+    /// What the operation does to the graph, if anything: a connection, or a planned site, equipment or cable (#107)
+    /// with the ids <see cref="Planned"/> gives it.
+    /// </summary>
+    public GraphChange? Change => Kind switch
+    {
+        "connect" or "disconnect" => Edge,
+        "create_site" => new GraphNewSite(Planned.ObjectId(Id)),
+        "create_equipment" => new GraphNewEquipment(Planned.ObjectId(Id), Payload.GetProperty("site").GetInt64(),
+            [.. Enumerable.Range(1, Planned.PortCount(Payload.GetProperty("typeKey").GetString()!)).Select(n => Planned.Terminal(Id, n))]),
+        "create_cable" => new GraphNewCable(Planned.ObjectId(Id),
+            [.. Enumerable.Range(1, Planned.ConductorCount(Payload.GetProperty("typeKey").GetString()!))
+                .Select(k => new GraphNewConductor(Planned.Conductor(Id, k), Planned.Terminal(Id, (2 * k) - 1), Planned.Terminal(Id, 2 * k)))]),
+        _ => null,
+    };
+
+    /// <summary>Planned ids this operation refers to that another operation creates: sites, terminals.</summary>
+    public IEnumerable<long> PlannedReferences => Kind switch
+    {
+        "connect" or "disconnect" => new[] { A, B }.Where(id => id < 0),
+        "create_equipment" => new[] { Payload.GetProperty("site").GetInt64() }.Where(id => id < 0),
+        "create_cable" => new[] { Payload.GetProperty("a").GetInt64(), Payload.GetProperty("b").GetInt64() }.Where(id => id < 0),
+        _ => [],
+    };
+}
+
+/// <summary>
+/// Ids of objects a plan creates (#107): negative, so they never meet production's, and derived from the operation, so
+/// later operations and plans building on this one can refer to them. A planned object is <c>-op</c>; its n-th terminal
+/// (port n, or conductor k's ends 2k-1 and 2k) is <c>-(op × 10000 + n)</c>, and conductor k is <c>-(op × 10000 + 5000 + k)</c>,
+/// so terminals and conductors never share an id.
+/// </summary>
+public static class Planned
+{
+    public const int PerObject = 10_000;
+
+    /// <summary>Conductors start here within an operation's range; terminals stay below.</summary>
+    private const int Conductors = 5_000;
+
+    public static long ObjectId(long op) => -op;
+
+    public static long Terminal(long op, int n) => -((op * PerObject) + n);
+
+    public static long Conductor(long op, int k) => -((op * PerObject) + Conductors + k);
+
+    public static int PortCount(string typeKey) =>
+        Cmdb.Catalog.TypeCatalog.Embedded.Find(typeKey) is { } type ? Cmdb.Catalog.PortExpansion.Expand(type).Count : 0;
+
+    public static int ConductorCount(string typeKey) =>
+        Cmdb.Catalog.TypeCatalog.Embedded.CableTypes.FirstOrDefault(t => t.Key == typeKey)?.ConductorCount ?? 0;
 }
 
 /// <summary>
@@ -44,7 +95,10 @@ public sealed record PlanView(PlanChain Chain, Cmdb.Graph.Graph Graph, IReadOnly
 
 internal static class PlanKinds
 {
-    public static readonly string[] Operations = ["connect", "disconnect", "set_lifecycle", "rename"];
+    public static readonly string[] Operations =
+        ["connect", "disconnect", "set_lifecycle", "rename", "create_site", "create_equipment", "create_cable"];
+
+    public static readonly string[] SiteTypes = ["hub", "aggregation", "radio", "cabinet", "splice"];
     public static readonly string[] Connections = ["patch", "splice", "termination", "internal"];
 
     public static EdgeKind Edge(string kind) => kind switch
@@ -61,6 +115,7 @@ internal static class PlanKinds
         GraphChangeProblem.AlreadyConnected => "Terminalerna är redan kopplade.",
         GraphChangeProblem.NotConnected => "Terminalerna är inte kopplade.",
         GraphChangeProblem.Occupied => "Porten eller fibern är redan upptagen av en koppling av samma slag.",
+        GraphChangeProblem.InvalidObject => "Objektet finns redan.",
         _ => "En terminal kan inte kopplas till sig själv.",
     };
 }
@@ -93,9 +148,9 @@ public sealed class PlanViews(SystemDb system)
         {
             return hit.View;
         }
-        var edgeOps = chain.Operations.Where(o => o.Edge is not null).ToList();
-        var (graph, issues) = production.WithChanges([.. edgeOps.Select(o => o.Edge!)]);
-        var view = new PlanView(chain, graph, issues.ToDictionary(i => edgeOps[i.Index].Id, i => i.Problem));
+        var graphOps = chain.Operations.Where(o => o.Change is not null).ToList();
+        var (graph, issues) = production.WithChanges([.. graphOps.Select(o => o.Change!)]);
+        var view = new PlanView(chain, graph, issues.ToDictionary(i => graphOps[i.Index].Id, i => i.Problem));
         if (_cache.Count >= MaxCached)
         {
             // Old production graphs and plans nobody looks at; the next request rebuilds in milliseconds.

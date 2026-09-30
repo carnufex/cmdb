@@ -66,6 +66,7 @@ public sealed partial class ApplyPlanEndpoint(RequestDb db, GraphHolder holder, 
         }
 
         var operations = view.Chain.Operations;
+        PlanApply run;
         await using (var conn = await db.OpenConnectionAsync(ct))
         await using (var tx = await conn.BeginTransactionAsync(ct))
         {
@@ -82,9 +83,10 @@ public sealed partial class ApplyPlanEndpoint(RequestDb db, GraphHolder holder, 
                     return;
                 }
             }
+            run = new PlanApply(conn, tx);
             foreach (var op in operations)
             {
-                if (await ExecuteAsync(conn, tx, op, ct) == 0)
+                if (!await run.RunAsync(op, ct))
                 {
                     await tx.RollbackAsync(ct);
                     await PlanSql.ConflictAsync(HttpContext, $"Operation {op.Seq} passar inte längre produktion. Inget har ändrats.", ct);
@@ -102,58 +104,18 @@ public sealed partial class ApplyPlanEndpoint(RequestDb db, GraphHolder holder, 
             }
             // In production the resources are taken by the connections themselves (#25).
             await PlanSql.ReleaseReservationsAsync(conn, tx, plan.Id, ct);
+            // Plans building on this one may refer to objects it created (#107): they now have production ids.
+            await run.RewriteDependentsAsync(await PlanSql.DependentsAsync(db, plan.Id, ct), ct);
             await tx.CommitAsync(ct);
         }
         var actor = PlanSql.Actor(User);
         Applied(logger, plan.Id, operations.Count, actor);
 
         // Production as it will be once the change stream has caught up: the graph plus this plan's connections.
-        var (after, _) = graph.WithChanges([.. operations.Where(o => o.Edge is not null).Select(o => o.Edge!)]);
+        var (after, _) = graph.WithChanges([.. operations.Where(o => o.Change is not null).Select(o => run.Production(o.Change!))]);
         var flagged = await FlagDependentsAsync(db, views, after, plan, ct);
         await Send.OkAsync(new ApplyResult((await PlanSql.SummariesAsync(db, [plan.Id], ct)).Single(), flagged), ct);
     }
-
-    private static async Task<int> ExecuteAsync(NpgsqlConnection conn, NpgsqlTransaction tx, PlanOp op, CancellationToken ct)
-    {
-        var sql = op.Kind switch
-        {
-            "connect" => """
-                INSERT INTO connection (a_terminal_id, b_terminal_id, kind, lifecycle)
-                VALUES (least($1, $2), greatest($1, $2), $3::connection_kind, 'in_service')
-                ON CONFLICT (a_terminal_id, b_terminal_id) WHERE valid_to IS NULL DO NOTHING
-                """,
-            "disconnect" => """
-                UPDATE connection SET valid_to = now(), lifecycle = 'removed'
-                WHERE a_terminal_id = least($1, $2) AND b_terminal_id = greatest($1, $2) AND valid_to IS NULL
-                """,
-            "set_lifecycle" => $"UPDATE {Table(op.ObjectType!)} SET lifecycle = $2::lifecycle WHERE id = $1",
-            _ => $"UPDATE {Table(op.ObjectType!)} SET name = $2 WHERE id = $1",
-        };
-        await using var cmd = new NpgsqlCommand(sql, conn, tx);
-        if (op.Kind is "connect" or "disconnect")
-        {
-            cmd.Parameters.Add(new() { Value = op.A });
-            cmd.Parameters.Add(new() { Value = op.B });
-            if (op.Kind == "connect")
-            {
-                cmd.Parameters.Add(new() { Value = op.ConnectionKind! });
-            }
-        }
-        else
-        {
-            cmd.Parameters.Add(new() { Value = op.ObjectId });
-            cmd.Parameters.Add(new() { Value = op.Payload.GetProperty(op.Kind == "set_lifecycle" ? "lifecycle" : "name").GetString()! });
-        }
-        return await cmd.ExecuteNonQueryAsync(ct);
-    }
-
-    private static string Table(string type) => type switch
-    {
-        "site" => "site",
-        "equipment" => "equipment",
-        "cable" => "cable",
-        _ => throw new InvalidOperationException($"Unknown object type {type}."),
-    };
 
     /// <summary>Re-checks every draft plan that builds on the applied one, directly or not, and flags those that no longer fit.</summary>
     private static async Task<List<PlanSummary>> FlagDependentsAsync(NpgsqlDataSource db, PlanViews views, Cmdb.Graph.Graph after,

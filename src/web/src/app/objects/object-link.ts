@@ -27,6 +27,14 @@ const HOVER_DELAY_MS = 450;
       <span class="hidden" title="Objektet ligger utanför ditt behörighetsomfång">{{
         ref().name ?? 'Utanför ditt omfång'
       }}</span>
+    } @else if (ref().id < 0) {
+      <!-- Planned in the active plan (#107): not in production yet, so there is no panel to open. -->
+      <span class="planned" title="Planerad i planen, finns inte i produktion än"
+        ><span class="mono">{{ ref().code }}</span>
+        @if (showName() && ref().name) {
+          {{ ref().name }}
+        }
+      </span>
     } @else {
       <a
         [href]="href()"
@@ -127,6 +135,9 @@ const HOVER_DELAY_MS = 450;
     }
     dd {
       margin: 0;
+    }
+    .planned {
+      color: var(--status-planned);
     }
     .hidden {
       color: var(--text-muted);

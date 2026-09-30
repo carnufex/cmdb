@@ -160,12 +160,17 @@ internal static class PlanSql
     /// Operations in words. Terminals and objects outside the caller's scopes are placeholders (#22), as in a trace.
     /// </summary>
     public static async Task<List<PlanOperationView>> DescribeAsync(NpgsqlDataSource db, Cmdb.Graph.Graph graph, GraphMask mask,
-        UserScope scope, IReadOnlyList<PlanOp> operations, IReadOnlyDictionary<long, GraphChangeProblem> problems, CancellationToken ct)
+        UserScope scope, IReadOnlyList<PlanOp> operations, IReadOnlyDictionary<long, GraphChangeProblem> problems, CancellationToken ct,
+        IReadOnlyList<PlanOp>? context = null)
     {
+        // Objects the plan (and the plans under it) create are named from their operations (#107).
+        var planned = await PlannedNames.BuildAsync(db, context ?? operations, ct);
         var terminals = operations.Where(o => o.Edge is not null).SelectMany(o => new[] { o.A, o.B }).Distinct().ToArray();
         var conflicts = (await ClaimsSql.ConflictsAsync(db, [.. operations.Select(o => o.PlanId).Distinct()], ct)).ToLookup(c => c.OperationId);
-        var names = await TraceNames.LoadAsync(db, terminals, [], [], ct);
-        var objects = await ObjectsAsync(db, operations.Where(o => o.Edge is null).Select(o => (o.ObjectType!, o.ObjectId)).Distinct().ToList(), scope, ct);
+        var names = await TraceNames.LoadAsync(db, [.. terminals.Where(t => t > 0)], [], [], ct);
+        names.AddPlanned(planned.Terminals);
+        var objects = await ObjectsAsync(db, [.. operations.Where(o => o.Kind is "set_lifecycle" or "rename").Select(o => (o.ObjectType!, o.ObjectId)).Distinct()],
+            scope, ct);
 
         TraceHop Hop(long terminal) =>
             graph.TryGetNode(terminal, out var node) && !Visible(graph, mask, node) ? TraceNames.Placeholder(null) : names.Hop(terminal, null);
@@ -183,6 +188,13 @@ internal static class PlanSql
                 list.Add(new PlanOperationView(op.Id, op.PlanId, op.Seq, op.Kind, summary, [a, b], null, op.ConnectionKind, null, null,
                     problem, op.CreatedBy, op.CreatedAt, [.. conflicts[op.Id].Select(c => c.Message(scope))],
                     conflicts[op.Id].Any(c => c.Blocking)));
+                continue;
+            }
+            if (op.Kind.StartsWith("create_", StringComparison.Ordinal))
+            {
+                var (created, what) = planned.Describe(op);
+                list.Add(new PlanOperationView(op.Id, op.PlanId, op.Seq, op.Kind, created, [], what, null, null, what.Name, problem,
+                    op.CreatedBy, op.CreatedAt, [], false));
                 continue;
             }
             var found = objects.TryGetValue((op.ObjectType!, op.ObjectId), out var o);
@@ -246,7 +258,7 @@ internal static class PlanSql
     private static bool Visible(Cmdb.Graph.Graph g, GraphMask mask, int node)
     {
         var site = g.SiteIndexOfNode(node);
-        return site >= 0 ? mask.Sites[site] : mask.Cables[g.CableIndexOfNode(node)];
+        return mask.NodeVisible(g, node);
     }
 
     private static string ConnectionName(string? kind) => kind switch

@@ -15,13 +15,16 @@ public sealed record CategoryField(string Key, IReadOnlyList<AttributeField> Att
 
 public sealed record TypeField(string Key, string Manufacturer, string Model, string Category);
 
+public sealed record CableTypeField(string Key, string Name, string Medium, int Conductors);
+
 /// <summary>What advanced search can filter on. The UI builds its pickers from this.</summary>
 public sealed record QueryFields(
     IReadOnlyList<string> SiteTypes,
     IReadOnlyList<string> Lifecycles,
     IReadOnlyList<string> ServiceTypes,
     IReadOnlyList<CategoryField> Categories,
-    IReadOnlyList<TypeField> Types);
+    IReadOnlyList<TypeField> Types,
+    IReadOnlyList<CableTypeField>? CableTypes = null);
 
 public sealed class QueryFieldsEndpoint(RequestDb db, TypeCatalog catalog) : EndpointWithoutRequest<QueryFields>
 {
@@ -40,7 +43,9 @@ public sealed class QueryFieldsEndpoint(RequestDb db, TypeCatalog catalog) : End
         await using var conn = await db.OpenConnectionAsync(ct);
         var siteTypes = await Distinct(conn, "SELECT DISTINCT site_type FROM site ORDER BY 1", ct);
         var serviceTypes = await Distinct(conn, "SELECT DISTINCT service_type FROM service ORDER BY 1", ct);
-        return new QueryFields(siteTypes, Lifecycles, serviceTypes, Categories(catalog), Types(catalog));
+        return new QueryFields(siteTypes, Lifecycles, serviceTypes, Categories(catalog), Types(catalog),
+            [.. catalog.CableTypes.OrderBy(t => t.ConductorCount).ThenBy(t => t.Key, StringComparer.Ordinal)
+                .Select(t => new CableTypeField(t.Key, t.Name, t.Medium, t.ConductorCount))]);
     }
 
     internal static IReadOnlyList<CategoryField> Categories(TypeCatalog catalog) =>
