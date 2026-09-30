@@ -1,6 +1,7 @@
 import { HttpClient, httpResource } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
+import { Selection } from '../grid/selection';
 import { MapView } from '../map/map-view';
 import { PanelStack } from '../shell/panels';
 import { StatusComponent } from '../shell/status';
@@ -37,6 +38,7 @@ export class QueryPanelComponent {
   private readonly http = inject(HttpClient);
   private readonly mapView = inject(MapView);
   private readonly panels = inject(PanelStack);
+  private readonly selection = inject(Selection);
   protected readonly tools = inject(Tools);
 
   protected readonly fields = httpResource<QueryFields>(() => '/api/query/fields');
@@ -162,6 +164,15 @@ export class QueryPanelComponent {
     if (site.x !== null && site.y !== null) {
       this.mapView.focus({ x: site.x, y: site.y });
     }
+  }
+
+  /** The matches as a spreadsheet (#27): the grid opens with them selected. */
+  protected openGrid(result: SiteQueryResult): void {
+    this.selection.sites.set({
+      ids: result.points.map((p) => p[0]),
+      label: `${result.points.length} siter från avancerad sökning`,
+    });
+    this.tools.toggle('grid');
   }
 
   protected close(): void {

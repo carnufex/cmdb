@@ -67,7 +67,7 @@ public sealed class QueryFieldsEndpoint(RequestDb db, TypeCatalog catalog) : End
     internal static IReadOnlySet<string> AttributeKeys(TypeCatalog catalog) =>
         catalog.Types.SelectMany(t => Attributes(t.Attributes)).Select(a => a.Key).ToHashSet(StringComparer.Ordinal);
 
-    private static IEnumerable<AttributeField> Attributes(JsonElement schema)
+    internal static IEnumerable<AttributeField> Attributes(JsonElement schema)
     {
         if (!schema.TryGetProperty("properties", out var properties) || properties.ValueKind != JsonValueKind.Object)
         {

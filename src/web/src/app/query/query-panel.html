@@ -196,6 +196,9 @@
             >· {{ r.points.length.toLocaleString('sv-SE') }} markerade i kartan</span
           >
         }
+        @if (r.points.length) {
+          <button type="button" class="linkish" (click)="openGrid(r)">Öppna som kalkylark</button>
+        }
       </p>
       <ol>
         @for (s of r.sites; track s.id) {

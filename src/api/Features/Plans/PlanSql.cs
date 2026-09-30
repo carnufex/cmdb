@@ -169,7 +169,7 @@ internal static class PlanSql
         var conflicts = (await ClaimsSql.ConflictsAsync(db, [.. operations.Select(o => o.PlanId).Distinct()], ct)).ToLookup(c => c.OperationId);
         var names = await TraceNames.LoadAsync(db, [.. terminals.Where(t => t > 0)], [], [], ct);
         names.AddPlanned(planned.Terminals);
-        var objects = await ObjectsAsync(db, [.. operations.Where(o => o.Kind is "set_lifecycle" or "rename").Select(o => (o.ObjectType!, o.ObjectId)).Distinct()],
+        var objects = await ObjectsAsync(db, [.. operations.Where(o => o.Kind is "set_lifecycle" or "rename" or "set_attributes").Select(o => (o.ObjectType!, o.ObjectId)).Distinct()],
             scope, ct);
 
         TraceHop Hop(long terminal) =>
@@ -202,9 +202,12 @@ internal static class PlanSql
                 : o.Visible ? o.Ref : ObjectRef.Hidden(op.ObjectType!);
             var lifecycle = op.Payload.TryGetProperty("lifecycle", out var l) ? l.GetString() : null;
             var name = op.Payload.TryGetProperty("name", out var n) ? n.GetString() : null;
-            var text = op.Kind == "set_lifecycle"
-                ? $"Sätt livscykel för {target.Code} till {LifecycleName(lifecycle)}"
-                : $"Byt namn på {target.Code} till {name}";
+            var text = op.Kind switch
+            {
+                "set_lifecycle" => $"Sätt livscykel för {target.Code} till {LifecycleName(lifecycle)}",
+                "set_attributes" => $"Ändra attribut på {target.Code}: {AttributeText(op.Payload.GetProperty("attributes"))}",
+                _ => $"Byt namn på {target.Code} till {name}",
+            };
             if (problem is null && !found)
             {
                 problem = "Objektet finns inte längre.";
@@ -260,6 +263,9 @@ internal static class PlanSql
         var site = g.SiteIndexOfNode(node);
         return mask.NodeVisible(g, node);
     }
+
+    private static string AttributeText(System.Text.Json.JsonElement attributes) => string.Join(", ", attributes.EnumerateObject()
+        .Select(p => p.Value.ValueKind == System.Text.Json.JsonValueKind.Null ? $"{p.Name} tas bort" : $"{p.Name} = {p.Value}"));
 
     private static string ConnectionName(string? kind) => kind switch
     {

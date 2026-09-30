@@ -53,7 +53,8 @@ public sealed class TypeCatalog
     /// <summary>Validates instance attributes against the type's JSON Schema. Returns error messages, empty when valid.</summary>
     public IReadOnlyList<string> ValidateAttributes(string key, JsonElement attributes)
     {
-        var result = _schemas[key].Evaluate(attributes, new EvaluationOptions { OutputFormat = OutputFormat.List });
+        // Formats (ipv4, date and so on) are part of the model, not annotations: they are checked too.
+        var result = _schemas[key].Evaluate(attributes, new EvaluationOptions { OutputFormat = OutputFormat.List, RequireFormatValidation = true });
         if (result.IsValid)
         {
             return [];

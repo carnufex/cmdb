@@ -100,7 +100,13 @@ export type NewOperation =
   | { kind: 'rename'; type: 'site' | 'equipment'; objectId: number; name: string }
   | { kind: 'create_site'; code: string; name: string; siteType: string; x: number; y: number }
   | { kind: 'create_equipment'; siteId: number; typeKey: string; name: string }
-  | { kind: 'create_cable'; aSiteId: number; bSiteId: number; typeKey: string };
+  | { kind: 'create_cable'; aSiteId: number; bSiteId: number; typeKey: string }
+  | {
+      kind: 'set_attributes';
+      type: 'site' | 'equipment';
+      objectId: number;
+      attributes: Record<string, string | number | null>;
+    };
 
 export const planStatusLabels: Record<PlanSummary['status'], string> = {
   draft: 'Utkast',

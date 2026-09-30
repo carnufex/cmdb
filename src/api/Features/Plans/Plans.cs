@@ -88,6 +88,9 @@ public sealed class AddOperationRequest
     /// <summary>create_equipment: the rack it sits in, created in a building on the site when missing (#26).</summary>
     public string? Rack { get; set; }
 
+    /// <summary>set_attributes: keys to set; a null value removes the key (#27).</summary>
+    public System.Text.Json.JsonElement? Attributes { get; set; }
+
     /// <summary>create_cable: the sites at the two ends, existing or planned.</summary>
     public long? ASiteId { get; set; }
     public long? BSiteId { get; set; }
@@ -99,7 +102,16 @@ public sealed class AddOperationValidator : Validator<AddOperationRequest>
 
     public AddOperationValidator()
     {
-        RuleFor(r => r.Kind).Must(k => PlanKinds.Operations.Contains(k)).WithMessage("kind is connect, disconnect, set_lifecycle or rename.");
+        RuleFor(r => r.Kind).Must(k => PlanKinds.Operations.Contains(k)).WithMessage($"kind is one of {string.Join(", ", PlanKinds.Operations)}.");
+        When(r => r.Kind == "set_attributes", () =>
+        {
+            RuleFor(r => r.Type).Must(t => t is "site" or "equipment").WithMessage("type is site or equipment.");
+            RuleFor(r => r.ObjectId).NotNull();
+            RuleFor(r => r.Attributes).Must(a => a is { ValueKind: System.Text.Json.JsonValueKind.Object } o
+                    && o.EnumerateObject().Count() is > 0 and <= 50
+                    && o.EnumerateObject().All(p => p.Name.Length <= 100 && p.Value.ValueKind is not (System.Text.Json.JsonValueKind.Object or System.Text.Json.JsonValueKind.Array)))
+                .WithMessage("attributes is an object of 1–50 keys with plain values; null removes a key.");
+        });
         When(r => r.Kind is "connect" or "disconnect", () =>
         {
             RuleFor(r => r.A).NotNull();

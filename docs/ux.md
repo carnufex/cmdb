@@ -45,6 +45,11 @@ Så är det byggt (#26):
 - **Mönster:** Shift-klicka ett portintervall i frontpanelen och välj *Skarva*: kabel, första ledare, sida och steg. Porterna följer panelens ordning.
 - **Rita kabel:** *Ny kabel*, sedan *Välj siterna i kartan*, och klicka på två siter (befintliga eller planerade). Därefter föreslås terminering på lediga ODF-portar i båda ändar, och *Terminera* lägger till skarvarna.
 - **Allt eller inget:** en mall, ett mönster och en terminering läggs till helt eller inte alls, och varje operation kontrolleras som vanligt.
+- **Kalkylark (#27):** *Kalkylark* i verktygsfältet visar ett urval som ett redigerbart rutnät, med siterna eller utrustningen på dem.
+  - Urvalet kommer från avancerad sökning (*Öppna som kalkylark*) eller en lasso i kartan (*Rita lasso i kartan*, dubbelklicka för att stänga).
+  - Kolumnerna är namn, livscykel och attributen i modellernas scheman.
+  - Klistra in ett block från Excel i markerad cell. Shift-klicka för att markera nedåt och fyll med Ctrl+D.
+  - *Lägg i planen* skapar namnbyten, livscykel- och attributändringar i den aktiva planen, allt eller inget. Attributen kontrolleras mot modellens schema, inklusive format som ipv4. Ett fel pekas ut på raden.
 
 ## Linser
 
