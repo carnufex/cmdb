@@ -11,6 +11,8 @@ import { Tools } from './shell/tools';
 import { QueryPanelComponent } from './query/query-panel';
 import { PerfPanelComponent } from './perf/perf-panel';
 import { TreePanelComponent } from './tree/tree-panel';
+import { ActivePlan } from './plans/active-plan';
+import { PlanPanelComponent } from './plans/plan-panel';
 
 /** The user as the API sees them (GET /api/me). */
 export interface Me {
@@ -33,6 +35,7 @@ export interface Me {
     QueryPanelComponent,
     PerfPanelComponent,
     TreePanelComponent,
+    PlanPanelComponent,
   ],
   templateUrl: './app.html',
   styleUrl: './app.scss',
@@ -43,6 +46,7 @@ export class App {
   protected readonly theme = inject(ThemeStore);
   protected readonly panels = inject(PanelStack);
   protected readonly tools = inject(Tools);
+  protected readonly plan = inject(ActivePlan);
   protected readonly me = httpResource<Me>(() =>
     this.auth.isAuthenticated() ? '/api/me' : undefined,
   );

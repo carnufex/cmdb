@@ -2,6 +2,7 @@ import { httpResource } from '@angular/common/http';
 import { DecimalPipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, effect, inject, input } from '@angular/core';
 import { MapView } from '../map/map-view';
+import { ActivePlan } from '../plans/active-plan';
 import { PanelStack } from '../shell/panels';
 import { StatusComponent } from '../shell/status';
 import { EditHeaderComponent } from './edit-header';
@@ -151,6 +152,7 @@ const siteTypes: Record<string, string> = {
 export class SitePanelComponent {
   private readonly panels = inject(PanelStack);
   private readonly mapView = inject(MapView);
+  private readonly plan = inject(ActivePlan);
 
   readonly id = input.required<string>();
 
@@ -158,9 +160,11 @@ export class SitePanelComponent {
   protected readonly url = computed(() => `/api/${apiPath.site}/${this.id()}`);
   protected readonly site = httpResource<SiteDetail>(() => this.url());
   /** Loaded after the site itself: impact analysis has its own, larger budget. */
-  protected readonly impact = httpResource<Impact>(() =>
-    this.site.value() ? `${this.url()}/impact` : undefined,
-  );
+  protected readonly impact = httpResource<Impact>(() => {
+    return this.site.value()
+      ? this.plan.request(`${this.url()}/impact${this.plan.param(true)}`)
+      : undefined;
+  });
 
   /** Only locations that hold equipment, titled with their full path (Byggnad A / Nodrum / Rack 1). */
   protected readonly racks = computed(() => {

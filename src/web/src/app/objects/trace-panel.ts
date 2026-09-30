@@ -1,6 +1,7 @@
 import { httpResource } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, effect, inject, input } from '@angular/core';
 import { MapView } from '../map/map-view';
+import { ActivePlan } from '../plans/active-plan';
 import { PanelStack } from '../shell/panels';
 import { ObjectLinkComponent } from './object-link';
 import {
@@ -273,13 +274,16 @@ import {
 export class TracePanelComponent {
   private readonly panels = inject(PanelStack);
   private readonly mapView = inject(MapView);
+  private readonly plan = inject(ActivePlan);
 
   readonly id = input.required<string>();
 
   protected readonly start = computed(() => parseTraceId(this.id()));
   protected readonly trace = httpResource<TraceResult>(() => {
     const s = this.start();
-    return s ? `/api/trace?${s.by}=${s.id}&geometry=true` : undefined;
+    return s
+      ? this.plan.request(`/api/trace?${s.by}=${s.id}&geometry=true${this.plan.param()}`)
+      : undefined;
   });
 
   protected readonly kinds = { service: 'Tjänst', circuit: 'Krets', terminal: 'Från port' };

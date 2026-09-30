@@ -8,6 +8,8 @@ import {
   input,
   signal,
 } from '@angular/core';
+import { ActivePlan } from '../plans/active-plan';
+import { NewOperation } from '../plans/plan-model';
 import { CommandRegistry } from '../shell/commands';
 import { PanelStack } from '../shell/panels';
 import { EditHeaderComponent } from './edit-header';
@@ -75,6 +77,50 @@ type Port = EquipmentDetail['ports'][number];
                 Spåra från porten
               </button>
             </p>
+          }
+          @if (plan.view.value(); as v) {
+            @if (v.plan.status === 'draft') {
+              <div class="plan-actions" aria-label="I planen">
+                <p class="muted">
+                  I planen {{ v.plan.name }}:
+                  @for (n of planNeighbours(); track n.terminalId) {
+                    kopplad till {{ n.label }}
+                    <button
+                      type="button"
+                      class="action"
+                      (click)="disconnect(p.terminalId, n.terminalId)"
+                    >
+                      Koppla bort i planen
+                    </button>
+                  } @empty {
+                    ledig
+                  }
+                </p>
+                <p class="port-actions">
+                  @if (plan.pending(); as pending) {
+                    @if (pending.terminalId !== p.terminalId) {
+                      <button
+                        type="button"
+                        class="action"
+                        (click)="connect(pending.terminalId, p.terminalId)"
+                      >
+                        Koppla {{ pending.label }} hit
+                      </button>
+                    }
+                    <button type="button" class="action" (click)="plan.pending.set(null)">
+                      Avbryt koppling
+                    </button>
+                  } @else {
+                    <button type="button" class="action" (click)="startConnect(p)">
+                      Koppla i planen…
+                    </button>
+                  }
+                </p>
+                @if (planError(); as err) {
+                  <p class="error" role="alert">{{ err }}</p>
+                }
+              </div>
+            }
           }
           <dl class="facts">
             <dt>Status</dt>
@@ -204,15 +250,18 @@ type Port = EquipmentDetail['ports'][number];
 export class EquipmentPanelComponent {
   private readonly panels = inject(PanelStack);
   private readonly commands = inject(CommandRegistry);
+  protected readonly plan = inject(ActivePlan);
 
   readonly id = input.required<string>();
 
   protected readonly url = computed(() => `/api/${apiPath.equipment}/${this.id()}`);
   protected readonly equipment = httpResource<EquipmentDetail>(() => this.url());
   /** Loaded after the equipment itself: impact analysis has its own, larger budget. */
-  protected readonly impact = httpResource<Impact>(() =>
-    this.equipment.value() ? `${this.url()}/impact` : undefined,
-  );
+  protected readonly impact = httpResource<Impact>(() => {
+    return this.equipment.value()
+      ? this.plan.request(`${this.url()}/impact${this.plan.param(true)}`)
+      : undefined;
+  });
   protected readonly selected = signal<Port | null>(null);
   /** Ports marked with Shift-click, for mass operations to come (#26). */
   protected readonly marked = signal<ReadonlySet<number>>(new Set());
@@ -223,7 +272,9 @@ export class EquipmentPanelComponent {
   /** Services through the selected port, from the graph. */
   protected readonly portTrace = httpResource<TraceResult>(() => {
     const p = this.selected();
-    return p?.connections.length ? `/api/trace?terminal=${p.terminalId}` : undefined;
+    return p
+      ? this.plan.request(`/api/trace?terminal=${p.terminalId}${this.plan.param()}`)
+      : undefined;
   });
   protected readonly connectionLabels: Record<string, string> = {
     patch: 'Patch',
@@ -236,6 +287,47 @@ export class EquipmentPanelComponent {
       ([k, v]) => [k, String(v)] as const,
     ),
   );
+
+  /** The selected port's neighbours in the active plan's view: the hops next to it on the traced path. */
+  protected readonly planNeighbours = computed(() => {
+    const path = this.plan.id() === null ? null : this.portTrace.value()?.physical;
+    if (!path) {
+      return [];
+    }
+    return [path.hops[path.startIndex - 1], path.hops[path.startIndex + 1]].filter(
+      (h, i) => h && (i === 0 ? path.hops[path.startIndex].edge : h.edge) !== 'conductor',
+    );
+  });
+  protected readonly planError = signal<string | null>(null);
+
+  protected startConnect(port: Port): void {
+    const name = this.equipment.value()?.name ?? '';
+    this.plan.pending.set({ terminalId: port.terminalId, label: `${name} · ${port.name}` });
+  }
+
+  protected async connect(a: number, b: number): Promise<void> {
+    await this.planned({ kind: 'connect', a, b, connectionKind: 'patch' });
+  }
+
+  protected async disconnect(a: number, b: number): Promise<void> {
+    await this.planned({ kind: 'disconnect', a, b });
+  }
+
+  private async planned(operation: NewOperation): Promise<void> {
+    this.planError.set(null);
+    try {
+      await this.plan.add(operation);
+    } catch (e: unknown) {
+      const body = (e as { error?: { detail?: string; errors?: Record<string, string[]> } }).error;
+      this.planError.set(
+        body?.detail ??
+          Object.values(body?.errors ?? {})
+            .flat()
+            .join(' ') ??
+          'Det gick inte att lägga till i planen.',
+      );
+    }
+  }
 
   protected choose(port: PanelPort, range: boolean, ports: readonly PanelPort[]): void {
     if (range && this.anchor !== null) {

@@ -20,6 +20,35 @@
     >
       Innehåll
     </button>
+    <button
+      type="button"
+      class="text-button tool-button"
+      [attr.aria-pressed]="tools.open() === 'plans'"
+      (click)="tools.toggle('plans')"
+    >
+      Planer
+    </button>
+    @if (plan.id() !== null) {
+      <span class="plan-chip" role="status">
+        <span class="dot" aria-hidden="true"></span>
+        <button
+          type="button"
+          class="plan-name"
+          (click)="tools.open() !== 'plans' && tools.toggle('plans')"
+        >
+          Plan: {{ plan.view.value()?.plan?.name ?? '…' }}
+        </button>
+        <button
+          type="button"
+          class="plan-exit"
+          aria-label="Tillbaka till produktion"
+          title="Tillbaka till produktion"
+          (click)="plan.activate(null)"
+        >
+          ×
+        </button>
+      </span>
+    }
   </div>
 
   <div class="actions">
@@ -95,6 +124,8 @@
       <aside class="tool" aria-label="Avancerad sökning"><cmdb-query-panel /></aside>
     } @else if (tools.open() === 'tree') {
       <aside class="tool" aria-label="Innehåll"><cmdb-tree-panel /></aside>
+    } @else if (tools.open() === 'plans') {
+      <aside class="tool" aria-label="Planer"><cmdb-plan-panel /></aside>
     } @else if (tools.open() === 'perf') {
       <aside class="tool wide" aria-label="Prestanda"><cmdb-perf-panel /></aside>
     }
