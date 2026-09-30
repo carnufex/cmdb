@@ -76,6 +76,12 @@ describe('operations agent panel', () => {
     });
   });
 
+  function tabButton(fixture: { nativeElement: unknown }, label: string): HTMLButtonElement {
+    return [
+      ...(fixture.nativeElement as HTMLElement).querySelectorAll<HTMLButtonElement>('[role="tab"]'),
+    ].find((b) => b.textContent?.trim() === label)!;
+  }
+
   async function settle(fixture: { detectChanges(): void }) {
     for (let i = 0; i < 5; i++) {
       await new Promise((resolve) => setTimeout(resolve));
@@ -97,8 +103,6 @@ describe('operations agent panel', () => {
     expect(text).toContain('INC-00001');
     expect(text).toContain('P1 · jour larmad');
     expect(text).toContain('falsk redundans');
-    expect(text).toContain('Din kod till Driftagenten: 123456.');
-    expect(text).toContain('create_incident');
     expect(
       (fixture.nativeElement as HTMLElement).querySelector('[data-priority="P1"] .dot'),
     ).not.toBeNull();
@@ -125,6 +129,46 @@ describe('operations agent panel', () => {
     const open = vi.spyOn(TestBed.inject(PanelStack), 'open');
     (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('button.link')!.click();
     expect(open).toHaveBeenCalledWith({ type: 'site', id: '12' });
+
+    // The calls tab: tool calls per call, and the outbox.
+    tabButton(fixture, 'Samtal').click();
+    await settle(fixture);
+    const calls = (fixture.nativeElement as HTMLElement).textContent!;
+    expect(calls).toContain('create_incident');
+    expect(calls).toContain('anst. 1001');
+    expect(calls).toContain('Din kod till Driftagenten: 123456.');
+    fixture.destroy();
+  });
+
+  it('keeps the list short and shows a fresh code above the tabs', async () => {
+    const http = TestBed.inject(HttpTestingController);
+    const fixture = TestBed.createComponent(VoicePanelComponent);
+    await settle(fixture);
+    const many = Array.from({ length: 8 }, (_, n) => ({ ...incident, number: `INC-0000${n + 1}` }));
+    http.expectOne((r) => r.url === '/api/incidents').flush(many);
+    http.expectOne((r) => r.url === '/api/risks').flush([]);
+    http
+      .expectOne((r) => r.url === '/api/voice/activity')
+      .flush({
+        ...activity,
+        sms: [
+          {
+            ...activity.sms[0],
+            body: 'Din kod till Driftagenten: 654321.',
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      });
+    await settle(fixture);
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelectorAll('section[aria-labelledby="incidents"] details').length).toBe(5);
+    expect(el.querySelector('.latest')!.textContent).toContain('654321');
+    [...el.querySelectorAll<HTMLButtonElement>('button')]
+      .find((b) => b.textContent?.includes('Visa alla 8'))!
+      .click();
+    await settle(fixture);
+    expect(el.querySelectorAll('section[aria-labelledby="incidents"] details').length).toBe(8);
     fixture.destroy();
   });
 
@@ -141,7 +185,11 @@ describe('operations agent panel', () => {
 
     const text = (fixture.nativeElement as HTMLElement).textContent!;
     expect(text).toContain('Inga ärenden ännu.');
-    expect(text).toContain('visas bara med behörighet till hela nätet');
+    tabButton(fixture, 'Samtal').click();
+    await settle(fixture);
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain(
+      'visas bara med behörighet till hela nätet',
+    );
     fixture.destroy();
   });
 });
