@@ -65,6 +65,47 @@ Varje objekt i svaren har en stabil referens (`ref`, till exempel `site:1268`) o
 - **Händelselogg:** `cmdb://changelog` visar vad som ändrats för användare, med issuereferenser (#82).
 - **Prompter:** `cable_cut_impact` (vad händer om en kabel kapas) och `find_sites_by_equipment` (översätt en fråga till `find_sites`).
 
+## I ett skal: `cmdb`
+
+Kodagenter i en terminal (Claude Code, Codex) och skript använder med fördel kommandoradsverktyget `cmdb` (#86). Det anropar samma REST-API som webben och MCP-verktygen, så omfång, planer och loggning gäller lika. Verktygsbeskrivningarna tar ingen plats i agentens kontext, och utdata går att kombinera med `grep`, `jq` och pipes.
+
+**Installera:** ladda ned binären för din plattform från den senaste releasen `cli-v*` på [GitHub](https://github.com/carnufex/cmdb/releases) (Windows, Linux och macOS, fristående och utan .NET), döp den till `cmdb` och lägg den i `PATH`. Kontrollsummor finns i `SHA256SUMS`. Utvecklare kör `dotnet run --project src/cli -- <kommando>`.
+
+**Logga in:**
+- `cmdb login` öppnar inloggningen i webbläsaren (PKCE mot klienten `cmdb-mcp`) och sparar token lokalt. `cmdb logout` glömmer den.
+- `CMDB_TOKEN` används som den är.
+- För ett tjänstekonto används `CMDB_CLIENT_ID`, `CMDB_USERNAME` och `CMDB_PASSWORD` (client credentials).
+- `CMDB_URL` (eller `--url`) väljer miljö. Standard är demon.
+
+**Kommandon** (`cmdb help`):
+
+| Kommando | Motsvarar |
+|---|---|
+| `cmdb search <text> [--limit N]` | `search` |
+| `cmdb get <ref\|kod>` | `get_object` |
+| `cmdb find-sites [--type T] [--lifecycle L] [--model KEY] [--category C] [--service-type S]` | `find_sites` |
+| `cmdb impact <ref>` | `impact` |
+| `cmdb trace <service:ID\|circuit:ID\|terminal:ID\|kod>` | `trace` |
+| `cmdb neighbourhood <site> [--hops N]` | `neighbourhood` |
+| `cmdb catalog` | `describe_catalog` |
+| `cmdb plans`, `cmdb plan plan:ID` | `list_plans`, `preview_plan` |
+| `cmdb whoami` | `/api/me` |
+
+**Utdata och felkoder:**
+- Utdata är kompakt text, en rad per objekt med referens, kod, namn och länk till webben. `--json` ger API:ts svar oförändrat.
+- Felkoderna är 0 för ok, 1 för fel användning, 2 om något inte finns eller ligger utanför omfånget, 3 om man inte är inloggad eller behörig, och 4 för annat fel.
+
+**Mätt mot demon** (2026-09-30, svarsstorlek i byte; ungefär en token per fyra byte):
+
+| | MCP | CLI (text) |
+|---|---|---|
+| Verktygsbeskrivningar i kontexten | 14 701 (`tools/list`, varje session) | 1 326 (`cmdb help`, bara vid behov) |
+| Siter med modellen acme-bb-6 (10 st) | 3 120 | 1 111 |
+| Vad påverkar kabel K-000001 | 2 155 | 514 |
+| Spåra tjänst TJ-0000001 | 11 140 (alla hopp) | 171 (kretsar per lager; hoppen med `--json`) |
+
+Varje uppgift tog ett anrop med båda. CLI:t löser koder direkt (`cmdb trace TJ-0000001`), medan MCP-verktyget `trace` kräver en referens. Siffrorna är svarsstorlekar, inte uppmätta tokens i en Claude Code-session. För agenter i en terminal ger CLI:t ändå tydligt mindre kontext per uppgift. MCP är fortfarande rätt för chattklienter utan skal.
+
 ## Utan MCP
 
 - **OpenAPI:** `https://cmdb.rosenvall.se/api/openapi.json`, öppen utan inloggning. Datan bakom kräver token.
