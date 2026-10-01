@@ -50,6 +50,7 @@ public sealed record PlanOp(long Id, long PlanId, int Seq, string Kind, JsonElem
         "connect" or "disconnect" => new[] { A, B }.Where(id => id < 0),
         "create_equipment" => new[] { Payload.GetProperty("site").GetInt64() }.Where(id => id < 0),
         "create_cable" => new[] { Payload.GetProperty("a").GetInt64(), Payload.GetProperty("b").GetInt64() }.Where(id => id < 0),
+        "split_cable" => new[] { Payload.GetProperty("site").GetInt64() }.Where(id => id < 0),
         _ => [],
     };
 }
@@ -96,7 +97,7 @@ public sealed record PlanView(PlanChain Chain, Cmdb.Graph.Graph Graph, IReadOnly
 internal static class PlanKinds
 {
     public static readonly string[] Operations =
-        ["connect", "disconnect", "set_lifecycle", "rename", "set_attributes", "create_site", "create_equipment", "create_cable"];
+        ["connect", "disconnect", "set_lifecycle", "rename", "set_attributes", "create_site", "create_equipment", "create_cable", "split_cable"];
 
     public static readonly string[] SiteTypes = ["hub", "aggregation", "radio", "cabinet", "splice"];
     public static readonly string[] Connections = ["patch", "splice", "termination", "internal"];
@@ -149,9 +150,8 @@ public sealed class PlanViews(SystemDb system)
         {
             return hit.View;
         }
-        var graphOps = chain.Operations.Where(o => o.Change is not null).ToList();
-        var (graph, issues) = production.WithChanges([.. graphOps.Select(o => o.Change!)]);
-        var view = new PlanView(chain, graph, issues.ToDictionary(i => graphOps[i.Index].Id, i => i.Problem));
+        var (graph, problems) = Build(production, chain.Operations);
+        var view = new PlanView(chain, graph, problems);
         if (_cache.Count >= MaxCached)
         {
             // Old production graphs and plans nobody looks at; the next request rebuilds in milliseconds.
@@ -159,6 +159,51 @@ public sealed class PlanViews(SystemDb system)
         }
         _cache[key] = (chain.Signature, view);
         return view;
+    }
+
+    /// <summary>
+    /// Production with the operations applied in order, and the operations that do not fit. Most operations are fixed
+    /// graph changes; a cable split (#168) is worked out against the view just before it, so the changes before it are
+    /// applied first. <paramref name="map"/> rewrites planned ids, e.g. to the ones an apply gave them.
+    /// </summary>
+    public static (Cmdb.Graph.Graph Graph, Dictionary<long, GraphChangeProblem> Problems) Build(Cmdb.Graph.Graph production,
+        IReadOnlyList<PlanOp> operations, Func<GraphChange, GraphChange>? map = null)
+    {
+        var graph = production;
+        var problems = new Dictionary<long, GraphChangeProblem>();
+        var pending = new List<(long Op, GraphChange Change)>();
+        var applied = false;
+
+        void Flush()
+        {
+            if (pending.Count == 0 && applied)
+            {
+                return;
+            }
+            var (view, issues) = graph.WithChanges([.. pending.Select(p => map is null ? p.Change : map(p.Change))]);
+            foreach (var issue in issues)
+            {
+                problems.TryAdd(pending[issue.Index].Op, issue.Problem);
+            }
+            (graph, applied) = (view, true);
+            pending.Clear();
+        }
+
+        foreach (var op in operations)
+        {
+            if (op.Kind == "split_cable")
+            {
+                Flush();
+                pending.AddRange(CableSplit.Changes(graph, op).Select(c => (op.Id, c)));
+                Flush();
+            }
+            else if (op.Change is { } change)
+            {
+                pending.Add((op.Id, change));
+            }
+        }
+        Flush();
+        return (graph, problems);
     }
 
     public static async Task<PlanChain?> LoadChainAsync(NpgsqlDataSource db, long planId, CancellationToken ct)

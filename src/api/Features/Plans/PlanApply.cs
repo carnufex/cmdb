@@ -36,6 +36,9 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx)
                 await CreateCableAsync(op, p, ct);
                 return true;
 
+            case "split_cable":
+                return await SplitCableAsync(op, p, ct);
+
             case "connect":
                 return await ExecuteAsync("""
                     INSERT INTO connection (a_terminal_id, b_terminal_id, kind, lifecycle)
@@ -110,6 +113,7 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx)
             Cmdb.Graph.GraphNewCable c => new Cmdb.Graph.GraphNewCable(Id(c.Id),
                 [.. c.Conductors.Select(k => new Cmdb.Graph.GraphNewConductor(Id(k.Id), Id(k.EndA), Id(k.EndB)))]),
             Cmdb.Graph.GraphEdgeChange e => e with { A = Id(e.A), B = Id(e.B) },
+            Cmdb.Graph.GraphCircuitsChange c => c with { Set = [.. c.Set.Select(x => x with { Hops = [.. x.Hops.Select(Id)] })] },
             _ => change,
         };
     }
@@ -120,7 +124,7 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx)
         string[] fields = op.Kind switch
         {
             "connect" or "disconnect" or "create_cable" => ["a", "b"],
-            "create_equipment" => ["site"],
+            "create_equipment" or "split_cable" => ["site"],
             _ => [],
         };
         if (!fields.Any(f => op.Payload.GetProperty(f).GetInt64() is < 0 and var id && Ids.ContainsKey(id)))
@@ -215,6 +219,141 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx)
             Ids[Planned.Terminal(op.Id, (2 * k) - 1)] = ends[(2 * k) - 2];
             Ids[Planned.Terminal(op.Id, 2 * k)] = ends[(2 * k) - 1];
         }
+    }
+
+    /// <summary>
+    /// A site inserted into a cable (#168): two new cables split at the site, with the old conductors' numbers and colours;
+    /// connections at the old ends move to the new outer ends; conductors not terminated are spliced through in the site;
+    /// circuit hops are rewritten as in <see cref="CableSplit.RewriteHops"/>; the old cable is removed. False when the
+    /// cable is gone, so the plan no longer fits.
+    /// </summary>
+    private async Task<bool> SplitCableAsync(PlanOp op, JsonElement p, CancellationToken ct)
+    {
+        var old = p.GetProperty("cable").GetInt64();
+        var site = p.GetProperty("site").GetInt64();
+        var conductors = CableSplit.Conductors(p);
+        var terminated = CableSplit.Terminated(p);
+        var n = conductors.Count;
+        if (await ScalarAsync<long?>("SELECT id FROM cable WHERE id = $1 AND lifecycle <> 'removed' FOR UPDATE", ct, old) is null)
+        {
+            return false;
+        }
+
+        async Task<long> PartAsync(string suffix, bool first) => await ScalarAsync<long>($"""
+            WITH c AS (SELECT c.*, s.geom AS sg FROM cable c, site s WHERE c.id = $1 AND s.id = $2),
+                 f AS (SELECT c.*, ST_PointOnSurface(c.sg) AS p, ST_LineLocatePoint(c.geom, ST_PointOnSurface(c.sg)) AS f FROM c)
+            INSERT INTO cable (cable_type_id, code, a_site_id, b_site_id, geom, lifecycle, attributes)
+            SELECT cable_type_id, code || '{suffix}', {(first ? "a_site_id, $2" : "$2, b_site_id")},
+                   {(first ? "ST_MakeLine(ST_LineSubstring(geom, 0, f), p)" : "ST_MakeLine(p, ST_LineSubstring(geom, f, 1))")},
+                   lifecycle, attributes
+            FROM f RETURNING id
+            """, ct, old, site);
+        var a = await PartAsync("-A", first: true);
+        var b = await PartAsync("-B", first: false);
+        Ids[Planned.ObjectId(op.Id)] = a;
+        Ids[CableSplit.SecondCable(op.Id)] = b;
+
+        var (conductorsA, endsA) = await ConductorsAsync(a, old, ct);
+        var (conductorsB, endsB) = await ConductorsAsync(b, old, ct);
+        var outer = new Dictionary<long, long>();
+        var inner = new Dictionary<(long, long), long[]>();
+        for (var i = 0; i < n; i++)
+        {
+            var (c, k) = (conductors[i], i + 1);
+            Ids[Planned.Conductor(op.Id, k)] = conductorsA[i];
+            Ids[Planned.Conductor(op.Id, n + k)] = conductorsB[i];
+            (long outerA, long innerA, long innerB, long outerB) = (endsA[2 * i], endsA[(2 * i) + 1], endsB[2 * i], endsB[(2 * i) + 1]);
+            Ids[CableSplit.OuterA(op.Id, k)] = outerA;
+            Ids[CableSplit.InnerA(op.Id, k)] = innerA;
+            Ids[CableSplit.InnerB(op.Id, n, k)] = innerB;
+            Ids[CableSplit.OuterB(op.Id, n, k)] = outerB;
+            outer[c.A] = outerA;
+            outer[c.B] = outerB;
+            inner[(c.A, c.B)] = [innerA, innerB];
+            inner[(c.B, c.A)] = [innerB, innerA];
+            foreach (var (from, to) in new[] { (c.A, outerA), (c.B, outerB) })
+            {
+                await ExecuteAsync("""
+                    WITH moved AS (
+                        UPDATE connection SET valid_to = now(), lifecycle = 'removed'
+                        WHERE (a_terminal_id = $1 OR b_terminal_id = $1) AND valid_to IS NULL
+                        RETURNING CASE WHEN a_terminal_id = $1 THEN b_terminal_id ELSE a_terminal_id END AS other, kind, lifecycle)
+                    INSERT INTO connection (a_terminal_id, b_terminal_id, kind, lifecycle)
+                    SELECT least($2, other), greatest($2, other), kind, 'in_service' FROM moved
+                    """, ct, from, to);
+            }
+            if (!terminated.Contains(c.Number))
+            {
+                await ExecuteAsync("""
+                    INSERT INTO connection (a_terminal_id, b_terminal_id, kind, lifecycle)
+                    VALUES (least($1, $2), greatest($1, $2), 'splice', 'in_service')
+                    """, ct, innerA, innerB);
+            }
+        }
+
+        // Circuits along the cable: the new ends, with the splice between them.
+        var hops = new Dictionary<long, List<(long Terminal, long? Channel)>>();
+        await using (var cmd = Command("""
+            SELECT h.circuit_id, h.terminal_id, h.channel_id FROM circuit_hop h
+            WHERE h.circuit_id IN (SELECT circuit_id FROM circuit_hop WHERE terminal_id = ANY($1))
+            ORDER BY h.circuit_id, h.seq
+            """, [outer.Keys.ToArray()]))
+        await using (var reader = await cmd.ExecuteReaderAsync(ct))
+        {
+            while (await reader.ReadAsync(ct))
+            {
+                if (!hops.TryGetValue(reader.GetInt64(0), out var list))
+                {
+                    hops[reader.GetInt64(0)] = list = [];
+                }
+                list.Add((reader.GetInt64(1), reader.IsDBNull(2) ? null : reader.GetInt64(2)));
+            }
+        }
+        foreach (var (circuit, list) in hops)
+        {
+            var rewritten = new List<(long Terminal, long? Channel)>();
+            for (var i = 0; i < list.Count; i++)
+            {
+                rewritten.Add((outer.GetValueOrDefault(list[i].Terminal, list[i].Terminal), list[i].Channel));
+                if (i + 1 < list.Count && inner.TryGetValue((list[i].Terminal, list[i + 1].Terminal), out var between))
+                {
+                    rewritten.AddRange(between.Select(t => (t, (long?)null)));
+                }
+            }
+            await ExecuteAsync("DELETE FROM circuit_hop WHERE circuit_id = $1", ct, circuit);
+            await ExecuteAsync("""
+                INSERT INTO circuit_hop (circuit_id, seq, terminal_id, channel_id)
+                SELECT $1, s - 1, t, c FROM unnest($2::bigint[], $3::bigint[]) WITH ORDINALITY AS u(t, c, s)
+                """, ct, circuit, rewritten.Select(r => r.Terminal).ToArray(), rewritten.Select(r => r.Channel).ToArray());
+        }
+
+        await ExecuteAsync("UPDATE cable SET lifecycle = 'removed' WHERE id = $1", ct, old);
+        return true;
+    }
+
+    /// <summary>The old cable's conductors (number and colour) on a new cable, with A and B ends: conductor ids, and ends in pairs.</summary>
+    private async Task<(long[] Conductors, long[] Ends)> ConductorsAsync(long cable, long old, CancellationToken ct)
+    {
+        var conductors = new List<long>();
+        await using (var cmd = Command("""
+            INSERT INTO conductor (cable_id, number, color) SELECT $1, number, color FROM conductor WHERE cable_id = $2 ORDER BY number RETURNING id
+            """, [cable, old]))
+        await using (var reader = await cmd.ExecuteReaderAsync(ct))
+        {
+            while (await reader.ReadAsync(ct))
+            {
+                conductors.Add(reader.GetInt64(0));
+            }
+        }
+        // Ids follow the numbers: the insert assigns them in order.
+        conductors.Sort();
+        var ends = await NewTerminalsAsync("conductor_end", 2 * conductors.Count, ct);
+        await ExecuteAsync("""
+            INSERT INTO conductor_end (terminal_id, conductor_id, side)
+            SELECT t, c, s FROM unnest($1::bigint[], $2::bigint[], $3::text[]) AS u(t, c, s)
+            """, ct, ends, conductors.SelectMany(c => new[] { c, c }).ToArray(),
+            Enumerable.Range(0, ends.Length).Select(i => i % 2 == 0 ? "A" : "B").ToArray());
+        return ([.. conductors], ends);
     }
 
     /// <summary>New terminals in id order.</summary>

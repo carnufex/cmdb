@@ -17,7 +17,7 @@ public sealed class PlannedNames
     public static async Task<PlannedNames> BuildAsync(NpgsqlDataSource db, IReadOnlyList<PlanOp> operations, CancellationToken ct)
     {
         var names = new PlannedNames();
-        var creates = operations.Where(o => o.Kind.StartsWith("create_", StringComparison.Ordinal)).ToList();
+        var creates = operations.Where(o => o.Kind.StartsWith("create_", StringComparison.Ordinal) || o.Kind == "split_cable").ToList();
         if (creates.Count == 0)
         {
             return names;
@@ -28,6 +28,7 @@ public sealed class PlannedNames
         {
             "create_equipment" => [o.Payload.GetProperty("site").GetInt64()],
             "create_cable" => new[] { o.Payload.GetProperty("a").GetInt64(), o.Payload.GetProperty("b").GetInt64() },
+            "split_cable" => new[] { o.Payload.GetProperty("site").GetInt64(), o.Payload.GetProperty("aSite").GetInt64(), o.Payload.GetProperty("bSite").GetInt64() },
             _ => [],
         }).Where(id => id > 0).Distinct().ToArray();
         var sites = new Dictionary<long, ObjectRef>();
@@ -83,6 +84,29 @@ public sealed class PlannedNames
                             var endB = Planned.Terminal(op.Id, 2 * k);
                             names.Terminals[endA] = new TraceHop(endA, "conductor_end", null, $"{cable.Code} ledare {k} (A, planerad)", null, cable, a, k);
                             names.Terminals[endB] = new TraceHop(endB, "conductor_end", null, $"{cable.Code} ledare {k} (B, planerad)", null, cable, b, k);
+                        }
+                        break;
+                    }
+                case "split_cable":
+                    {
+                        var typeKey = p.GetProperty("typeKey").GetString()!;
+                        var typeName = TypeCatalog.Embedded.CableTypes.FirstOrDefault(t => t.Key == typeKey)?.Name ?? typeKey;
+                        var code = p.GetProperty("code").GetString()!;
+                        var partA = new ObjectRef("cable", id, $"{code}-A", typeName, "planned");
+                        var partB = new ObjectRef("cable", CableSplit.SecondCable(op.Id), $"{code}-B", typeName, "planned");
+                        names.Objects[("cable", partA.Id)] = partA;
+                        names.Objects[("cable", partB.Id)] = partB;
+                        var (a, middle, b) = (Site(p.GetProperty("aSite").GetInt64()), Site(p.GetProperty("site").GetInt64()), Site(p.GetProperty("bSite").GetInt64()));
+                        var conductors = CableSplit.Conductors(p);
+                        for (var i = 0; i < conductors.Count; i++)
+                        {
+                            var (k, number) = (i + 1, conductors[i].Number);
+                            void Name(long terminal, ObjectRef cable, ObjectRef at, string side) =>
+                                names.Terminals[terminal] = new TraceHop(terminal, "conductor_end", null, $"{cable.Code} ledare {number} ({side}, planerad)", null, cable, at, number);
+                            Name(CableSplit.OuterA(op.Id, k), partA, a, "A");
+                            Name(CableSplit.InnerA(op.Id, k), partA, middle, "B");
+                            Name(CableSplit.InnerB(op.Id, conductors.Count, k), partB, middle, "A");
+                            Name(CableSplit.OuterB(op.Id, conductors.Count, k), partB, b, "B");
                         }
                         break;
                     }

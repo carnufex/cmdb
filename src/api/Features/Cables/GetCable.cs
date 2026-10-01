@@ -152,3 +152,46 @@ public sealed class GetConductorEndpoint(RequestDb db) : Endpoint<ConductorReque
         await Send.OkAsync(new ConductorId(id), ct);
     }
 }
+
+public sealed class CablePointRequest
+{
+    public long Id { get; set; }
+
+    /// <summary>How far along the cable, from the A end: 0–1.</summary>
+    public double At { get; set; }
+}
+
+public sealed record CablePoint(double X, double Y);
+
+/// <summary>
+/// A point along a cable (#168): where a site inserted into it would stand, as a share of its length from the A end.
+/// Within the caller's scopes; a scope that hides positions has none to give.
+/// </summary>
+public sealed class GetCablePointEndpoint(RequestDb db) : Endpoint<CablePointRequest, CablePoint>
+{
+    public override void Configure() => Get("/cables/{id}/point");
+
+    public override async Task HandleAsync(CablePointRequest req, CancellationToken ct)
+    {
+        var scope = HttpContext.Scope();
+        if (scope.HidesCoordinates || req.At is < 0 or > 1)
+        {
+            await Send.NotFoundAsync(ct);
+            return;
+        }
+        await using var cmd = db.CreateCommand($"""
+            SELECT round(ST_X(p)), round(ST_Y(p)) FROM (SELECT ST_LineInterpolatePoint(c.geom, $2) AS p FROM cable c
+            WHERE c.id = $1 AND {ScopeSql.Cable("c.id", 3)}) q
+            """);
+        cmd.Parameters.Add(new() { Value = req.Id });
+        cmd.Parameters.Add(new() { Value = req.At });
+        cmd.Parameters.Add(scope.Parameter());
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct))
+        {
+            await Send.NotFoundAsync(ct);
+            return;
+        }
+        await Send.OkAsync(new CablePoint(reader.GetDouble(0), reader.GetDouble(1)), ct);
+    }
+}

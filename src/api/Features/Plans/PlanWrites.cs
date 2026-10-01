@@ -88,6 +88,15 @@ public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views
             }
             payload = created;
         }
+        else if (req.Kind == "split_cable")
+        {
+            var (split, error) = await SplitAsync(scope, view, req, ct);
+            if (split is null)
+            {
+                return PlanWrite.Fail<PlanOperationView>(PlanWriteFailure.Invalid, error!);
+            }
+            payload = split;
+        }
         else if (req.Kind is "connect" or "disconnect")
         {
             // Terminals must exist in the plan's view (production or planned) and be inside the caller's scopes; outside,
@@ -211,6 +220,136 @@ public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views
                 return (System.Text.Json.JsonSerializer.Serialize(new { a = req.ASiteId, b = req.BSiteId, typeKey = req.TypeKey }), null);
         }
     }
+
+    /// <summary>
+    /// Checks a cable split (#168) and gives its payload: the cable exists in the view and is visible, is not split twice,
+    /// the site lies along it (not at an end), and no conductor to be terminated carries a circuit. The payload keeps the
+    /// conductors' ends and the two parts' geometry for the map.
+    /// </summary>
+    private async Task<(string? Payload, string? Error)> SplitAsync(UserScope scope, PlanView view, AddOperationRequest req,
+        CancellationToken ct)
+    {
+        var cableId = req.CableId!.Value;
+        var site = req.SiteId!.Value;
+        if (!await PlanSql.ObjectVisibleAsync(db, "cable", cableId, scope, ct) || !view.Graph.TryGetCable(cableId, out _))
+        {
+            return (null, $"Kabel {cableId} finns inte.");
+        }
+        if (view.Chain.Operations.Any(o => o.Kind == "split_cable" && o.Payload.GetProperty("cable").GetInt64() == cableId))
+        {
+            return (null, "Kabeln kapas redan i planen.");
+        }
+        double x, y;
+        if (site < 0)
+        {
+            if (view.Chain.Operations.FirstOrDefault(o => o.Kind == "create_site" && Planned.ObjectId(o.Id) == site) is not { } created)
+            {
+                return (null, $"Den planerade siten {site} finns inte i planen.");
+            }
+            (x, y) = (created.Payload.GetProperty("x").GetDouble(), created.Payload.GetProperty("y").GetDouble());
+        }
+        else
+        {
+            if (!await PlanSql.ObjectVisibleAsync(db, "site", site, scope, ct))
+            {
+                return (null, $"Site {site} finns inte.");
+            }
+            var position = (await PlanSql.SitePositionsAsync(db, [site], ct)).Single();
+            (x, y) = (position.X, position.Y);
+        }
+
+        await using var conn = await db.OpenConnectionAsync(ct);
+        string code, typeKey;
+        long aSite, bSite;
+        double distance, fraction;
+        double[][] lineA, lineB;
+        await using (var cmd = new NpgsqlCommand("""
+            WITH c AS (
+                SELECT c.code, t.key, c.a_site_id, c.b_site_id, c.geom, ST_SetSRID(ST_MakePoint($2, $3), 3006) AS p
+                FROM cable c JOIN cable_type t ON t.id = c.cable_type_id WHERE c.id = $1),
+            f AS (SELECT c.*, ST_LineLocatePoint(c.geom, c.p) AS f, ST_Distance(c.geom, c.p) AS d FROM c)
+            SELECT code, key, a_site_id, b_site_id, d, f,
+                   ARRAY(SELECT ARRAY[round(ST_X(g.geom)), round(ST_Y(g.geom))]
+                         FROM ST_DumpPoints(ST_Simplify(ST_MakeLine(ST_LineSubstring(geom, 0, greatest(f, 0.0001)), p), 10)) g ORDER BY g.path),
+                   ARRAY(SELECT ARRAY[round(ST_X(g.geom)), round(ST_Y(g.geom))]
+                         FROM ST_DumpPoints(ST_Simplify(ST_MakeLine(p, ST_LineSubstring(geom, least(f, 0.9999), 1)), 10)) g ORDER BY g.path)
+            FROM f
+            """, conn))
+        {
+            cmd.Parameters.Add(new() { Value = cableId });
+            cmd.Parameters.Add(new() { Value = x });
+            cmd.Parameters.Add(new() { Value = y });
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            await reader.ReadAsync(ct);
+            (code, typeKey, aSite, bSite, distance, fraction) = (reader.GetString(0), reader.GetString(1), reader.GetInt64(2), reader.GetInt64(3),
+                reader.GetDouble(4), reader.GetDouble(5));
+            lineA = Coordinates((double[,])reader.GetValue(6));
+            lineB = Coordinates((double[,])reader.GetValue(7));
+        }
+        if (site == aSite || site == bSite)
+        {
+            return (null, "Siten är redan en av kabelns ändar.");
+        }
+        if (distance > MaxSplitDistance)
+        {
+            return (null, $"Siten ligger {distance:0} m från kabeln; den får ligga högst {MaxSplitDistance:0} m från den.");
+        }
+        if (fraction is < 0.001 or > 0.999)
+        {
+            return (null, "Siten ligger vid kabelns ände. Koppla den i stället för att kapa kabeln.");
+        }
+
+        var conductors = new List<SplitConductor>();
+        await using (var cmd = new NpgsqlCommand("""
+            SELECT cd.number, a.terminal_id, b.terminal_id FROM conductor cd
+            JOIN conductor_end a ON a.conductor_id = cd.id AND a.side = 'A'
+            JOIN conductor_end b ON b.conductor_id = cd.id AND b.side = 'B'
+            WHERE cd.cable_id = $1 ORDER BY cd.number
+            """, conn))
+        {
+            cmd.Parameters.Add(new() { Value = cableId });
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                conductors.Add(new SplitConductor(reader.GetInt32(0), reader.GetInt64(1), reader.GetInt64(2)));
+            }
+        }
+        if (conductors.Count is 0 or > CableSplit.MaxConductors)
+        {
+            return (null, $"Kabeln har {conductors.Count} ledare; en kapning klarar 1–{CableSplit.MaxConductors}.");
+        }
+        var terminate = (req.Terminate ?? []).Distinct().Order().ToArray();
+        if (terminate.FirstOrDefault(t => conductors.All(c => c.Number != t)) is var unknown and not 0)
+        {
+            return (null, $"Kabeln har ingen ledare {unknown}.");
+        }
+        // A terminated conductor ends in the site: a circuit along it would break, so it has to be moved first.
+        var busy = conductors.Where(c => terminate.Contains(c.Number) && new[] { c.A, c.B }.Any(end =>
+            view.Graph.TryGetNode(end, out var node) && view.Graph.CircuitsThrough(node).Length > 0)).Select(c => c.Number).ToList();
+        if (busy.Count > 0)
+        {
+            return (null, $"Ledare {string.Join(", ", busy)} bär kretsar och kan inte termineras i siten. Flytta kretsarna först, eller skarva igenom dem.");
+        }
+        return (System.Text.Json.JsonSerializer.Serialize(new
+        {
+            cable = cableId,
+            code,
+            typeKey,
+            site,
+            aSite,
+            bSite,
+            conductors = conductors.Select(c => new long[] { c.Number, c.A, c.B }),
+            terminate,
+            lineA,
+            lineB,
+        }), null);
+    }
+
+    /// <summary>How far from the cable a site inserted into it may lie (#168).</summary>
+    private const double MaxSplitDistance = 2_000;
+
+    private static double[][] Coordinates(double[,] points) =>
+        [.. Enumerable.Range(0, points.GetLength(0)).Select(i => new[] { points[i, 0], points[i, 1] })];
 
     /// <summary>
     /// Equipment attributes must fit their model's schema in the type catalog (#27): the current attributes with the

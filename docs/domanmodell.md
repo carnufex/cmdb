@@ -108,6 +108,16 @@ Regler:
 4. När en plan avbryts markeras alla planer som beror på den.
 5. Konflikter detekteras på **resursnivå** (terminal, ledare, slot, kanal) via reservationer, inte bara på fältnivå. En plans kopplingar är anspråk på sina terminaler och ledare. En reservation håller resursen åt en plan eller tjänst, och en terminal tar en koppling av varje slag (#25).
 
+### Sätta in en site i en befintlig kabel (#168)
+
+Operationen `split_cable` delar en kabel vid en site (befintlig eller planerad i samma plan, högst 2 km från kabeln och inte vid en ände):
+
+- Kabeln ersätts av två: `<kod>-A` från A-änden till siten och `<kod>-B` från siten till B-änden, med samma ledarnummer och färger. Den gamla kabeln får livscykeln borttagen.
+- Kopplingarna vid de gamla ändarna flyttas till de nya kablarnas yttre ändar.
+- Varje ledare skarvas igenom i siten, utom de som termineras där. De blir lediga i siten. En ledare som bär en krets kan inte termineras.
+- Kretsar längs kabeln får de nya ändarna med skarven emellan, så varje tjänst går som förut.
+- Operationen räknas fram mot planens vy just före den. Den flyttar alltså även kopplingar som tidigare operationer i planen gjort, och en senare ändring i produktion syns som ett problem i förhandsvisningen.
+
 ## Tid och historik
 
 Bitemporal modell:

@@ -25,7 +25,7 @@ public sealed record AgentPlanAdded(AgentPlan Plan, IReadOnlyList<AgentPlanChang
 /// <summary>One change for <c>add_to_plan</c>.</summary>
 public sealed class AgentPlanOperation
 {
-    [Description("connect, disconnect, set_lifecycle, rename, create_site, create_equipment or create_cable.")]
+    [Description("connect, disconnect, set_lifecycle, rename, create_site, create_equipment, create_cable or split_cable (insert a site into a cable).")]
     public string Kind { get; set; } = "";
 
     [Description("connect/disconnect: the first terminal id (ports and conductor ends have terminal ids in get_object).")]
@@ -69,6 +69,13 @@ public sealed class AgentPlanOperation
 
     [Description("create_cable: the site at the B end.")]
     public string? BSite { get; set; }
+
+    [Description("split_cable: the cable to insert the site (Site) into, \"cable:56\". Its conductors are spliced through in the site, " +
+        "connections move to the new cables' ends and circuits keep running.")]
+    public string? Cable { get; set; }
+
+    [Description("split_cable: conductor numbers to terminate in the site instead of splicing through; they must not carry circuits.")]
+    public int[]? Terminate { get; set; }
 }
 
 /// <summary>
@@ -152,6 +159,8 @@ public sealed class PlanTools(RequestDb db, PlanWrites writes, PlanViews views, 
                 SiteId = op.Site is null ? null : ParseRef(op.Site, "site", planned: true),
                 ASiteId = op.ASite is null ? null : ParseRef(op.ASite, "site", planned: true),
                 BSiteId = op.BSite is null ? null : ParseRef(op.BSite, "site", planned: true),
+                CableId = op.Cable is null ? null : ParseRef(op.Cable, "cable", planned: false),
+                Terminate = op.Terminate,
             });
         }
         return await AddAllAsync(planId, requests, ct);
