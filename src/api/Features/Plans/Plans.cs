@@ -31,8 +31,13 @@ public sealed record PlanSite(long Id, double X, double Y);
 public sealed record PlanDiff(PlanSummary Plan, IReadOnlyList<PlanSummary> Plans, IReadOnlyList<PlanOperationView> Changes,
     IReadOnlyList<PlanSite> Sites, double[]? Extent, int Problems, double ElapsedMs, PlannedMap? Planned = null);
 
-/// <summary>What the plan creates (#107), for the map: planned sites and cables with their geometry.</summary>
-public sealed record PlannedMap(IReadOnlyList<PlannedSite> Sites, IReadOnlyList<PlannedCable> Cables);
+/// <summary>
+/// What the plan creates (#107) and removes (#168, #172), for the map: planned sites and cables with their geometry, and the
+/// sites and cables it takes away.
+/// </summary>
+public sealed record PlannedMap(IReadOnlyList<PlannedSite> Sites, IReadOnlyList<PlannedCable> Cables, PlannedRemovals? Removed = null);
+
+public sealed record PlannedRemovals(IReadOnlyList<PlanSite> Sites, IReadOnlyList<PlannedCable> Cables);
 
 public sealed record PlannedSite(long Id, string Code, string Name, string SiteType, double X, double Y);
 
@@ -130,6 +135,11 @@ public sealed class AddOperationValidator : Validator<AddOperationRequest>
             RuleFor(r => r.Type).Must(t => t is "site" or "equipment" or "cable").WithMessage("type is site, equipment or cable.");
             RuleFor(r => r.ObjectId).NotNull();
             RuleFor(r => r.Lifecycle).Must(l => Lifecycles.Contains(l)).WithMessage("Unknown lifecycle.");
+        });
+        When(r => r.Kind == "remove", () =>
+        {
+            RuleFor(r => r.Type).Must(t => t is "site" or "equipment" or "cable").WithMessage("type is site, equipment or cable.");
+            RuleFor(r => r.ObjectId).NotNull().GreaterThan(0).WithMessage("objectId is an existing object; remove a planned one by deleting its operation.");
         });
         When(r => r.Kind == "split_cable", () =>
         {
@@ -383,7 +393,7 @@ public sealed class PlanViewEndpoint(RequestDb db, GraphHolder holder, PlanViews
         var siteIds = changes.SelectMany(c => c.Terminals.Select(t => t.Site?.Id ?? 0))
             .Concat(changes.Where(c => c.Target?.Type == "site").Select(c => c.Target!.Id))
             .Where(id => id != 0).Distinct().ToArray();
-        var planned = scope.HidesCoordinates ? null : await PlannedMapAsync(view.Chain.Operations, ct);
+        var planned = scope.HidesCoordinates ? null : await PlannedMapAsync(view.Chain.Operations, scope, ct);
         List<PlanSite> sites = scope.HidesCoordinates ? [] : [.. await PlanSql.SitePositionsAsync(db, [.. siteIds.Where(id => id > 0)], ct),
             .. planned!.Sites.Select(s => new PlanSite(s.Id, s.X, s.Y))];
         double[]? extent = sites.Count == 0 ? null : [sites.Min(s => s.X), sites.Min(s => s.Y), sites.Max(s => s.X), sites.Max(s => s.Y)];
@@ -399,7 +409,59 @@ public sealed class PlanViewEndpoint(RequestDb db, GraphHolder holder, PlanViews
     }
 
     /// <summary>Planned sites from their operations, and planned cables as a line between their two sites.</summary>
-    private async Task<PlannedMap> PlannedMapAsync(IReadOnlyList<PlanOp> operations, CancellationToken ct)
+    private async Task<PlannedMap> PlannedMapAsync(IReadOnlyList<PlanOp> operations, UserScope scope, CancellationToken ct)
+    {
+        var map = await CreatedAsync(operations, ct);
+        return map with { Removed = await RemovedAsync(operations, scope, ct) };
+    }
+
+    /// <summary>Sites and cables the plan removes, and the cables a split replaces, as they stand in production.</summary>
+    private async Task<PlannedRemovals?> RemovedAsync(IReadOnlyList<PlanOp> operations, UserScope scope, CancellationToken ct)
+    {
+        var cables = new HashSet<long>();
+        var sites = new HashSet<long>();
+        foreach (var op in operations)
+        {
+            if (op.Kind == "split_cable")
+            {
+                cables.Add(op.Payload.GetProperty("cable").GetInt64());
+            }
+            else if (op.Kind == "remove")
+            {
+                cables.UnionWith(ObjectRemoval.Objects(op.Payload).Cables);
+                if (op.ObjectType == "site")
+                {
+                    sites.Add(op.ObjectId);
+                }
+            }
+        }
+        if (cables.Count == 0 && sites.Count == 0)
+        {
+            return null;
+        }
+        var lines = new List<PlannedCable>();
+        await using (var cmd = db.CreateCommand($"""
+            SELECT c.id, c.code, ARRAY(SELECT ARRAY[round(ST_X(p.geom)), round(ST_Y(p.geom))]
+                                       FROM ST_DumpPoints(ST_Simplify({ScopeSql.CableGeometry("c", 2, scope)}, 10)) p ORDER BY p.path)
+            FROM cable c WHERE c.id = ANY($1) AND {ScopeSql.Cable("c.id", 2)}
+            """))
+        {
+            cmd.Parameters.Add(new() { Value = cables.ToArray() });
+            cmd.Parameters.Add(scope.Parameter());
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                if (reader.GetValue(2) is double[,] points && points.Length > 0)
+                {
+                    lines.Add(new PlannedCable(reader.GetInt64(0), reader.GetString(1),
+                        [.. Enumerable.Range(0, points.GetLength(0)).Select(i => new[] { points[i, 0], points[i, 1] })]));
+                }
+            }
+        }
+        return new PlannedRemovals(await PlanSql.SitePositionsAsync(db, [.. sites], ct), lines);
+    }
+
+    private async Task<PlannedMap> CreatedAsync(IReadOnlyList<PlanOp> operations, CancellationToken ct)
     {
         var sites = operations.Where(o => o.Kind == "create_site").Select(o => new PlannedSite(Planned.ObjectId(o.Id),
             o.Payload.GetProperty("code").GetString()!, o.Payload.GetProperty("name").GetString()!, o.Payload.GetProperty("siteType").GetString()!,

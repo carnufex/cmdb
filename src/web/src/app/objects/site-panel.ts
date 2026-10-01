@@ -1,3 +1,4 @@
+import { PlanRemoveComponent } from '../plans/plan-remove';
 import { httpResource } from '@angular/common/http';
 import { DecimalPipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, effect, inject, input } from '@angular/core';
@@ -21,6 +22,7 @@ const siteTypes: Record<string, string> = {
 @Component({
   selector: 'cmdb-site-panel',
   imports: [
+    PlanRemoveComponent,
     ObjectLinkComponent,
     StatusComponent,
     EditHeaderComponent,
@@ -51,6 +53,7 @@ const siteTypes: Record<string, string> = {
           }
         </div>
       </header>
+      <cmdb-plan-remove type="site" [objectId]="s.id" />
 
       @for (location of racks(); track location.id) {
         <section>

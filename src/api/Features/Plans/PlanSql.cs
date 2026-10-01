@@ -169,7 +169,7 @@ internal static class PlanSql
         var conflicts = (await ClaimsSql.ConflictsAsync(db, [.. operations.Select(o => o.PlanId).Distinct()], ct)).ToLookup(c => c.OperationId);
         var names = await TraceNames.LoadAsync(db, [.. terminals.Where(t => t > 0)], [], [], ct);
         names.AddPlanned(planned.Terminals);
-        var objects = await ObjectsAsync(db, [.. operations.Where(o => o.Kind is "set_lifecycle" or "rename" or "set_attributes").Select(o => (o.ObjectType!, o.ObjectId)).Distinct()],
+        var objects = await ObjectsAsync(db, [.. operations.Where(o => o.Kind is "set_lifecycle" or "rename" or "set_attributes" or "remove").Select(o => (o.ObjectType!, o.ObjectId)).Distinct()],
             scope, ct);
 
         TraceHop Hop(long terminal) =>
@@ -218,6 +218,9 @@ internal static class PlanSql
             {
                 "set_lifecycle" => $"Sätt livscykel för {target.Code} till {LifecycleName(lifecycle)}",
                 "set_attributes" => $"Ändra attribut på {target.Code}: {AttributeText(op.Payload.GetProperty("attributes"))}",
+                "remove" when op.ObjectType == "site" => $"Ta bort site {target.Code} {target.Name}".TrimEnd() +
+                    $" med {ObjectRemoval.Objects(op.Payload).Equipment.Length} utrustningar och {ObjectRemoval.Objects(op.Payload).Cables.Length} kablar",
+                "remove" => $"Ta bort {(op.ObjectType == "cable" ? "kabel" : "utrustning")} {target.Code}",
                 _ => $"Byt namn på {target.Code} till {name}",
             };
             if (problem is null && !found)

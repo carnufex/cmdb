@@ -73,6 +73,11 @@ export interface PlanDiff {
   planned: {
     sites: { id: number; code: string; name: string; siteType: string; x: number; y: number }[];
     cables: { id: number; code: string; coordinates: number[][] }[];
+    /** What the plan removes, and cables a split replaces (#168, #172). */
+    removed?: {
+      sites: { id: number; x: number; y: number }[];
+      cables: { id: number; code: string; coordinates: number[][] }[];
+    } | null;
   } | null;
 }
 
@@ -102,6 +107,7 @@ export type NewOperation =
   | { kind: 'create_equipment'; siteId: number; typeKey: string; name: string }
   | { kind: 'create_cable'; aSiteId: number; bSiteId: number; typeKey: string }
   | { kind: 'split_cable'; cableId: number; siteId: number; terminate: number[] }
+  | { kind: 'remove'; type: 'site' | 'equipment' | 'cable'; objectId: number }
   | {
       kind: 'set_attributes';
       type: 'site' | 'equipment';

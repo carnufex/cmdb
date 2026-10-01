@@ -88,6 +88,15 @@ public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views
             }
             payload = created;
         }
+        else if (req.Kind == "remove")
+        {
+            var (removal, error) = await RemovalAsync(scope, view, req, ct);
+            if (removal is null)
+            {
+                return PlanWrite.Fail<PlanOperationView>(PlanWriteFailure.Invalid, error!);
+            }
+            payload = removal;
+        }
         else if (req.Kind == "split_cable")
         {
             var (split, error) = await SplitAsync(scope, view, req, ct);
@@ -343,6 +352,54 @@ public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views
             lineA,
             lineB,
         }), null);
+    }
+
+    /// <summary>
+    /// Checks a removal (#172) and gives its payload: the object exists, is visible and not removed already, and nothing it
+    /// takes along carries a circuit. A site takes its equipment and the cables that end at it.
+    /// </summary>
+    private async Task<(string? Payload, string? Error)> RemovalAsync(UserScope scope, PlanView view, AddOperationRequest req, CancellationToken ct)
+    {
+        var (type, id) = (req.Type!, req.ObjectId!.Value);
+        if (!await PlanSql.ObjectVisibleAsync(db, type, id, scope, ct))
+        {
+            return (null, $"{type} {id} finns inte.");
+        }
+        if (view.Chain.Operations.Any(o => o.Kind == "remove" && o.Payload.GetProperty("type").GetString() == type && o.Payload.GetProperty("id").GetInt64() == id))
+        {
+            return (null, "Objektet tas redan bort i planen.");
+        }
+        await using var conn = await db.OpenConnectionAsync(ct);
+        await using (var cmd = new NpgsqlCommand($"SELECT lifecycle::text FROM {type} WHERE id = $1", conn))
+        {
+            cmd.Parameters.Add(new() { Value = id });
+            if ((string?)await cmd.ExecuteScalarAsync(ct) == "removed")
+            {
+                return (null, "Objektet är redan borttaget.");
+            }
+        }
+        long[] equipment = type == "equipment" ? [id] : [], cables = type == "cable" ? [id] : [];
+        if (type == "site")
+        {
+            await using var cmd = new NpgsqlCommand("""
+                SELECT ARRAY(SELECT id FROM equipment WHERE site_id = $1 AND lifecycle <> 'removed' ORDER BY id),
+                       ARRAY(SELECT id FROM cable WHERE (a_site_id = $1 OR b_site_id = $1) AND lifecycle <> 'removed' ORDER BY id)
+                """, conn);
+            cmd.Parameters.Add(new() { Value = id });
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            await reader.ReadAsync(ct);
+            (equipment, cables) = (reader.GetFieldValue<long[]>(0), reader.GetFieldValue<long[]>(1));
+        }
+        var circuits = ObjectRemoval.Circuits(view.Graph, ObjectRemoval.Nodes(view.Graph, equipment, cables));
+        if (circuits.Count > 0)
+        {
+            var services = circuits.SelectMany(c => view.Graph.ServicesOf(c).ToArray()).Distinct().Count();
+            return (null, $"{circuits.Count} kretsar går genom det som tas bort" + (services > 0 ? $" och bär {services} tjänster" : "") +
+                ". Flytta dem först, annars bryts tjänsterna.");
+        }
+        return (System.Text.Json.JsonSerializer.Serialize(type == "site"
+            ? (object)new { type, id, equipment, cables }
+            : new { type, id }), null);
     }
 
     /// <summary>How far from the cable a site inserted into it may lie (#168).</summary>

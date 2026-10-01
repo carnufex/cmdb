@@ -171,6 +171,7 @@ public sealed class PlannedObjectTests(ApiFactory factory)
         view.Problems.ShouldBe(0);
         view.Planned!.Cables.Select(c => c.Code).ShouldBe([$"{code}-A", $"{code}-B"]);
         view.Planned.Cables.ShouldAllBe(c => c.Coordinates.Length >= 2);
+        view.Planned.Removed!.Cables.Select(c => c.Id).ShouldBe([cable]);
 
         // In the plan the circuit runs through the two new parts and the new site, not the old cable.
         var planned = (await client.GetFromJsonAsync<TraceResult>($"/api/trace?circuit={circuit}&plan={plan.Id}", Ct))!;
@@ -205,6 +206,66 @@ public sealed class PlannedObjectTests(ApiFactory factory)
         after.Cables.Select(c => c.Id).ShouldContain(partB);
         after.Sites.Select(s => s.Id).ShouldContain(realSite);
         after.Services.Select(s => s.Id).ShouldBe(before.Services.Select(s => s.Id));
+    }
+
+    [Fact]
+    public async Task Removing_refuses_what_carries_circuits_and_takes_a_site_with_its_equipment_and_cables()
+    {
+        var (db, api) = await NetworkAsync(44);
+        await using var dbScope = db;
+        await using var apiScope = api;
+        using var client = NetworkFixture.Client(api);
+
+        // Equipment that carries circuits cannot be removed: its services would break.
+        var busy = await Scalar(db, """
+            SELECT min(p.equipment_id) FROM port p JOIN circuit_hop h ON h.terminal_id = p.terminal_id
+            """);
+        var refusePlan = await CreateAsync(client, "Ta bort utrustning med kretsar");
+        var refused = await client.PostAsJsonAsync($"/api/plans/{refusePlan.Id}/operations", new { kind = "remove", type = "equipment", objectId = busy }, Ct);
+        refused.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await refused.Content.ReadAsStringAsync(Ct)).ShouldContain("kretsar går genom");
+
+        // A site built by one plan, with equipment and a cable patched to the network, and removed by the next.
+        var (site, port) = await SiteWithFreePortAsync(db);
+        var build = await CreateAsync(client, "Bygg en site");
+        var newSite = (await AddAsync(client, build.Id, new { kind = "create_site", code = "RAD-BORT-1", name = "Tillfällig site", siteType = "radio", x = 651000.0, y = 7101000.0 }))
+            .Target!.Id;
+        var radio = await AddAsync(client, build.Id, new { kind = "create_equipment", siteId = newSite, typeKey = "acme-ax-24", name = "RAD-BORT-1 AX-24 1" });
+        var cableOp = await AddAsync(client, build.Id, new { kind = "create_cable", aSiteId = site, bSiteId = newSite, typeKey = "fiber-12" });
+        (await AddAsync(client, build.Id, new { kind = "connect", a = port, b = -((cableOp.Id * 10_000) + 1), connectionKind = "splice" })).Problem.ShouldBeNull();
+        (await AddAsync(client, build.Id, new { kind = "connect", a = -((cableOp.Id * 10_000) + 2), b = -((radio.Id * 10_000) + 1), connectionKind = "splice" }))
+            .Problem.ShouldBeNull();
+        (await client.PostAsync($"/api/plans/{build.Id}/apply", null, Ct)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        await ApiFactory.GraphCaughtUpAsync(api.Services, db);
+        var realSite = await Scalar(db, "SELECT id FROM site WHERE code = 'RAD-BORT-1'");
+        var realCable = await Scalar(db, $"SELECT id FROM cable WHERE b_site_id = {realSite}");
+        var realRadio = await Scalar(db, $"SELECT id FROM equipment WHERE site_id = {realSite}");
+
+        var remove = await CreateAsync(client, "Riv siten");
+        var removal = await AddAsync(client, remove.Id, new { kind = "remove", type = "site", objectId = realSite });
+        removal.Problem.ShouldBeNull();
+        removal.Summary.ShouldContain("Ta bort site RAD-BORT-1");
+        removal.Summary.ShouldContain("1 utrustningar och 1 kablar");
+        (await client.PostAsJsonAsync($"/api/plans/{remove.Id}/operations", new { kind = "remove", type = "site", objectId = realSite }, Ct))
+            .StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        var view = (await client.GetFromJsonAsync<PlanDiff>($"/api/plans/{remove.Id}/view", Ct))!;
+        view.Problems.ShouldBe(0);
+        view.Planned!.Removed!.Cables.Select(c => c.Id).ShouldBe([realCable]);
+        view.Planned.Removed.Sites.Select(s => s.Id).ShouldBe([realSite]);
+        // In the plan the network's port no longer reaches the removed site.
+        var trace = (await client.GetFromJsonAsync<TraceResult>($"/api/trace?terminal={port}&plan={remove.Id}", Ct))!;
+        trace.Physical!.Hops.Select(h => h.Site?.Id).ShouldNotContain(realSite);
+
+        (await client.PostAsync($"/api/plans/{remove.Id}/apply", null, Ct)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        await ApiFactory.GraphCaughtUpAsync(api.Services, db);
+        (await Text(db, $"SELECT lifecycle::text FROM site WHERE id = {realSite}")).ShouldBe("removed");
+        (await Text(db, $"SELECT lifecycle::text FROM equipment WHERE id = {realRadio}")).ShouldBe("removed");
+        (await Text(db, $"SELECT lifecycle::text FROM cable WHERE id = {realCable}")).ShouldBe("removed");
+        (await Scalar(db, $"""
+            SELECT count(*) FROM connection WHERE valid_to IS NULL AND (a_terminal_id = {port} OR b_terminal_id = {port}) AND kind = 'splice'
+            """)).ShouldBe(0);
+        var after = (await client.GetFromJsonAsync<TraceResult>($"/api/trace?terminal={port}", Ct))!;
+        after.Physical!.Hops.Select(h => h.Site?.Id).ShouldNotContain(realSite);
     }
 
     private async Task<(NpgsqlDataSource Db, WebApplicationFactory<Program> Api)> NetworkAsync(int seed)

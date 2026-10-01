@@ -32,6 +32,11 @@ export interface PlannedObjects {
     y: number;
   }[];
   cables: readonly { id: number; code: string; coordinates: readonly (readonly number[])[] }[];
+  /** What the plan removes (#172), and cables a split replaces (#168): drawn struck out. */
+  removed?: {
+    sites: readonly { id: number; x: number; y: number }[];
+    cables: readonly { id: number; code: string; coordinates: readonly (readonly number[])[] }[];
+  } | null;
 }
 
 interface MapPoint {
