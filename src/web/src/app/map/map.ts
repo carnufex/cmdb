@@ -548,10 +548,14 @@ export class MapComponent {
       ),
     ];
     const live = operations.live;
-    if (live?.impact) {
+    const impacts = [
+      ...(operations.incidentImpacts ?? []).map((i) => i.impact),
+      ...(live?.impact ? [live.impact] : []),
+    ];
+    for (const impact of impacts) {
       for (const [route, kind] of [
-        [live.impact.falseRedundancy, 'false'],
-        [live.impact.down, 'down'],
+        [impact.falseRedundancy, 'false'],
+        [impact.down, 'down'],
       ] as const) {
         features.push(...route.cables.map((c) => line(c.coordinates, kind)));
         features.push(...route.sites.map((s) => point(s.x, s.y, { ops: `${kind}-site` })));
@@ -607,7 +611,22 @@ export class MapComponent {
       }
     }
     this.liveKey = key;
+
+    // An incident switched on in the panel (#161): frame what it takes down.
+    const shown = (operations.incidentImpacts ?? []).map((i) => i.number);
+    const added = (operations.incidentImpacts ?? []).find((i) => !this.shownImpacts.has(i.number));
+    this.shownImpacts = new Set(shown);
+    if (added?.impact.down.extent.length === 4) {
+      const [minX, minY, maxX, maxY] = added.impact.down.extent;
+      this.map!.getView().fit([minX - 3_000, minY - 3_000, maxX + 3_000, maxY + 3_000], {
+        padding: [64, 64, 64, 64],
+        duration: 800,
+        maxZoom: 11,
+      });
+    }
   }
+
+  private shownImpacts = new Set<string>();
 
   private routeStyleCache?: { key: string; line: Style[]; point: Style };
 

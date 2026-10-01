@@ -8,6 +8,40 @@ public sealed record ServiceRequestRow(string Number, string Kind, string Status
 
 public sealed record ServiceRequestList(int Waiting, int QueueMinutes, IReadOnlyList<ServiceRequestRow> Requests);
 
+public sealed class ServiceRequestNumber
+{
+    public string Number { get; set; } = "";
+}
+
+/// <summary>Marks a service request done from the agent panel (#161); a done callback leaves the queue.</summary>
+public sealed class CompleteServiceRequestEndpoint(SystemDb system) : Endpoint<ServiceRequestNumber>
+{
+    public override void Configure()
+    {
+        Post("/voice/service-requests/{number}/done");
+        Roles("cmdb-full");
+    }
+
+    public override async Task HandleAsync(ServiceRequestNumber req, CancellationToken ct)
+    {
+        // Like the list: requests name people, so only callers who see the whole network handle them.
+        if (!HttpContext.Scope().Unrestricted || !req.Number.StartsWith("SR-", StringComparison.Ordinal)
+            || !long.TryParse(req.Number.AsSpan(3), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var id))
+        {
+            await Send.NotFoundAsync(ct);
+            return;
+        }
+        await using var cmd = system.Source.CreateCommand("UPDATE service_request SET status = 'done' WHERE id = $1");
+        cmd.Parameters.Add(new() { Value = id });
+        if (await cmd.ExecuteNonQueryAsync(ct) == 0)
+        {
+            await Send.NotFoundAsync(ct);
+            return;
+        }
+        await Send.NoContentAsync(ct);
+    }
+}
+
 /// <summary>
 /// Requests to the service desk and IT self-service agents (ADR-0016, #151) and the callback queue, for the agent panel.
 /// They name people, and are not network data under the access scopes, so only callers with the whole network see them,

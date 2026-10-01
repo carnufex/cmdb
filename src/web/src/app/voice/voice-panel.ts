@@ -1,4 +1,4 @@
-import { httpResource } from '@angular/common/http';
+import { HttpClient, httpResource } from '@angular/common/http';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -17,6 +17,8 @@ import { VoiceCall } from './voice-call';
 /** GET /api/incidents (#135) */
 export interface Incident {
   number: string;
+  resolvedAt?: string | null;
+  resolvedBy?: string | null;
   priority: 'P1' | 'P2' | 'P3';
   status: string;
   siteId: number;
@@ -184,17 +186,52 @@ const FRESH_SMS_MS = 5 * 60_000;
           </section>
 
           <section aria-labelledby="incidents">
-            <h3 id="incidents">
-              Ärenden <span class="count">{{ incidents().length }}</span>
+            <h3 id="incidents" class="with-action">
+              <span
+                >Ärenden <span class="count">{{ openIncidents().length }}</span></span
+              >
+              @if (openIncidents().length > 1) {
+                <button type="button" class="link" (click)="resolveAll()">Lös alla</button>
+              }
             </h3>
+            @if (actionError(); as e) {
+              <p class="error" role="alert">{{ e }}</p>
+            }
             @for (i of shownIncidents(); track i.number) {
-              <details class="row">
+              <details class="row" [class.closed]="i.status !== 'open'">
                 <summary>
                   <span class="status" [attr.data-priority]="i.priority">
                     <span class="dot" aria-hidden="true"></span>{{ priorityLabels[i.priority] }}
                   </span>
                   <span>{{ i.number }}</span>
                   <span class="grow">{{ i.siteName }}</span>
+                  @if (i.status === 'open') {
+                    <button
+                      type="button"
+                      class="icon"
+                      [attr.aria-pressed]="onMap().has(i.number)"
+                      [attr.aria-label]="
+                        (onMap().has(i.number) ? 'Dölj ' : 'Visa ') + i.number + ' på kartan'
+                      "
+                      [title]="
+                        onMap().has(i.number)
+                          ? 'Dölj påverkan på kartan'
+                          : 'Visa påverkan på kartan'
+                      "
+                      (click)="toggleOnMap(i.number, $event)"
+                    >
+                      ◉
+                    </button>
+                    <button
+                      type="button"
+                      class="secondary small"
+                      (click)="resolve(i.number, $event)"
+                    >
+                      Lös
+                    </button>
+                  } @else {
+                    <span class="muted">Löst</span>
+                  }
                   <time class="muted" [attr.datetime]="i.createdAt">{{ time(i.createdAt) }}</time>
                 </summary>
                 <button type="button" class="link" (click)="openSite(i.siteId)">
@@ -210,15 +247,25 @@ const FRESH_SMS_MS = 5 * 60_000;
                 <p class="muted">
                   Anmält av {{ i.reportedBy }} · samtal {{ short(i.conversationId) }}
                 </p>
+                @if (i.resolvedAt) {
+                  <p class="muted">Löst {{ time(i.resolvedAt) }} av {{ i.resolvedBy }}</p>
+                }
               </details>
             } @empty {
               <p class="muted">Inga ärenden ännu.</p>
             }
-            @if (incidents().length > shownIncidents().length) {
-              <button type="button" class="link more" (click)="allIncidents.set(true)">
-                Visa alla {{ incidents().length }}
-              </button>
-            }
+            <p class="more">
+              @if (openIncidents().length > shownIncidents().length && !allIncidents()) {
+                <button type="button" class="link" (click)="allIncidents.set(true)">
+                  Visa alla {{ openIncidents().length }}
+                </button>
+              }
+              @if (resolvedCount()) {
+                <button type="button" class="link" (click)="showResolved.update((v) => !v)">
+                  {{ showResolved() ? 'Dölj lösta' : 'Visa lösta (' + resolvedCount() + ')' }}
+                </button>
+              }
+            </p>
           </section>
         }
         @case ('calls') {
@@ -238,6 +285,17 @@ const FRESH_SMS_MS = 5 * 60_000;
                     </span>
                     <span>{{ q.number }}</span>
                     <span class="grow">{{ q.callerName }}</span>
+                    @if (q.status === 'open') {
+                      <button
+                        type="button"
+                        class="secondary small"
+                        (click)="complete(q.number, $event)"
+                      >
+                        Klar
+                      </button>
+                    } @else {
+                      <span class="muted">Klar</span>
+                    }
                     <time class="muted" [attr.datetime]="q.createdAt">{{ time(q.createdAt) }}</time>
                   </summary>
                   <p>{{ q.summary }}</p>
@@ -403,7 +461,37 @@ const FRESH_SMS_MS = 5 * 60_000;
       white-space: nowrap;
     }
     .more {
+      display: flex;
+      gap: var(--space-3);
       margin-top: var(--space-2);
+    }
+    .with-action {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+    }
+    .closed {
+      opacity: 0.6;
+    }
+    .error {
+      color: var(--status-conflict);
+      font-size: var(--text-sm);
+    }
+    .small {
+      padding: 0 var(--space-2);
+      font-size: var(--text-xs);
+    }
+    .icon {
+      padding: 0 var(--space-1);
+      border: 0;
+      background: none;
+      color: var(--text-faint);
+      font-size: var(--text-md);
+      line-height: 1;
+      cursor: pointer;
+      &[aria-pressed='true'] {
+        color: var(--status-conflict);
+      }
     }
     .body {
       flex: 1;
@@ -605,9 +693,79 @@ export class VoicePanelComponent {
     }
     return this.lastActivity;
   });
-  protected readonly shownIncidents = computed(() =>
-    this.allIncidents() ? this.incidents() : this.incidents().slice(0, SHOWN_INCIDENTS),
+  protected readonly showResolved = signal(false);
+  protected readonly openIncidents = computed(() =>
+    this.incidents().filter((i) => i.status === 'open'),
   );
+  protected readonly resolvedCount = computed(
+    () => this.incidents().length - this.openIncidents().length,
+  );
+  protected readonly shownIncidents = computed(() => {
+    const list = this.showResolved() ? this.incidents() : this.openIncidents();
+    return this.allIncidents() ? list : list.slice(0, SHOWN_INCIDENTS);
+  });
+  protected readonly actionError = signal<string | null>(null);
+
+  /** Incidents whose impact the map shows (#161), so overlapping ones can be told apart. */
+  protected readonly onMap = signal<ReadonlySet<string>>(new Set());
+  private readonly impacts = signal<ReadonlyMap<string, NonNullable<Operations['live']>['impact']>>(
+    new Map(),
+  );
+  private readonly http = inject(HttpClient);
+
+  protected toggleOnMap(number: string, event: Event): void {
+    event.preventDefault();
+    event.stopPropagation();
+    const shown = new Set(this.onMap());
+    if (shown.delete(number)) {
+      this.onMap.set(shown);
+      return;
+    }
+    this.onMap.set(shown.add(number));
+    this.http
+      .get<NonNullable<NonNullable<Operations['live']>['impact']>>(
+        `/api/incidents/${number}/impact`,
+      )
+      .subscribe({
+        next: (impact) => this.impacts.update((m) => new Map(m).set(number, impact)),
+        error: () => this.actionError.set(`Påverkan för ${number} kunde inte hämtas.`),
+      });
+  }
+
+  protected resolve(number: string, event?: Event): void {
+    event?.preventDefault();
+    event?.stopPropagation();
+    this.actionError.set(null);
+    this.http.post(`/api/incidents/${number}/resolve`, null).subscribe({
+      next: () => {
+        const shown = new Set(this.onMap());
+        shown.delete(number);
+        this.onMap.set(shown);
+        this.tick.update((t) => t + 1);
+      },
+      error: (e: { status?: number }) =>
+        this.actionError.set(
+          e.status === 403
+            ? 'Du behöver skrivbehörighet för att lösa ärenden.'
+            : `${number} kunde inte lösas.`,
+        ),
+    });
+  }
+
+  protected resolveAll(): void {
+    for (const i of this.openIncidents()) {
+      this.resolve(i.number);
+    }
+  }
+
+  protected complete(number: string, event: Event): void {
+    event.preventDefault();
+    event.stopPropagation();
+    this.http.post(`/api/voice/service-requests/${number}/done`, null).subscribe({
+      next: () => this.tick.update((t) => t + 1),
+      error: () => this.actionError.set(`${number} kunde inte markeras som klar.`),
+    });
+  }
 
   /** The newest SMS while it is fresh: the code to read out during a call, whichever tab is open. */
   protected readonly latestSms = computed(() => {
@@ -666,11 +824,15 @@ export class VoicePanelComponent {
         this.lastWorks = this.worksResource.value();
       }
       if (this.lastLive || this.lastWorks) {
+        const impacts = this.impacts();
         this.mapView.operations.set({
           incidents: this.lastLive?.incidents ?? [],
           live: this.lastLive?.live ?? null,
           works: this.lastWorks?.works ?? [],
           risks: this.lastWorks?.risks ?? [],
+          incidentImpacts: [...this.onMap()]
+            .filter((n) => impacts.get(n))
+            .map((number) => ({ number, impact: impacts.get(number)! })),
         });
       }
     });

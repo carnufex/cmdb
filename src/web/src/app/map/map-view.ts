@@ -78,6 +78,11 @@ export interface Operations {
     ring: readonly (readonly number[])[];
   }[];
   risks: readonly { id: string; kind: string; title: string; site: MapPoint }[];
+  /** Incidents whose impact the agent panel shows (#161). */
+  incidentImpacts?: readonly {
+    number: string;
+    impact: NonNullable<NonNullable<Operations['live']>['impact']>;
+  }[];
 }
 
 /**
