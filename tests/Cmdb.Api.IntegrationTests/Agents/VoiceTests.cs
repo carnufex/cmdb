@@ -112,6 +112,23 @@ public sealed partial class VoiceTests(ApiFactory factory)
         var activity = await web.GetFromJsonAsync<JsonElement>("/api/voice/activity", Ct);
         activity.GetProperty("calls").EnumerateArray().Where(c => c.GetProperty("conversationId").GetString() == call)
             .Select(c => c.GetProperty("tool").GetString()).ShouldContain("create_incident");
+
+        // The panel shows each incident's impact on the map, and resolves it after the demo (#161).
+        var impactOfIncident = await web.GetFromJsonAsync<JsonElement>($"/api/incidents/{number}/impact", Ct);
+        impactOfIncident.GetProperty("priority").GetString().ShouldBe("P1");
+        impactOfIncident.GetProperty("down").GetProperty("cables").GetArrayLength().ShouldBeGreaterThan(0);
+
+        // Writing needs cmdb-full: a regional reader may not resolve it.
+        using var reader = NetworkFixture.Client(api, "cmdb-demo-nord", ["cmdb-region-nord"]);
+        (await reader.PostAsync($"/api/incidents/{number}/resolve", null, Ct)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        (await web.PostAsync($"/api/incidents/{number}/resolve", null, Ct)).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        (await web.PostAsync($"/api/incidents/{number}/resolve", null, Ct)).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        (await web.PostAsync("/api/incidents/INC-99999/resolve", null, Ct)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        var resolved = (await web.GetFromJsonAsync<JsonElement>("/api/incidents", Ct)).EnumerateArray().Single(i => i.GetProperty("number").GetString() == number);
+        resolved.GetProperty("status").GetString().ShouldBe("closed");
+        resolved.GetProperty("resolvedBy").GetString().ShouldNotBeNullOrEmpty();
+        (await web.GetFromJsonAsync<JsonElement>("/api/operations/live", Ct)).GetProperty("incidents").EnumerateArray()
+            .ShouldNotContain(i => i.GetProperty("number").GetString() == number);
     }
 
     [Fact]
@@ -319,6 +336,12 @@ public sealed partial class VoiceTests(ApiFactory factory)
         var list = await web.GetFromJsonAsync<JsonElement>("/api/voice/service-requests", Ct);
         list.GetProperty("requests").EnumerateArray().Where(r => r.GetProperty("conversationId").GetString() == call)
             .Select(r => r.GetProperty("kind").GetString()).Order().ShouldBe(["equipment", "password", "tag"]);
+
+        var tagNumber = list.GetProperty("requests").EnumerateArray()
+            .First(r => r.GetProperty("conversationId").GetString() == call && r.GetProperty("kind").GetString() == "tag").GetProperty("number").GetString();
+        (await web.PostAsync($"/api/voice/service-requests/{tagNumber}/done", null, Ct)).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        (await web.GetFromJsonAsync<JsonElement>("/api/voice/service-requests", Ct)).GetProperty("requests").EnumerateArray()
+            .Single(r => r.GetProperty("number").GetString() == tagNumber).GetProperty("status").GetString().ShouldBe("done");
     }
 
     [Fact]

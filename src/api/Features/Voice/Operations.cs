@@ -91,7 +91,7 @@ public sealed class OperationsLiveEndpoint(GraphHolder holder, RequestDb db, Sys
             }
             (tool, reference, conversation, at) = (reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetFieldValue<DateTimeOffset>(3));
         }
-        if (holder.Current is not { } graph || Parse(reference) is not { } target)
+        if (holder.Current is not { } graph || OperationsImpact.Parse(reference) is not { } target)
         {
             return null;
         }
@@ -112,38 +112,11 @@ public sealed class OperationsLiveEndpoint(GraphHolder holder, RequestDb db, Sys
             }
             else
             {
-                impact = await ImpactAsync(graph, mask, fault, scope, ct);
+                impact = await OperationsImpact.RoutesAsync(graph, mask, db.Source, fault, scope, ct);
                 cache = new ImpactCache(key, impact);
             }
         }
         return new LiveFocus(tool, reference, conversation, at, site, impact);
-    }
-
-    /// <summary>The routes of the services the fault takes down: at most a dozen of each kind, enough to see and quick to draw.</summary>
-    private async Task<LiveImpact> ImpactAsync(Cmdb.Graph.Graph graph, GraphMask mask, Fault fault, UserScope scope, CancellationToken ct)
-    {
-        async Task<TraceRoute> RoutesAsync(Redundancy kind)
-        {
-            var sites = new Dictionary<long, ObjectRef>();
-            var cables = new Dictionary<long, ObjectRef>();
-            foreach (var service in fault.Services.Where(s => s.Redundancy == kind).Take(12))
-            {
-                if (await TraceEndpoint.RunAsync(graph, mask, db.Source, null, service.Id, null, ct) is not { } trace)
-                {
-                    continue;
-                }
-                foreach (var s in trace.Sites)
-                {
-                    sites.TryAdd(s.Id, s);
-                }
-                foreach (var c in trace.Cables)
-                {
-                    cables.TryAdd(c.Id, c);
-                }
-            }
-            return await TraceEndpoint.RouteAsync(db.Source, [.. sites.Values], [.. cables.Values], scope, ct);
-        }
-        return new LiveImpact(fault.Priority, fault.Affected, fault.Down, await RoutesAsync(Redundancy.None), await RoutesAsync(Redundancy.False));
     }
 
     private async Task<MapPoint?> SiteAsync(long id, UserScope scope, CancellationToken ct)
@@ -159,8 +132,40 @@ public sealed class OperationsLiveEndpoint(GraphHolder holder, RequestDb db, Sys
             ? new MapPoint(reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetDouble(3), reader.GetDouble(4))
             : null;
     }
+}
 
-    private static (string Type, long Id)? Parse(string reference)
+/// <summary>What a fault takes down, as map routes (#156, #161): shared by the live call and each incident.</summary>
+public static class OperationsImpact
+{
+    /// <summary>The routes of the services the fault takes down: at most a dozen of each kind, enough to see and quick to draw.</summary>
+    public static async Task<LiveImpact> RoutesAsync(Cmdb.Graph.Graph graph, GraphMask mask, NpgsqlDataSource db, Fault fault, UserScope scope,
+        CancellationToken ct)
+    {
+        async Task<TraceRoute> RoutesAsync(Redundancy kind)
+        {
+            var sites = new Dictionary<long, ObjectRef>();
+            var cables = new Dictionary<long, ObjectRef>();
+            foreach (var service in fault.Services.Where(s => s.Redundancy == kind).Take(12))
+            {
+                if (await TraceEndpoint.RunAsync(graph, mask, db, null, service.Id, null, ct) is not { } trace)
+                {
+                    continue;
+                }
+                foreach (var s in trace.Sites)
+                {
+                    sites.TryAdd(s.Id, s);
+                }
+                foreach (var c in trace.Cables)
+                {
+                    cables.TryAdd(c.Id, c);
+                }
+            }
+            return await TraceEndpoint.RouteAsync(db, [.. sites.Values], [.. cables.Values], scope, ct);
+        }
+        return new LiveImpact(fault.Priority, fault.Affected, fault.Down, await RoutesAsync(Redundancy.None), await RoutesAsync(Redundancy.False));
+    }
+
+    public static (string Type, long Id)? Parse(string reference)
     {
         var colon = reference.IndexOf(':', StringComparison.Ordinal);
         return colon > 0 && reference[..colon] is "site" or "equipment" or "cable"

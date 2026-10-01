@@ -197,6 +197,59 @@ describe('operations agent panel', () => {
     fixture.destroy();
   });
 
+  it('shows an incident impact on the map and resolves it', async () => {
+    const http = TestBed.inject(HttpTestingController);
+    const fixture = TestBed.createComponent(VoicePanelComponent);
+    await settle(fixture);
+    http.expectOne((r) => r.url === '/api/incidents').flush([incident]);
+    http.expectOne((r) => r.url === '/api/risks').flush([]);
+    http.expectOne((r) => r.url === '/api/voice/activity').flush(activity);
+    http.expectOne((r) => r.url === '/api/operations/live').flush({ incidents: [], live: null });
+    http.expectOne((r) => r.url === '/api/operations/works').flush({ works: [], risks: [] });
+    await settle(fixture);
+    const el = fixture.nativeElement as HTMLElement;
+
+    // The eye shows this incident's impact on the map (#161).
+    el.querySelector<HTMLButtonElement>('button[aria-label="Visa INC-00001 på kartan"]')!.click();
+    const route = {
+      sites: [{ id: 1, x: 1, y: 2 }],
+      cables: [
+        {
+          id: 2,
+          coordinates: [
+            [1, 2],
+            [3, 4],
+          ],
+        },
+      ],
+      extent: [1, 2, 3, 4],
+    };
+    http.expectOne('/api/incidents/INC-00001/impact').flush({
+      priority: 'P1',
+      affected: 3,
+      servicesDown: 2,
+      down: route,
+      falseRedundancy: { sites: [], cables: [], extent: [] },
+    });
+    await settle(fixture);
+    expect(
+      TestBed.inject(MapView)
+        .operations()!
+        .incidentImpacts!.map((i) => i.number),
+    ).toEqual(['INC-00001']);
+
+    // Resolving it closes it on the server and takes it off the map.
+    [...el.querySelectorAll<HTMLButtonElement>('button')]
+      .find((b) => b.textContent?.trim() === 'Lös')!
+      .click();
+    const req = http.expectOne('/api/incidents/INC-00001/resolve');
+    expect(req.request.method).toBe('POST');
+    req.flush(null, { status: 204, statusText: 'No Content' });
+    await settle(fixture);
+    expect(TestBed.inject(MapView).operations()!.incidentImpacts).toEqual([]);
+    fixture.destroy();
+  });
+
   it('says why the outbox is missing for a caller without the whole network', async () => {
     const http = TestBed.inject(HttpTestingController);
     const fixture = TestBed.createComponent(VoicePanelComponent);

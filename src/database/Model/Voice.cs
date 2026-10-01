@@ -87,6 +87,10 @@ public class Incident
     public required string ReportedBy { get; set; }
     public JsonDocument Enrichment { get; set; } = JsonDocument.Parse("{}");
     public DateTimeOffset CreatedAt { get; set; }
+
+    /// <summary>When and by whom the incident was resolved in the agent panel (#161).</summary>
+    public DateTimeOffset? ResolvedAt { get; set; }
+    public string? ResolvedBy { get; set; }
 }
 
 /// <summary>
