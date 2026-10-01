@@ -88,4 +88,42 @@ describe('PlanCreateComponent', () => {
     expect((root.querySelector('input[name=b]') as HTMLInputElement).value).toBe('RAD-NY-1');
     expect(mapView.picking()).toBe(false);
   });
+
+  it('places a new site where the map is clicked instead of its centre (#167)', async () => {
+    const mapView = TestBed.inject(MapView);
+    mapView.center.set({ x: 650000, y: 7100000 });
+    const fixture = TestBed.createComponent(PlanCreateComponent);
+    await settle(fixture);
+    http.match('/api/templates');
+    const root = fixture.nativeElement as HTMLElement;
+    [...root.querySelectorAll('[role=tab]')]
+      .find((b) => b.textContent!.includes('Ny site'))!
+      .dispatchEvent(new Event('click'));
+    await settle(fixture);
+    [...root.querySelectorAll('button')]
+      .find((b) => b.textContent!.includes('Klicka i kartan'))!
+      .click();
+    await settle(fixture);
+    expect(mapView.placing()).toBe(true);
+    mapView.place({ x: 612345.6, y: 7012345.4 });
+    await settle(fixture);
+    expect(mapView.placing()).toBe(false);
+    expect(root.textContent).toContain('Placeras vid 612346, 7012345');
+
+    for (const [name, value] of [
+      ['code', 'RAD-NY-9'],
+      ['name', 'Ny radiosite'],
+    ]) {
+      const input = root.querySelector(`input[name=${name}]`) as HTMLInputElement;
+      input.value = value;
+      input.dispatchEvent(new Event('input'));
+    }
+    await settle(fixture);
+    root.querySelector('form')!.dispatchEvent(new Event('submit'));
+    await settle(fixture);
+    const req = http.expectOne('/api/plans/7/operations');
+    expect(req.request.body).toEqual(
+      expect.objectContaining({ kind: 'create_site', code: 'RAD-NY-9', x: 612346, y: 7012345 }),
+    );
+  });
 });

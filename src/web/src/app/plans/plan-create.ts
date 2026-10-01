@@ -9,6 +9,7 @@ import {
   signal,
   untracked,
 } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { MapView } from '../map/map-view';
@@ -51,7 +52,7 @@ type Tab = 'template' | 'site' | 'equipment' | 'cable';
  */
 @Component({
   selector: 'cmdb-plan-create',
-  imports: [FormsModule],
+  imports: [FormsModule, NgTemplateOutlet],
   template: `
     <div class="tabs" role="tablist" aria-label="Nytt objekt">
       @for (t of tabs; track t.key) {
@@ -65,6 +66,22 @@ type Tab = 'template' | 'site' | 'equipment' | 'cable';
         </button>
       }
     </div>
+    <ng-template #place>
+      <p class="place">
+        <button type="button" class="link" (click)="togglePlacing()">
+          {{ mapView.placing() ? 'Avbryt' : 'Klicka i kartan för att placera' }}
+        </button>
+        <span class="muted">
+          @if (mapView.placing()) {
+            Klicka där siten ska stå.
+          } @else if (mapView.placed(); as p) {
+            Placeras vid {{ p.x }}, {{ p.y }} (SWEREF 99 TM).
+          } @else {
+            Annars placeras den vid kartans mittpunkt.
+          }
+        </span>
+      </p>
+    </ng-template>
     @switch (tab()) {
       @case ('template') {
         <form (ngSubmit)="createFromTemplate()">
@@ -81,7 +98,7 @@ type Tab = 'template' | 'site' | 'equipment' | 'cable';
           }
           <label>Kod <input name="code" [(ngModel)]="code" required maxlength="50" /></label>
           <label>Namn <input name="name" [(ngModel)]="name" required maxlength="200" /></label>
-          <p class="muted">Placeras vid kartans mittpunkt.</p>
+          <ng-container *ngTemplateOutlet="place" />
           <button
             type="submit"
             class="action"
@@ -103,7 +120,7 @@ type Tab = 'template' | 'site' | 'equipment' | 'cable';
               }
             </select>
           </label>
-          <p class="muted">Placeras vid kartans mittpunkt.</p>
+          <ng-container *ngTemplateOutlet="place" />
           <button type="submit" class="action" [disabled]="busy() || !code.trim() || !name.trim()">
             Lägg till site
           </button>
@@ -208,6 +225,23 @@ type Tab = 'template' | 'site' | 'equipment' | 'cable';
       display: flex;
       flex-direction: column;
       gap: var(--space-2);
+    }
+    .place {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      margin: 0;
+    }
+    .link {
+      align-self: flex-start;
+      padding: 0;
+      border: 0;
+      background: none;
+      color: var(--action);
+      font: inherit;
+      font-size: var(--text-sm);
+      font-weight: 600;
+      cursor: pointer;
     }
     .tabs {
       display: flex;
@@ -356,6 +390,18 @@ export class PlanCreateComponent implements OnDestroy {
 
   ngOnDestroy(): void {
     this.mapView.picking.set(false);
+    this.mapView.placing.set(false);
+    this.mapView.placed.set(null);
+  }
+
+  protected togglePlacing(): void {
+    this.mapView.picking.set(false);
+    this.mapView.placing.set(!this.mapView.placing());
+  }
+
+  /** Where a new site goes (#167): where it was placed in the map, otherwise the map's centre. */
+  private position(): { x: number; y: number } | null {
+    return this.mapView.placed() ?? this.center();
   }
 
   protected togglePicking(): void {
@@ -368,7 +414,7 @@ export class PlanCreateComponent implements OnDestroy {
   }
 
   protected async createFromTemplate(): Promise<void> {
-    const center = this.center();
+    const center = this.position();
     if (!center) {
       return;
     }
@@ -385,11 +431,12 @@ export class PlanCreateComponent implements OnDestroy {
       this.active.changed();
       this.code = '';
       this.name = '';
+      this.mapView.placed.set(null);
     });
   }
 
   protected async createSite(): Promise<void> {
-    const center = this.center();
+    const center = this.position();
     if (!center) {
       return;
     }
@@ -404,6 +451,7 @@ export class PlanCreateComponent implements OnDestroy {
       });
       this.code = '';
       this.name = '';
+      this.mapView.placed.set(null);
     });
   }
 

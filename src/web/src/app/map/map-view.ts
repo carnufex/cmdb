@@ -117,6 +117,13 @@ export class MapView {
   readonly picking = signal(false);
   readonly picked = signal<{ code: string; seq: number } | null>(null);
 
+  /**
+   * While true, clicking the map places a point (#167, a new site where it is clicked) instead of opening a panel; the
+   * point lands in {@link placed} and stays marked until it is cleared.
+   */
+  readonly placing = signal(false);
+  readonly placed = signal<(Point & { seq: number }) | null>(null);
+
   /** While true, the map draws a polygon (#27, a lasso); when closed, its ring lands in {@link lasso}. */
   readonly lassoing = signal(false);
   readonly lasso = signal<{ ring: number[][]; seq: number } | null>(null);
@@ -148,6 +155,11 @@ export class MapView {
   closeLasso(ring: number[][]): void {
     this.lassoing.set(false);
     this.lasso.set({ ring, seq: ++this.seq });
+  }
+
+  place(point: Point): void {
+    this.placing.set(false);
+    this.placed.set({ x: Math.round(point.x), y: Math.round(point.y), seq: ++this.seq });
   }
 
   pick(code: string): void {

@@ -86,6 +86,7 @@ export class MapComponent {
   private route?: VectorLayer<VectorSource<Feature<Geometry>>>;
   private planned?: VectorLayer<VectorSource<Feature<Geometry>>>;
   private operations?: VectorLayer<VectorSource<Feature<Geometry>>>;
+  private placedLayer?: VectorLayer<VectorSource<Feature<Geometry>>>;
   private liveKey = '';
   private lassoDraw?: Draw;
   protected readonly operationsShown = signal(false);
@@ -156,6 +157,23 @@ export class MapComponent {
         this.showOperations(operations);
       }
     });
+    // A point placed for a new site (#167): marked until the form takes it.
+    effect(() => {
+      const placed = this.mapView.placed();
+      const source = this.placedLayer?.getSource();
+      source?.clear(true);
+      if (placed && source) {
+        const f = new Feature<Geometry>(new OlPoint([placed.x, placed.y]));
+        f.set('placed', true);
+        source.addFeature(f);
+      }
+    });
+    effect(() => {
+      const placing = this.mapView.placing();
+      if (this.map) {
+        this.target().nativeElement.style.cursor = placing ? 'crosshair' : '';
+      }
+    });
     // Other parts of the app (search, panels) ask the map to go somewhere.
     effect(() => {
       const focus = this.mapView.focusRequest();
@@ -219,7 +237,13 @@ export class MapComponent {
       style: (f) => this.operationsStyle(f),
       zIndex: 18,
     });
+    this.placedLayer = new VectorLayer({
+      source: new VectorSource<Feature<Geometry>>(),
+      style: () => this.placedStyle(),
+      zIndex: 25,
+    });
     const layers: (TileLayer | VectorTileLayer | VectorLayer)[] = [
+      this.placedLayer,
       this.network,
       this.marks,
       this.planned,
@@ -267,9 +291,13 @@ export class MapComponent {
         return;
       }
       const feature = this.map!.forEachFeatureAtPixel(e.pixel, (f) => f, { hitTolerance: 4 });
-      this.target().nativeElement.style.cursor = feature ? 'pointer' : '';
+      this.target().nativeElement.style.cursor = this.mapView.placing()
+        ? 'crosshair'
+        : feature
+          ? 'pointer'
+          : '';
       this.hover.set(
-        feature && !feature.get('mark') && !feature.get('route')
+        feature && !feature.get('mark') && !feature.get('route') && !feature.get('placed')
           ? {
               x: e.pixel[0],
               y: e.pixel[1],
@@ -280,6 +308,11 @@ export class MapComponent {
       );
     });
     this.map.on('click', (e) => {
+      if (this.mapView.placing()) {
+        const [x, y] = e.coordinate;
+        this.mapView.place({ x, y });
+        return;
+      }
       const feature = this.map!.forEachFeatureAtPixel(e.pixel, (f) => f, { hitTolerance: 4 });
       if (this.mapView.picking()) {
         // Drawing a cable in a plan (#26): a site click picks the site, production or planned.
@@ -469,6 +502,27 @@ export class MapComponent {
         return f;
       }),
     ]);
+  }
+
+  private placedStyleCache?: { key: string; style: Style };
+
+  /** A new site's place (#167): the planned colour, ringed, so it reads as "goes here". */
+  private placedStyle(): Style {
+    const palette = (this.palette ??= readPalette(this.host.nativeElement));
+    const key = `${palette.planned}|${palette.bg}`;
+    if (this.placedStyleCache?.key !== key) {
+      this.placedStyleCache = {
+        key,
+        style: new Style({
+          image: new Circle({
+            radius: 9,
+            fill: new Fill({ color: alpha(palette.planned, 0.3) }),
+            stroke: new Stroke({ color: palette.planned, width: 3 }),
+          }),
+        }),
+      };
+    }
+    return this.placedStyleCache.style;
   }
 
   private operationsStyleCache?: { key: string; styles: Record<string, Style | Style[]> };
