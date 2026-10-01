@@ -69,6 +69,8 @@ export interface PlanDiff {
   extent: number[] | null;
   problems: number;
   elapsedMs: number;
+  /** Operations per plan; a big plan lists only some of them in `changes` (#170). */
+  counts?: Record<number, number> | null;
   /** What the plan creates (#107), for the map. */
   planned: {
     sites: { id: number; code: string; name: string; siteType: string; x: number; y: number }[];
@@ -148,12 +150,12 @@ export function dependencyChoices(plans: readonly PlanSummary[]): PlanSummary[] 
 
 /** Operations grouped by the plan they belong to, in the order the view applies them. */
 export function byPlan(
-  diff: Pick<PlanDiff, 'plans' | 'changes'>,
-): { plan: PlanSummary; changes: PlanOperation[] }[] {
-  return diff.plans.map((plan) => ({
-    plan,
-    changes: diff.changes.filter((c) => c.planId === plan.id),
-  }));
+  diff: Pick<PlanDiff, 'plans' | 'changes'> & { counts?: Record<number, number> | null },
+): { plan: PlanSummary; changes: PlanOperation[]; total: number }[] {
+  return diff.plans.map((plan) => {
+    const changes = diff.changes.filter((c) => c.planId === plan.id);
+    return { plan, changes, total: Math.max(diff.counts?.[plan.id] ?? 0, changes.length) };
+  });
 }
 
 /** A site the user can pick by code: planned in the plan (negative id) or found in production. */

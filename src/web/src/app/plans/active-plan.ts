@@ -35,9 +35,17 @@ export class ActivePlan {
   /** Bumped after every change to a plan, so views and anything shown in a plan reload. */
   readonly revision = signal(0);
 
+  /**
+   * A big plan (an import, #170) lists its first operations and those with problems; this asks for every one. It
+   * goes back to the short list when another plan is chosen.
+   */
+  readonly all = signal(false);
+
   readonly view = httpResource<PlanDiff>(() => {
     const id = this.id();
-    return id === null ? undefined : this.request(`/api/plans/${id}/view`);
+    return id === null
+      ? undefined
+      : this.request(`/api/plans/${id}/view${this.all() ? '?all=true' : ''}`);
   });
 
   /** The first end of a connection being added, chosen on one port and completed on another. */
@@ -63,6 +71,7 @@ export class ActivePlan {
 
   activate(id: number | null): void {
     this.pending.set(null);
+    this.all.set(false);
     void this.router.navigate([], {
       queryParams: { plan: id },
       queryParamsHandling: 'merge',

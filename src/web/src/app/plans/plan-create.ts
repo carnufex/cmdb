@@ -55,7 +55,20 @@ interface Termination {
   }[];
 }
 
-type Tab = 'template' | 'site' | 'equipment' | 'cable';
+type Tab = 'template' | 'site' | 'equipment' | 'cable' | 'import';
+
+/** POST /api/plans/{id}/import (#170) */
+export interface ImportResult {
+  dryRun: boolean;
+  sites: number;
+  equipment: number;
+  cables: number;
+  connections: number;
+  skipped: number;
+  errors: { row: number; message: string }[];
+  problems: number;
+  elapsedMs: number;
+}
 
 /**
  * Creating objects in the active plan (#107, #26): a site from a template or bare, equipment at a site, and a cable
@@ -247,6 +260,68 @@ type Tab = 'template' | 'site' | 'equipment' | 'cable';
         }
       }
     }
+    @if (tab() === 'import') {
+      <form class="import" (submit)="$event.preventDefault()">
+        <p class="muted">
+          CSV med kolumnerna <span class="mono">kind, code, name, template</span> eller
+          <span class="mono">siteType</span>, <span class="mono">x, y</span> (SWEREF 99 TM) eller
+          <span class="mono">lat, lon</span>, och för kablar
+          <span class="mono">a, b, cableType</span>. GeoJSON: punkter blir siter och linjer kablar
+          med sin sträckning. Allt kontrolleras först; finns ett fel läggs inget till.
+        </p>
+        <label
+          >Fil
+          <input type="file" accept=".csv,.txt,.geojson,.json" (change)="readFile($event)" />
+        </label>
+        <label
+          >Eller klistra in
+          <textarea
+            name="importText"
+            rows="5"
+            [value]="importText()"
+            (input)="importText.set($any($event.target).value)"
+          ></textarea>
+        </label>
+        <p class="buttons">
+          <button
+            type="button"
+            class="action"
+            [disabled]="busy() || !importText().trim()"
+            (click)="runImport(true)"
+          >
+            Kontrollera
+          </button>
+          <button
+            type="button"
+            class="action"
+            [disabled]="busy() || !importReady()"
+            (click)="runImport(false)"
+          >
+            Importera
+          </button>
+        </p>
+        @if (importResult(); as r) {
+          <div class="result" role="status">
+            <p>
+              {{ r.dryRun ? 'Skulle lägga till' : 'Lade till' }} {{ r.sites }} siter,
+              {{ r.equipment }} utrustningar, {{ r.connections }} kopplingar och
+              {{ r.cables }} kablar
+              @if (r.skipped) {
+                · {{ r.skipped }} fanns redan i planen
+              }
+              <span class="muted">({{ r.elapsedMs }} ms)</span>
+            </p>
+            @if (r.errors.length) {
+              <ul class="errors">
+                @for (e of r.errors; track $index) {
+                  <li>Rad {{ e.row }}: {{ e.message }}</li>
+                }
+              </ul>
+            }
+          </div>
+        }
+      </form>
+    }
     <datalist id="plan-sites">
       @for (s of plannedSites(); track s.id) {
         <option [value]="s.code">{{ s.name }} (planerad)</option>
@@ -276,6 +351,23 @@ type Tab = 'template' | 'site' | 'equipment' | 'cable';
       flex-wrap: wrap;
       align-items: baseline;
       gap: var(--space-2);
+    }
+    .import textarea {
+      font-family: var(--font-mono);
+      font-size: var(--text-xs);
+    }
+    .import .buttons {
+      display: flex;
+      gap: var(--space-2);
+      margin: 0;
+    }
+    .import .errors {
+      margin: var(--space-1) 0 0;
+      padding-left: var(--space-4);
+      color: var(--status-conflict);
+      font-size: var(--text-sm);
+      max-height: 160px;
+      overflow-y: auto;
     }
     .place {
       display: flex;
@@ -380,6 +472,7 @@ export class PlanCreateComponent implements OnDestroy {
 
   protected readonly tabs: { key: Tab; label: string }[] = [
     { key: 'template', label: 'Från mall' },
+    { key: 'import', label: 'Import' },
     { key: 'site', label: 'Ny site' },
     { key: 'equipment', label: 'Ny utrustning' },
     { key: 'cable', label: 'Ny kabel' },
@@ -605,6 +698,46 @@ export class PlanCreateComponent implements OnDestroy {
       throw new Error(`Hittade ingen site med koden ${code.trim()}.`);
     }
     return id;
+  }
+
+  // Bulk import into the plan (#170): checked first, then all or nothing.
+  protected readonly importText = signal('');
+  protected readonly importResult = signal<ImportResult | null>(null);
+  private importChecked = '';
+
+  /** A clean check of exactly this text, so importing it does what the check said. */
+  protected importReady(): boolean {
+    const r = this.importResult();
+    return (
+      r !== null && r.dryRun && r.errors.length === 0 && this.importChecked === this.importText()
+    );
+  }
+
+  protected async readFile(event: Event): Promise<void> {
+    const file = (event.target as HTMLInputElement).files?.[0];
+    if (file) {
+      this.importText.set(await file.text());
+      this.importResult.set(null);
+    }
+  }
+
+  protected async runImport(dryRun: boolean): Promise<void> {
+    const content = this.importText();
+    const format = content.trimStart().startsWith('{') ? 'geojson' : 'csv';
+    await this.run(async () => {
+      const result = await firstValueFrom(
+        this.http.post<ImportResult>(`/api/plans/${this.active.id()}/import`, {
+          format,
+          content,
+          dryRun,
+        }),
+      );
+      this.importResult.set(result);
+      this.importChecked = dryRun ? content : '';
+      if (!dryRun) {
+        this.active.changed();
+      }
+    });
   }
 
   private async run(work: () => Promise<void>): Promise<void> {

@@ -1,0 +1,9 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [761200, 7079400] },
+      "properties": { "code": "EX-SKP-2", "name": "Exempel skarvpunkt", "siteType": "splice" } },
+    { "type": "Feature", "geometry": { "type": "LineString", "coordinates": [[760900, 7079100], [761050, 7079300]] },
+      "properties": { "a": "EX-SKP-1", "b": "EX-SKP-2", "cableType": "fiber-12" } }
+  ]
+}

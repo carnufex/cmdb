@@ -28,8 +28,19 @@ public sealed record PlanSite(long Id, double X, double Y);
 /// The plan's view as a diff against production (#24): every operation of the plan and the draft plans under it, in
 /// the order they apply, with the sites they touch for the map.
 /// </summary>
+/// <param name="Counts">Operations per plan in the chain. A big plan (an import, #170) lists only some of them in
+/// <see cref="Changes"/>: the first ones and every one with a problem or conflict; <c>all=true</c> lists them all.</param>
 public sealed record PlanDiff(PlanSummary Plan, IReadOnlyList<PlanSummary> Plans, IReadOnlyList<PlanOperationView> Changes,
-    IReadOnlyList<PlanSite> Sites, double[]? Extent, int Problems, double ElapsedMs, PlannedMap? Planned = null);
+    IReadOnlyList<PlanSite> Sites, double[]? Extent, int Problems, double ElapsedMs, PlannedMap? Planned = null,
+    IReadOnlyDictionary<long, int>? Counts = null);
+
+public sealed class PlanViewRequest
+{
+    public long Id { get; set; }
+
+    /// <summary>Every operation, not just the first ones and those with problems.</summary>
+    public bool All { get; set; }
+}
 
 /// <summary>
 /// What the plan creates (#107) and removes (#168, #172), for the map: planned sites and cables with their geometry, and the
@@ -372,11 +383,14 @@ public sealed class DeleteOperationEndpoint(RequestDb db) : Endpoint<DeleteOpera
 /// Switching the view to a plan (#24): the diff against production and the sites it touches, from the cached plan
 /// view. Budget: 100 ms (docs/plan.md).
 /// </summary>
-public sealed class PlanViewEndpoint(RequestDb db, GraphHolder holder, PlanViews views, ScopeMasks masks) : Endpoint<PlanIdRequest, PlanDiff>
+public sealed class PlanViewEndpoint(RequestDb db, GraphHolder holder, PlanViews views, ScopeMasks masks) : Endpoint<PlanViewRequest, PlanDiff>
 {
     public override void Configure() => Get("/plans/{id}/view");
 
-    public override async Task HandleAsync(PlanIdRequest req, CancellationToken ct)
+    /// <summary>Operations listed per plan unless all are asked for.</summary>
+    public const int Listed = 200;
+
+    public override async Task HandleAsync(PlanViewRequest req, CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
         var scope = HttpContext.Scope();
@@ -387,7 +401,28 @@ public sealed class PlanViewEndpoint(RequestDb db, GraphHolder holder, PlanViews
             return;
         }
         var mask = await masks.GetAsync(graph, scope, ct);
-        var changes = await PlanSql.DescribeAsync(db, graph, mask, scope, view.Chain.Operations, view.Problems, ct);
+        var listed = view.Chain.Operations;
+        if (!req.All && listed.Count > Listed)
+        {
+            var conflicting = (await Reservations.ClaimsSql.ConflictsAsync(db, [.. view.Chain.Plans.Select(p => p.Id)], ct)).Select(c => c.OperationId).ToHashSet();
+            listed = [.. listed.GroupBy(o => o.PlanId).SelectMany(g => g.Where((o, i) =>
+                i < Listed || view.Problems.ContainsKey(o.Id) || conflicting.Contains(o.Id)))];
+        }
+        // Names for what the listed operations refer to: the planned sites, and the planned objects whose terminals they use.
+        var context = view.Chain.Operations;
+        if (listed.Count < context.Count)
+        {
+            var needed = listed.Select(o => o.Id).ToHashSet();
+            foreach (var o in listed)
+            {
+                foreach (var id in o.PlannedReferences.Concat(o.Edge is { } e ? [e.A, e.B] : []).Where(id => id < 0))
+                {
+                    needed.Add(-id < Planned.PerObject ? -id : -id / Planned.PerObject);
+                }
+            }
+            context = [.. context.Where(o => o.Kind == "create_site" || needed.Contains(o.Id))];
+        }
+        var changes = await PlanSql.DescribeAsync(db, graph, mask, scope, listed, view.Problems, ct, context);
         var ids = view.Chain.Plans.Select(p => p.Id).ToArray();
         var summaries = await PlanSql.SummariesAsync(db, ids, ct);
         var siteIds = changes.SelectMany(c => c.Terminals.Select(t => t.Site?.Id ?? 0))
@@ -405,7 +440,8 @@ public sealed class PlanViewEndpoint(RequestDb db, GraphHolder holder, PlanViews
             extent,
             changes.Count(c => c.Problem is not null),
             Math.Round(sw.Elapsed.TotalMilliseconds, 1),
-            planned), ct);
+            planned,
+            view.Chain.Operations.GroupBy(o => o.PlanId).ToDictionary(g => g.Key, g => g.Count())), ct);
     }
 
     /// <summary>Planned sites from their operations, and planned cables as a line between their two sites.</summary>
@@ -488,7 +524,9 @@ public sealed class PlanViewEndpoint(RequestDb db, GraphHolder holder, PlanViews
             .Select(c =>
             {
                 var (a, b) = (positions[c.Payload.GetProperty("a").GetInt64()], positions[c.Payload.GetProperty("b").GetInt64()]);
-                return new PlannedCable(Planned.ObjectId(c.Id), $"NY-K{c.Id}", [[a.X, a.Y], [b.X, b.Y]]);
+                // An imported route (#170) runs between the two sites.
+                double[][] middle = c.Payload.TryGetProperty("line", out var line) ? Line(line) : [];
+                return new PlannedCable(Planned.ObjectId(c.Id), $"NY-K{c.Id}", [[a.X, a.Y], .. middle, [b.X, b.Y]]);
             }), .. parts]);
     }
 
