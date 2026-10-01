@@ -195,3 +195,67 @@ public sealed class GetCablePointEndpoint(RequestDb db) : Endpoint<CablePointReq
         await Send.OkAsync(new CablePoint(reader.GetDouble(0), reader.GetDouble(1)), ct);
     }
 }
+
+public sealed class NearCablesRequest
+{
+    public double X { get; set; }
+    public double Y { get; set; }
+
+    /// <summary>Search radius in metres, at most 2 km (as far as a site inserted into a cable may lie from it).</summary>
+    public double Radius { get; set; } = 500;
+}
+
+/// <param name="At">Where the point projects onto the cable, as a share of its length from the A end.</param>
+/// <param name="Point">The projected point: where a site inserted into the cable would stand.</param>
+/// <param name="Free">Conductors that carry no circuit, free to terminate in a new site.</param>
+public sealed record NearCable(ObjectRef Cable, double Distance, double At, CablePoint Point, int Conductors, int Free, ObjectRef A, ObjectRef B);
+
+/// <summary>
+/// Cables near a point (#169), nearest first: where a new site there could be inserted (#168), and how many conductors
+/// are free to end in it. Within the caller's scopes; nothing when positions are hidden.
+/// </summary>
+public sealed class NearCablesEndpoint(RequestDb db) : Endpoint<NearCablesRequest, IReadOnlyList<NearCable>>
+{
+    public override void Configure() => Get("/cables/near");
+
+    public override async Task HandleAsync(NearCablesRequest req, CancellationToken ct)
+    {
+        var scope = HttpContext.Scope();
+        if (scope.HidesCoordinates)
+        {
+            await Send.OkAsync([], ct);
+            return;
+        }
+        await using var cmd = db.CreateCommand($"""
+            WITH p AS (SELECT ST_SetSRID(ST_MakePoint($1, $2), 3006) AS g),
+            near AS (
+                SELECT c.id, c.code, c.lifecycle::text AS lifecycle, ST_Distance(c.geom, p.g) AS d, ST_LineLocatePoint(c.geom, p.g) AS f,
+                       ST_ClosestPoint(c.geom, p.g) AS q, c.a_site_id, c.b_site_id
+                FROM cable c, p
+                WHERE ST_DWithin(c.geom, p.g, $3) AND c.lifecycle <> 'removed' AND {ScopeSql.Cable("c.id", 4)}
+                ORDER BY c.geom <-> p.g LIMIT 5)
+            SELECT n.id, n.code, n.lifecycle, n.d, n.f, round(ST_X(n.q)), round(ST_Y(n.q)),
+                   (SELECT count(*) FROM conductor k WHERE k.cable_id = n.id),
+                   (SELECT count(*) FROM conductor k WHERE k.cable_id = n.id AND NOT EXISTS (
+                       SELECT 1 FROM conductor_end e JOIN circuit_hop h ON h.terminal_id = e.terminal_id WHERE e.conductor_id = k.id)),
+                   a.id, a.code, a.name, b.id, b.code, b.name
+            FROM near n JOIN site a ON a.id = n.a_site_id JOIN site b ON b.id = n.b_site_id
+            ORDER BY n.d
+            """);
+        cmd.Parameters.Add(new() { Value = req.X });
+        cmd.Parameters.Add(new() { Value = req.Y });
+        cmd.Parameters.Add(new() { Value = Math.Clamp(req.Radius, 1, 2_000) });
+        cmd.Parameters.Add(scope.Parameter());
+        var list = new List<NearCable>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            list.Add(new NearCable(new ObjectRef("cable", reader.GetInt64(0), reader.GetString(1), null, reader.GetString(2)),
+                Math.Round(reader.GetDouble(3)), Math.Round(reader.GetDouble(4), 4), new CablePoint(reader.GetDouble(5), reader.GetDouble(6)),
+                (int)reader.GetInt64(7), (int)reader.GetInt64(8),
+                new ObjectRef("site", reader.GetInt64(9), reader.GetString(10), reader.GetString(11)),
+                new ObjectRef("site", reader.GetInt64(12), reader.GetString(13), reader.GetString(14))));
+        }
+        await Send.OkAsync(list, ct);
+    }
+}

@@ -126,4 +126,57 @@ describe('PlanCreateComponent', () => {
       expect.objectContaining({ kind: 'create_site', code: 'RAD-NY-9', x: 612346, y: 7012345 }),
     );
   });
+
+  it('suggests nearby cables for a placed site and inserts it into one (#169)', async () => {
+    const mapView = TestBed.inject(MapView);
+    const fixture = TestBed.createComponent(PlanCreateComponent);
+    await settle(fixture);
+    http.match('/api/templates');
+    const root = fixture.nativeElement as HTMLElement;
+    [...root.querySelectorAll('[role=tab]')]
+      .find((b) => b.textContent!.includes('Ny site'))!
+      .dispatchEvent(new Event('click'));
+    await settle(fixture);
+    for (const [name, value] of [
+      ['code', 'SKP-NY-3'],
+      ['name', 'Skarv på kabeln'],
+    ]) {
+      const input = root.querySelector(`input[name=${name}]`) as HTMLInputElement;
+      input.value = value;
+      input.dispatchEvent(new Event('input'));
+    }
+    mapView.place({ x: 612000, y: 7012000 });
+    await settle(fixture);
+    http.expectOne('/api/cables/near?x=612000&y=7012000&radius=500').flush([
+      {
+        cable: { id: 44, code: 'K-000044' },
+        distance: 37,
+        at: 0.42,
+        point: { x: 612030, y: 7011980 },
+        conductors: 24,
+        free: 20,
+        a: { id: 1, code: 'AGG-0001' },
+        b: { id: 2, code: 'AGG-0002' },
+      },
+    ]);
+    await settle(fixture);
+    expect(root.textContent).toContain('37 m · 20 av 24 ledare lediga');
+
+    [...root.querySelectorAll('button')]
+      .find((b) => b.textContent!.includes('Sätt in i kabeln'))!
+      .click();
+    await settle(fixture);
+    const site = http.expectOne('/api/plans/7/operations');
+    expect(site.request.body).toEqual(
+      expect.objectContaining({ kind: 'create_site', code: 'SKP-NY-3', x: 612030, y: 7011980 }),
+    );
+    site.flush({ id: 90, target: { type: 'site', id: -90, code: 'SKP-NY-3' } });
+    await settle(fixture);
+    expect(http.expectOne('/api/plans/7/operations').request.body).toEqual({
+      kind: 'split_cable',
+      cableId: 44,
+      siteId: -90,
+      terminate: [],
+    });
+  });
 });
