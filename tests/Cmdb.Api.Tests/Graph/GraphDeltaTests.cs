@@ -377,6 +377,21 @@ public sealed class GraphDeltaTests
     }
 
     [Fact]
+    public void A_cable_the_delta_added_can_change_again_in_the_next_batch()
+    {
+        // #163: the next batch names the delta's own new cable again. Its conductors sit after the base's arrays, and
+        // reading them as base conductors threw and stopped the host.
+        List<(long, long, EdgeKind)> connections = [(1, 2, EdgeKind.Patch)];
+        var production = GraphBuilder.Build(Network(connections), "1");
+        var (batch, _) = Installation([20004, 20001, 20003, 20002], [20005, 20006]);
+        var delta = GraphChanges.TryDelta(production, batch).ShouldNotBeNull();
+
+        var again = GraphChanges.TryDelta(delta, batch).ShouldNotBeNull();
+        again.TryGetCable(900, out var cable).ShouldBeTrue();
+        again.EndsOf(cable).ToArray().Select(again.TerminalId).Order().ShouldBe([20005, 20006]);
+    }
+
+    [Fact]
     public void New_ids_below_the_arrays_own_stay_a_delta_until_a_rebuild_from_rows()
     {
         List<(long, long, EdgeKind)> connections = [(1, 2, EdgeKind.Patch)];

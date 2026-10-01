@@ -121,7 +121,17 @@ public sealed partial class GraphLoadingService(
 
         _pending.Add(batch);
         var mode = "delta";
-        var next = GraphChanges.TryDelta(holder.Require(), batch);
+        Cmdb.Graph.Graph? next;
+        try
+        {
+            next = GraphChanges.TryDelta(holder.Require(), batch);
+        }
+        catch (Exception ex) when (ex is IndexOutOfRangeException or ArgumentException or InvalidOperationException or KeyNotFoundException)
+        {
+            // A delta that trips over itself is a bug, but not a reason to stop the API (#163): rebuild from rows instead.
+            PatchFailed(logger, ex);
+            next = null;
+        }
         if (next is null)
         {
             mode = "rebuild";

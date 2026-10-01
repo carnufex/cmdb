@@ -115,6 +115,10 @@ public sealed partial class Graph
 
     internal int OwnerOf(int node) => node < TerminalIds.Length ? TerminalOwners[node] : _overlay!.Owners[node - TerminalIds.Length];
 
+    /// <summary>A conductor's id, also for one a delta or plan added after the base's arrays (#163).</summary>
+    internal long ConductorId(int conductor) =>
+        conductor < ConductorIds.Length ? ConductorIds[conductor] : _overlay!.ConductorIds[conductor - ConductorIds.Length];
+
     private int CableOfConductor(int conductor) =>
         conductor < ConductorIds.Length ? ConductorCables[conductor] : _overlay!.ConductorCables[conductor - ConductorIds.Length];
 
