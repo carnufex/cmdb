@@ -185,14 +185,21 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx)
     private async Task CreateCableAsync(PlanOp op, JsonElement p, CancellationToken ct)
     {
         var typeKey = p.GetProperty("typeKey").GetString()!;
+        // A route given with the cable (an import, #170) is kept between the two sites; otherwise a straight line.
+        var route = p.TryGetProperty("line", out var line) && line.ValueKind == JsonValueKind.Array ? line.EnumerateArray().ToList() : [];
         var cable = await ScalarAsync<long>("""
             INSERT INTO cable (cable_type_id, code, a_site_id, b_site_id, geom)
             SELECT t.id, 'NY-' || gen_random_uuid(), a.id, b.id, g
             FROM cable_type t, site a, site b,
-                 LATERAL (SELECT ST_MakeLine(ST_PointOnSurface(a.geom), ST_PointOnSurface(b.geom)) AS g) line
+                 LATERAL (SELECT CASE WHEN cardinality($4::float8[]) >= 2
+                     THEN ST_MakeLine(ARRAY[ST_PointOnSurface(a.geom)]
+                          || ARRAY(SELECT ST_SetSRID(ST_MakePoint(x, y), 3006) FROM unnest($4::float8[], $5::float8[]) WITH ORDINALITY AS u(x, y, n) ORDER BY n)
+                          || ARRAY[ST_PointOnSurface(b.geom)])
+                     ELSE ST_MakeLine(ST_PointOnSurface(a.geom), ST_PointOnSurface(b.geom)) END AS g) line
             WHERE t.key = $1 AND a.id = $2 AND b.id = $3
             RETURNING id
-            """, ct, typeKey, p.GetProperty("a").GetInt64(), p.GetProperty("b").GetInt64());
+            """, ct, typeKey, p.GetProperty("a").GetInt64(), p.GetProperty("b").GetInt64(),
+            route.Select(pt => pt[0].GetDouble()).ToArray(), route.Select(pt => pt[1].GetDouble()).ToArray());
         await ExecuteAsync("UPDATE cable SET code = 'KP-' || lpad(id::text, 6, '0') WHERE id = $1", ct, cable);
         Ids[Planned.ObjectId(op.Id)] = cable;
 

@@ -39,13 +39,15 @@ public sealed record PlanConflict(long OperationId, long PlanId, bool Blocking, 
 /// </summary>
 internal static class ClaimsSql
 {
-    // Draft plans' claims: (operation, plan, resource kind, resource id).
+    // Draft plans' claims: (operation, plan, resource kind, resource id). Planned terminals (negative ids) are left out:
+    // their ids come from the plan's own operations, so no other plan can claim them, and an import makes tens of
+    // thousands of them (#170).
     private const string ClaimsCte = """
         claims AS (
             SELECT o.id AS op, o.plan_id, 'terminal' AS kind, t.id AS rid
             FROM plan_operation o JOIN plan p ON p.id = o.plan_id AND p.status = 'draft'
             CROSS JOIN LATERAL (VALUES ((o.payload->>'a')::bigint), ((o.payload->>'b')::bigint)) t(id)
-            WHERE o.kind = 'connect'
+            WHERE o.kind = 'connect' AND t.id > 0
             UNION ALL
             SELECT o.id, o.plan_id, 'conductor', ce.conductor_id
             FROM plan_operation o JOIN plan p ON p.id = o.plan_id AND p.status = 'draft'

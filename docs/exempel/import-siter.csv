@@ -1,0 +1,6 @@
+kind;code;name;template;siteType;lat;lon;a;b;cableType
+site;EX-RAD-1;Exempel radiosite 1;radiosite-standard;;63.8250;20.2630;;;
+site;EX-RAD-2;Exempel radiosite 2;radiosite-standard;;63.8410;20.3050;;;
+site;EX-SKP-1;Exempel skåp;;cabinet;63.8330;20.2840;;;
+cable;;;;;;;EX-RAD-1;EX-SKP-1;fiber-12
+cable;;;;;;;EX-SKP-1;EX-RAD-2;fiber-12

@@ -108,6 +108,24 @@ Regler:
 4. När en plan avbryts markeras alla planer som beror på den.
 5. Konflikter detekteras på **resursnivå** (terminal, ledare, slot, kanal) via reservationer, inte bara på fältnivå. En plans kopplingar är anspråk på sina terminaler och ledare. En reservation håller resursen åt en plan eller tjänst, och en terminal tar en koppling av varje slag (#25).
 
+### Import till en plan (#170)
+
+Siter och kablar kan importeras i bulk till en plan, från CSV eller GeoJSON. Exempel finns i [`docs/exempel/`](exempel/): GeoJSON-filen bygger på CSV-filen, och de importeras i den ordningen till samma plan.
+
+- **CSV:** en rubrikrad, kommatecken eller semikolon som avgränsare.
+  - Kolumner: `kind` (`site` eller `cable`), `code`, `name`, `template` eller `siteType`, och position som `x`/`y` i SWEREF 99 TM eller `lat`/`lon` i WGS 84.
+  - Kablar anges med `a`, `b` (sitekoder) och `cableType`.
+- **GeoJSON:** punkter blir siter och linjer kablar med sin sträckning, med samma namn som egenskaper. Koordinaterna är i SWEREF 99 TM, eller i WGS 84 när de ser ut så.
+- **Kontroll av varje rad:**
+  - Typ, mall och kabeltyp ska finnas.
+  - Positionen ska ligga i kartan och i omfånget.
+  - En kod får inte förekomma två gånger i filen och får inte redan användas.
+  - Kabeländarna ska finnas.
+  - Med ett fel läggs inget till. En provkörning (`dryRun`) kontrollerar och räknar utan att skriva.
+- **Omkörning:** en site eller kabel som planen redan har hoppas över, så att en import kan köras igen.
+- **Skrivning:** operationerna skrivs i bulk och planens vy byggs en gång. 10 000 siter med mall tar cirka 9 sekunder.
+- **Planens vy för en stor plan** listar de första 200 operationerna per plan och alla med problem eller konflikter, och räknar resten (`counts`). Hela listan fås med `?all=true`. För 10 000 importerade siter tar vyn cirka 1,6 sekunder och 1,3 MB, mot över 10 minuter och 124 MB innan namnen, urvalet och anspråken optimerades (#170).
+
 ### Ta bort en site, utrustning eller kabel (#172)
 
 Operationen `remove` sätter livscykeln borttagen och avslutar varje koppling på objektets portar och ledarändar. Raden ligger kvar, och grafen ändras bara genom kopplingar. En site tar med sig sin utrustning och kablarna som slutar där. Ett objekt som bär en krets kan inte tas bort, eftersom tjänsterna då skulle brytas utan att någon beslutat det. Kretsarna måste flyttas först. Kartans planlager visar det som tas bort, och den kabel en kapning ersätter, överstruket.

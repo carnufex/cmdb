@@ -14,6 +14,11 @@ public sealed class PlannedNames
     public Dictionary<long, TraceHop> Terminals { get; } = [];
     public Dictionary<(string Type, long Id), ObjectRef> Objects { get; } = [];
 
+    // Where planned equipment stands and planned cables end, so describing an operation is a lookup, not a scan over
+    // every planned terminal (a 10 000-site import has millions, #170).
+    private readonly Dictionary<long, ObjectRef> _equipmentSites = [];
+    private readonly Dictionary<long, List<string?>> _cableEnds = [];
+
     public static async Task<PlannedNames> BuildAsync(NpgsqlDataSource db, IReadOnlyList<PlanOp> operations, CancellationToken ct)
     {
         var names = new PlannedNames();
@@ -61,6 +66,7 @@ public sealed class PlannedNames
                         var equipment = new ObjectRef("equipment", id, name, null, "planned");
                         names.Objects[("equipment", id)] = equipment;
                         var site = Site(p.GetProperty("site").GetInt64());
+                        names._equipmentSites[id] = site;
                         if (TypeCatalog.Embedded.Find(p.GetProperty("typeKey").GetString()!) is { } type)
                         {
                             foreach (var port in PortExpansion.Expand(type))
@@ -78,6 +84,7 @@ public sealed class PlannedNames
                         var cable = new ObjectRef("cable", id, $"NY-K{op.Id}", typeName, "planned");
                         names.Objects[("cable", id)] = cable;
                         var (a, b) = (Site(p.GetProperty("a").GetInt64()), Site(p.GetProperty("b").GetInt64()));
+                        names._cableEnds[id] = [a.Code, b.Code];
                         for (var k = 1; k <= Planned.ConductorCount(typeKey); k++)
                         {
                             var endA = Planned.Terminal(op.Id, (2 * k) - 1);
@@ -133,13 +140,13 @@ public sealed class PlannedNames
                 {
                     var equipment = Objects[("equipment", id)];
                     var model = TypeCatalog.Embedded.Find(p.GetProperty("typeKey").GetString()!)?.Model ?? p.GetProperty("typeKey").GetString();
-                    var site = Terminals.Values.FirstOrDefault(t => t.Equipment?.Id == id)?.Site;
+                    var site = _equipmentSites.GetValueOrDefault(id);
                     return ($"Ny utrustning {equipment.Code} ({model}){(site is null ? "" : $" på {site.Code}")}", equipment);
                 }
             default:
                 {
                     var cable = Objects[("cable", id)];
-                    var ends = Terminals.Values.Where(t => t.Cable?.Id == id).Select(t => t.Site?.Code).Distinct().ToList();
+                    var ends = _cableEnds.GetValueOrDefault(id) ?? [];
                     return ($"Ny kabel {cable.Code} ({cable.Name}) {string.Join(" – ", ends)}", cable);
                 }
         }

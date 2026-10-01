@@ -179,4 +179,49 @@ describe('PlanCreateComponent', () => {
       terminate: [],
     });
   });
+
+  it('checks an import first and only imports what was checked (#170)', async () => {
+    const fixture = TestBed.createComponent(PlanCreateComponent);
+    await settle(fixture);
+    http.match('/api/templates');
+    const root = fixture.nativeElement as HTMLElement;
+    [...root.querySelectorAll('[role=tab]')]
+      .find((b) => b.textContent!.includes('Import'))!
+      .dispatchEvent(new Event('click'));
+    await settle(fixture);
+    const text = root.querySelector('textarea[name=importText]') as HTMLTextAreaElement;
+    text.value = ['code;name;siteType;x;y', 'IMP-1;Import 1;radio;650000;7100000'].join(
+      String.fromCharCode(10),
+    );
+    text.dispatchEvent(new Event('input'));
+    await settle(fixture);
+    const button = (label: string) =>
+      [...root.querySelectorAll<HTMLButtonElement>('button')].find(
+        (b) => b.textContent!.trim() === label,
+      )!;
+    expect(button('Importera').disabled).toBe(true);
+
+    button('Kontrollera').click();
+    const check = http.expectOne('/api/plans/7/import');
+    expect(check.request.body).toEqual(expect.objectContaining({ format: 'csv', dryRun: true }));
+    check.flush({
+      dryRun: true,
+      sites: 1,
+      equipment: 0,
+      cables: 0,
+      connections: 0,
+      skipped: 0,
+      errors: [],
+      problems: 0,
+      elapsedMs: 4,
+    });
+    await settle(fixture);
+    expect(root.textContent).toContain('Skulle lägga till 1 siter');
+    expect(button('Importera').disabled).toBe(false);
+
+    button('Importera').click();
+    expect(http.expectOne('/api/plans/7/import').request.body).toEqual(
+      expect.objectContaining({ dryRun: false }),
+    );
+  });
 });

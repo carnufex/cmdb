@@ -84,7 +84,7 @@ import {
               @for (group of groups(); track group.plan.id) {
                 <h4>
                   {{ group.plan.id === d.plan.id ? 'Ändringar' : 'Från ' + group.plan.name }}
-                  <span class="muted">({{ group.changes.length }})</span>
+                  <span class="muted">({{ group.total }})</span>
                 </h4>
                 <ol class="ops">
                   @for (op of group.changes; track op.id) {
@@ -118,6 +118,15 @@ import {
                     </li>
                   }
                 </ol>
+                @if (group.total > group.changes.length) {
+                  <p class="muted">
+                    Visar {{ group.changes.length }} av {{ group.total }}: de första och alla med
+                    problem.
+                    <button type="button" class="action" (click)="active.all.set(true)">
+                      Visa alla
+                    </button>
+                  </p>
+                }
               }
               @if (d.plan.status === 'draft') {
                 <h4>Nytt i planen</h4>

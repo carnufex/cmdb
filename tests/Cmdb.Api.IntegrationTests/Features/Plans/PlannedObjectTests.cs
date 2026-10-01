@@ -275,6 +275,89 @@ public sealed class PlannedObjectTests(ApiFactory factory)
         after.Physical!.Hops.Select(h => h.Site?.Id).ShouldNotContain(realSite);
     }
 
+    [Fact]
+    public async Task An_import_checks_every_row_first_then_writes_sites_templates_and_cables_and_can_run_again()
+    {
+        var (db, api) = await NetworkAsync(45);
+        await using var dbScope = db;
+        await using var apiScope = api;
+        using var client = NetworkFixture.Client(api);
+        var existing = await Text(db, "SELECT code FROM site WHERE site_type = 'aggregation' ORDER BY id LIMIT 1");
+        var plan = await CreateAsync(client, "Import av radiositer");
+
+        async Task<ImportResult> Import(string format, string content, bool dryRun = false)
+        {
+            var response = await client.PostAsJsonAsync($"/api/plans/{plan.Id}/import", new { format, content, dryRun }, Ct);
+            response.StatusCode.ShouldBe(HttpStatusCode.OK, await response.Content.ReadAsStringAsync(Ct));
+            return (await response.Content.ReadFromJsonAsync<ImportResult>(Ct))!;
+        }
+
+        // Every row is checked first; with any problem nothing is written.
+        var bad = await Import("csv", $"""
+            kind;code;name;template;siteType;lat;lon;a;b;cableType
+            site;IMP-1;Import 1;radiosite-standard;;63.80;20.25;;;
+            site;IMP-1;Dubblett;;radio;63.81;20.26;;;
+            site;IMP-2;Okänd mall;finns-inte;;63.82;20.27;;;
+            cable;;;;;;;IMP-1;FINNS-INTE;fiber-12
+            """);
+        bad.Errors.Select(e => e.Row).ShouldBe([3, 4, 5]);
+        (await Scalar(db, $"SELECT count(*) FROM plan_operation WHERE plan_id = {plan.Id}")).ShouldBe(0);
+
+        var csv = $"""
+            kind,code,name,template,siteType,lat,lon,a,b,cableType
+            site,IMP-1,Import 1,radiosite-standard,,63.80,20.25,,,
+            site,IMP-2,Import 2,,radio,63.81,20.27,,,
+            cable,,,,,,,IMP-1,IMP-2,fiber-12
+            cable,,,,,,,IMP-1,{existing},fiber-12
+            """;
+        var dry = await Import("csv", csv, dryRun: true);
+        (dry.Sites, dry.Cables, dry.Errors.Count).ShouldBe((2, 2, 0));
+        (await Scalar(db, $"SELECT count(*) FROM plan_operation WHERE plan_id = {plan.Id}")).ShouldBe(0);
+
+        var done = await Import("csv", csv);
+        done.Problems.ShouldBe(0);
+        var template = SiteTemplates.Embedded.Find("radiosite-standard")!;
+        (done.Sites, done.Equipment, done.Connections, done.Cables).ShouldBe((2, template.Equipment.Count, template.Connections.Count, 2));
+        var view = (await client.GetFromJsonAsync<PlanDiff>($"/api/plans/{plan.Id}/view", Ct))!;
+        view.Problems.ShouldBe(0);
+        view.Planned!.Sites.Select(s => s.Code).Order().ShouldBe(["IMP-1", "IMP-2"]);
+        // WGS 84 became SWEREF 99 TM (Umeå is around 760 000, 7 078 000).
+        view.Planned.Sites.ShouldAllBe(s => s.X > 700_000 && s.X < 800_000 && s.Y > 7_000_000 && s.Y < 7_150_000);
+
+        // Running it again changes nothing: the plan has these sites and cables already.
+        var again = await Import("csv", csv);
+        (again.Sites, again.Cables, again.Skipped).ShouldBe((0, 0, 4));
+
+        // GeoJSON: a line string is a cable along its own route.
+        var geo = await Import("geojson", """
+            {"type":"FeatureCollection","features":[
+              {"type":"Feature","geometry":{"type":"Point","coordinates":[761000,7079000]},"properties":{"code":"IMP-3","name":"Import 3","siteType":"cabinet"}},
+              {"type":"Feature","geometry":{"type":"LineString","coordinates":[[760500,7078500],[760800,7078900]]},"properties":{"a":"IMP-2","b":"IMP-3","cableType":"fiber-12"}}
+            ]}
+            """);
+        (geo.Sites, geo.Cables, geo.Errors.Count).ShouldBe((1, 1, 0));
+        view = (await client.GetFromJsonAsync<PlanDiff>($"/api/plans/{plan.Id}/view", Ct))!;
+        view.Planned!.Cables.Single(c => c.Coordinates.Length == 4).ShouldNotBeNull();
+
+        // Two thousand sites with a template go in at once.
+        var many = new System.Text.StringBuilder("code;name;template;x;y\n");
+        for (var i = 0; i < 2000; i++)
+        {
+            many.Append(System.Globalization.CultureInfo.InvariantCulture, $"MASS-{i};Mass {i};radiosite-standard;{600_000 + (i % 100) * 500};{6_900_000 + (i / 100) * 500}\n");
+        }
+        var big = await Import("csv", many.ToString());
+        big.Errors.ShouldBeEmpty();
+        big.Sites.ShouldBe(2000);
+        big.ElapsedMs.ShouldBeLessThan(30_000);
+        // The plan's view lists the first operations and counts the rest; all=true lists every one.
+        var bigView = (await client.GetFromJsonAsync<PlanDiff>($"/api/plans/{plan.Id}/view", Ct))!;
+        var total = await Scalar(db, $"SELECT count(*) FROM plan_operation WHERE plan_id = {plan.Id}");
+        bigView.Counts![plan.Id].ShouldBe((int)total);
+        bigView.Changes.Count.ShouldBe(PlanViewEndpoint.Listed);
+        (await client.GetFromJsonAsync<PlanDiff>($"/api/plans/{plan.Id}/view?all=true", Ct))!.Changes.Count.ShouldBe((int)total);
+        TestContext.Current.SendDiagnosticMessage($"Import of 2000 templated sites: {big.ElapsedMs} ms");
+    }
+
     private async Task<(NpgsqlDataSource Db, WebApplicationFactory<Program> Api)> NetworkAsync(int seed)
     {
         var db = await factory.NewDatabaseAsync();
