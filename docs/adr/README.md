@@ -20,4 +20,4 @@ Nya beslut: kopiera närmaste ADR, öka numret och sätt status **Föreslagen**.
 | [0014](0014-kanalisation.md) | Kanalisation: trasé, dukt, subdukt och beläggning (**Föreslagen**, #103) |
 | [0015](0015-driftagent-rostkanal-och-verifiering.md) | Driftagentens röstkanal (ElevenLabs) och verifiering av uppringare med engångskod (#131) |
 | [0016](0016-rostvaxel-med-flera-agenter.md) | Röstväxel: service desk lämnar över till IT-självhjälp och NOC-agent (#151) |
-| [0017](0017-klassningar-och-regler.md) | Klassningar och regler som modul vid sidan av kärnmodellen (**Föreslagen**, #175) |
+| [0017](0017-klassningar-och-regler.md) | Klassningar och regler som modul vid sidan av kärnmodellen (#175) |
