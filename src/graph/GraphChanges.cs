@@ -239,7 +239,7 @@ public static class GraphChanges
             }
             foreach (var node in now)
             {
-                if (!then.Contains((graph.TerminalId(node), graph.ConductorIds[graph.OwnerOf(node)])))
+                if (!then.Contains((graph.TerminalId(node), graph.ConductorId(graph.OwnerOf(node)))))
                 {
                     return false;
                 }

@@ -250,6 +250,33 @@ describe('operations agent panel', () => {
     fixture.destroy();
   });
 
+  it('switches on the eye for the incident the live call created, so it can be hidden', async () => {
+    const http = TestBed.inject(HttpTestingController);
+    const fixture = TestBed.createComponent(VoicePanelComponent);
+    await settle(fixture);
+    http.expectOne((r) => r.url === '/api/incidents').flush([incident]);
+    http.expectOne((r) => r.url === '/api/risks').flush([]);
+    http.expectOne((r) => r.url === '/api/voice/activity').flush(activity);
+    const site = { id: 12, code: 'AGG-0012', name: 'Lingonåsen', x: 1, y: 2 };
+    const call = { conversationId: 'conv_1', reference: 'site:12' };
+    http
+      .expectOne((r) => r.url === '/api/operations/live')
+      .flush({
+        incidents: [
+          { number: 'INC-00001', priority: 'P1', site, createdAt: incident.createdAt, ...call },
+        ],
+        live: { tool: 'create_incident', at: incident.createdAt, site, impact: null, ...call },
+      });
+    http.expectOne((r) => r.url === '/api/operations/works').flush({ works: [], risks: [] });
+    await settle(fixture);
+
+    // The call's incident owns the impact (#163): its eye is on, and fetching its impact puts it on the map.
+    http.expectOne('/api/incidents/INC-00001/impact');
+    const eye = (fixture.nativeElement as HTMLElement).querySelector('button[aria-pressed="true"]');
+    expect(eye?.getAttribute('aria-label')).toBe('Dölj INC-00001 på kartan');
+    fixture.destroy();
+  });
+
   it('says why the outbox is missing for a caller without the whole network', async () => {
     const http = TestBed.inject(HttpTestingController);
     const fixture = TestBed.createComponent(VoicePanelComponent);

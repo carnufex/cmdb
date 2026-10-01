@@ -9,7 +9,8 @@ namespace Cmdb.Api.Features.Voice;
 
 public sealed record MapPoint(long Id, string Code, string Name, double X, double Y);
 
-public sealed record MapIncident(string Number, string Priority, MapPoint Site, DateTimeOffset CreatedAt);
+/// <param name="Reference">What failed; with <paramref name="ConversationId"/> it ties the incident to the call that created it (#163).</param>
+public sealed record MapIncident(string Number, string Priority, MapPoint Site, DateTimeOffset CreatedAt, string Reference, string ConversationId);
 
 /// <param name="Down">Sites and cables of the services that lose every path.</param>
 /// <param name="FalseRedundancy">Sites and cables of the services whose backup runs through the fault too.</param>
@@ -50,7 +51,8 @@ public sealed class OperationsLiveEndpoint(GraphHolder holder, RequestDb db, Sys
         var scope = HttpContext.Scope();
         var incidents = new List<MapIncident>();
         await using (var cmd = db.Source.CreateCommand($"""
-            SELECT i.id, i.priority, s.id, s.code, s.name, ST_X(ST_PointOnSurface(s.geom)), ST_Y(ST_PointOnSurface(s.geom)), i.created_at
+            SELECT i.id, i.priority, s.id, s.code, s.name, ST_X(ST_PointOnSurface(s.geom)), ST_Y(ST_PointOnSurface(s.geom)), i.created_at,
+                   i.reference, i.conversation_id
             FROM incident i JOIN site s ON s.id = i.site_id
             WHERE i.status = 'open' AND {ScopeSql.Site("i.site_id", 1)}
             ORDER BY i.id DESC LIMIT 100
@@ -62,7 +64,7 @@ public sealed class OperationsLiveEndpoint(GraphHolder holder, RequestDb db, Sys
             {
                 incidents.Add(new MapIncident(Incidents.Number(reader.GetInt64(0)), reader.GetString(1),
                     new MapPoint(reader.GetInt64(2), reader.GetString(3), reader.GetString(4), reader.GetDouble(5), reader.GetDouble(6)),
-                    reader.GetFieldValue<DateTimeOffset>(7)));
+                    reader.GetFieldValue<DateTimeOffset>(7), reader.GetString(8), reader.GetString(9)));
             }
         }
         if (scope.HidesCoordinates)
