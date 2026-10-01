@@ -16,6 +16,18 @@ import { MapView } from '../map/map-view';
 import { ActivePlan } from './active-plan';
 import { NewOperation, PlanOperation, resolveSite, SiteChoice } from './plan-model';
 
+/** GET /api/cables/near (#169) */
+export interface NearCable {
+  cable: { id: number; code: string };
+  distance: number;
+  at: number;
+  point: { x: number; y: number };
+  conductors: number;
+  free: number;
+  a: { id: number; code: string };
+  b: { id: number; code: string };
+}
+
 interface Fields {
   siteTypes: string[];
   types: { key: string; manufacturer: string; model: string; category: string }[];
@@ -124,6 +136,30 @@ type Tab = 'template' | 'site' | 'equipment' | 'cable';
           <button type="submit" class="action" [disabled]="busy() || !code.trim() || !name.trim()">
             Lägg till site
           </button>
+          @if (nearCables.value()?.length) {
+            <div class="near" aria-label="Kablar i närheten">
+              <p class="muted">Kablar i närheten: sätt in siten i en av dem i stället (#168).</p>
+              <ul>
+                @for (n of nearCables.value()!; track n.cable.id) {
+                  <li>
+                    <span class="mono">{{ n.cable.code }}</span>
+                    <span class="muted"
+                      >{{ n.distance }} m · {{ n.free }} av {{ n.conductors }} ledare lediga ·
+                      {{ n.a.code }}–{{ n.b.code }}</span
+                    >
+                    <button
+                      type="button"
+                      class="link"
+                      [disabled]="busy() || !code.trim() || !name.trim()"
+                      (click)="insertInto(n)"
+                    >
+                      Sätt in i kabeln
+                    </button>
+                  </li>
+                }
+              </ul>
+            </div>
+          }
         </form>
       }
       @case ('equipment') {
@@ -224,6 +260,21 @@ type Tab = 'template' | 'site' | 'equipment' | 'cable';
     :host {
       display: flex;
       flex-direction: column;
+      gap: var(--space-2);
+    }
+    .near ul {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-1);
+      font-size: var(--text-sm);
+    }
+    .near li {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
       gap: var(--space-2);
     }
     .place {
@@ -397,6 +448,35 @@ export class PlanCreateComponent implements OnDestroy {
   protected togglePlacing(): void {
     this.mapView.picking.set(false);
     this.mapView.placing.set(!this.mapView.placing());
+  }
+
+  /** Cables near the placed point (#169): a new site there can go into one of them (#168). */
+  protected readonly nearCables = httpResource<NearCable[]>(() => {
+    const p = this.mapView.placed();
+    return p && this.tab() === 'site' ? `/api/cables/near?x=${p.x}&y=${p.y}&radius=500` : undefined;
+  });
+
+  /** The new site on the cable, at the point the placed one projects to, and the cable split there. */
+  protected async insertInto(near: NearCable): Promise<void> {
+    await this.run(async () => {
+      const site = await this.active.add({
+        kind: 'create_site',
+        code: this.code.trim(),
+        name: this.name.trim(),
+        siteType: this.siteType,
+        x: near.point.x,
+        y: near.point.y,
+      });
+      await this.active.add({
+        kind: 'split_cable',
+        cableId: near.cable.id,
+        siteId: site.target!.id,
+        terminate: [],
+      });
+      this.code = '';
+      this.name = '';
+      this.mapView.placed.set(null);
+    });
   }
 
   /** Where a new site goes (#167): where it was placed in the map, otherwise the map's centre. */

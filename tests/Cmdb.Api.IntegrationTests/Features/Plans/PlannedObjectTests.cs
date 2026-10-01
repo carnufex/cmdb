@@ -149,6 +149,13 @@ public sealed class PlannedObjectTests(ApiFactory factory)
             """);
         var x = await Scalar(db, $"SELECT round(ST_X(ST_LineInterpolatePoint(geom, 0.5)))::bigint FROM cable WHERE id = {cable}");
         var y = await Scalar(db, $"SELECT round(ST_Y(ST_LineInterpolatePoint(geom, 0.5)))::bigint FROM cable WHERE id = {cable}");
+        // Placed on the cable's middle, the cable is suggested first, with the point to insert at (#169).
+        var near = (await client.GetFromJsonAsync<List<Cmdb.Api.Features.Cables.NearCable>>($"/api/cables/near?x={x}&y={y}&radius=200", Ct))!;
+        near[0].Cable.Id.ShouldBe(cable);
+        near[0].Distance.ShouldBeLessThan(2);
+        near[0].At.ShouldBe(0.5, 0.01);
+        near[0].Free.ShouldBeGreaterThan(0);
+        near[0].Free.ShouldBeLessThan(near[0].Conductors);
         var before = (await client.GetFromJsonAsync<TraceResult>($"/api/trace?circuit={circuit}", Ct))!;
         before.Cables.Select(c => c.Id).ShouldContain(cable);
 
