@@ -90,6 +90,9 @@ Om tiden blir knapp räcker scenario 1–4. Övriga visas som förberedda i data
 | 2 – Linser | Appskal, karta, panelstack, träd, frontpanel, spårschema, graf, kommandopalett | 1–3 |
 | 3 – Differentiering | Behörighetsomfång, operationslogg, bitemporalitet, planer, konflikter, massprovisionering | 4–6, 8 |
 | 4 – Demo | Manus, prestandapanel, driftsättning bakom Authentik | alla |
+| 5 – Provisionering | Dokumentera nätet i planer: rita i kartan, sätt in en site i en befintlig kabel, massimport, kabelväg, ta bort och flytta, rack (#166) | – |
+| 6 – Klassning och regler | Klassningar (t.ex. kritikalitet 1–5) med ärvning och regler som syns i planer (ADR-0017, #175) | – |
+| 7 – Röstagenter: härdning | En hemlighet per röstingång, NetworkPolicy, SMS-leverantör (#181–#183) | – |
 
 Backloggen finns som issues på GitHub (källa: [`backlog/`](../backlog/)).
 
