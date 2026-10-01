@@ -1,6 +1,6 @@
 # ADR-0017: Klassningar och regler som en modul vid sidan av kärnmodellen
 
-**Status:** Föreslagen · **Datum:** 2026-10-01 · **Issue:** #175
+**Status:** Accepterad · **Datum:** 2026-10-01 (B, beslutat i #175)
 
 ## Kontext
 Mycket information om nätet passar inte i den exakta datamodellen (site, utrustning, kabel, krets och tjänst), men avgör ändå hur nätet får byggas. Några exempel:
@@ -21,8 +21,8 @@ I dag finns kritikalitet bara som ett fritt attribut på tjänster (`criticality
   - **Regler** är krav per nivå och utvärderas mot produktion och mot en plans vy. Avvikelser blir varningar i planen, risker i driftläget och förslag till åtgärd.
 - **C. En extern policymotor** (till exempel OPA/Rego). Den är kraftfull, men lägger till en körmiljö och ett språk, och reglerna behöver grafens härledda data ändå.
 
-## Rekommendation
-**B.** Det håller kärnmodellen liten (ADR-0001 och ADR-0002) och gör klassningar till data i stället för kod, på samma sätt som typkatalogen. Ärvningen bygger på grafen som redan finns i minnet. Planerna (ADR-0005) får regelutfallet i sin förhandsvisning utan något nytt flöde.
+## Beslut
+**B**, beslutat i #175. Det håller kärnmodellen liten (ADR-0001 och ADR-0002) och gör klassningar till data i stället för kod, på samma sätt som typkatalogen. Ärvningen bygger på grafen som redan finns i minnet. Planerna (ADR-0005) får regelutfallet i sin förhandsvisning utan något nytt flöde.
 
 ## Konsekvenser (vid B)
 - **Prestanda:** härledda nivåer räknas i grafmotorn och följer med i deltan (#119 och #121). Prestandabudgeten gäller.
