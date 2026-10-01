@@ -94,6 +94,12 @@ public sealed class AddOperationRequest
     /// <summary>create_cable: the sites at the two ends, existing or planned.</summary>
     public long? ASiteId { get; set; }
     public long? BSiteId { get; set; }
+
+    /// <summary>split_cable (#168): the cable the site (<see cref="SiteId"/>, existing or planned) is inserted into.</summary>
+    public long? CableId { get; set; }
+
+    /// <summary>split_cable: conductor numbers terminated in the site instead of spliced through.</summary>
+    public int[]? Terminate { get; set; }
 }
 
 public sealed class AddOperationValidator : Validator<AddOperationRequest>
@@ -124,6 +130,12 @@ public sealed class AddOperationValidator : Validator<AddOperationRequest>
             RuleFor(r => r.Type).Must(t => t is "site" or "equipment" or "cable").WithMessage("type is site, equipment or cable.");
             RuleFor(r => r.ObjectId).NotNull();
             RuleFor(r => r.Lifecycle).Must(l => Lifecycles.Contains(l)).WithMessage("Unknown lifecycle.");
+        });
+        When(r => r.Kind == "split_cable", () =>
+        {
+            RuleFor(r => r.CableId).NotNull();
+            RuleFor(r => r.SiteId).NotNull().NotEqual(0);
+            RuleFor(r => r.Terminate).Must(t => t is null || t.Length <= CableSplit.MaxConductors).WithMessage("Too many conductors to terminate.");
         });
         When(r => r.Kind == "create_site", () =>
         {
@@ -393,9 +405,15 @@ public sealed class PlanViewEndpoint(RequestDb db, GraphHolder holder, PlanViews
             o.Payload.GetProperty("code").GetString()!, o.Payload.GetProperty("name").GetString()!, o.Payload.GetProperty("siteType").GetString()!,
             o.Payload.GetProperty("x").GetDouble(), o.Payload.GetProperty("y").GetDouble())).ToList();
         var cables = operations.Where(o => o.Kind == "create_cable").ToList();
+        // A split cable's two parts (#168), with the geometry worked out when the operation was added.
+        List<PlannedCable> parts = [.. operations.Where(o => o.Kind == "split_cable").SelectMany(o => new[]
+        {
+            new PlannedCable(Planned.ObjectId(o.Id), $"{o.Payload.GetProperty("code").GetString()}-A", Line(o.Payload.GetProperty("lineA"))),
+            new PlannedCable(CableSplit.SecondCable(o.Id), $"{o.Payload.GetProperty("code").GetString()}-B", Line(o.Payload.GetProperty("lineB"))),
+        })];
         if (cables.Count == 0)
         {
-            return new PlannedMap(sites, []);
+            return new PlannedMap(sites, parts);
         }
         var ends = cables.SelectMany(c => new[] { c.Payload.GetProperty("a").GetInt64(), c.Payload.GetProperty("b").GetInt64() }).ToHashSet();
         var positions = (await PlanSql.SitePositionsAsync(db, [.. ends.Where(id => id > 0)], ct)).ToDictionary(s => s.Id, s => (s.X, s.Y));
@@ -409,6 +427,9 @@ public sealed class PlanViewEndpoint(RequestDb db, GraphHolder holder, PlanViews
             {
                 var (a, b) = (positions[c.Payload.GetProperty("a").GetInt64()], positions[c.Payload.GetProperty("b").GetInt64()]);
                 return new PlannedCable(Planned.ObjectId(c.Id), $"NY-K{c.Id}", [[a.X, a.Y], [b.X, b.Y]]);
-            })]);
+            }), .. parts]);
     }
+
+    private static double[][] Line(System.Text.Json.JsonElement points) =>
+        [.. points.EnumerateArray().Select(p => new[] { p[0].GetDouble(), p[1].GetDouble() })];
 }

@@ -101,6 +101,7 @@ export type NewOperation =
   | { kind: 'create_site'; code: string; name: string; siteType: string; x: number; y: number }
   | { kind: 'create_equipment'; siteId: number; typeKey: string; name: string }
   | { kind: 'create_cable'; aSiteId: number; bSiteId: number; typeKey: string }
+  | { kind: 'split_cable'; cableId: number; siteId: number; terminate: number[] }
   | {
       kind: 'set_attributes';
       type: 'site' | 'equipment';

@@ -190,6 +190,18 @@ internal static class PlanSql
                     conflicts[op.Id].Any(c => c.Blocking)));
                 continue;
             }
+            if (op.Kind == "split_cable")
+            {
+                var partA = planned.Objects[("cable", Planned.ObjectId(op.Id))];
+                var site = planned.Terminals[CableSplit.InnerA(op.Id, 1)].Site;
+                var total = CableSplit.Conductors(op.Payload).Count;
+                var terminated = CableSplit.Terminated(op.Payload).Count;
+                var splitText = $"Sätt in {site?.Code} {site?.Name} i kabel {op.Payload.GetProperty("code").GetString()}: " +
+                    $"{total - terminated} ledare skarvas igenom" + (terminated > 0 ? $", {terminated} termineras i siten" : "");
+                list.Add(new PlanOperationView(op.Id, op.PlanId, op.Seq, op.Kind, splitText, [], partA, null, null, null, problem,
+                    op.CreatedBy, op.CreatedAt, [], false));
+                continue;
+            }
             if (op.Kind.StartsWith("create_", StringComparison.Ordinal))
             {
                 var (created, what) = planned.Describe(op);

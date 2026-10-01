@@ -112,7 +112,7 @@ public sealed partial class ApplyPlanEndpoint(RequestDb db, GraphHolder holder, 
         Applied(logger, plan.Id, operations.Count, actor);
 
         // Production as it will be once the change stream has caught up: the graph plus this plan's connections.
-        var (after, _) = graph.WithChanges([.. operations.Where(o => o.Change is not null).Select(o => run.Production(o.Change!))]);
+        var (after, _) = PlanViews.Build(graph, operations, run.Production);
         var flagged = await FlagDependentsAsync(db, views, after, plan, ct);
         await Send.OkAsync(new ApplyResult((await PlanSql.SummariesAsync(db, [plan.Id], ct)).Single(), flagged), ct);
     }

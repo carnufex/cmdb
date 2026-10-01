@@ -71,6 +71,65 @@ import { ObjectLinkComponent } from './object-link';
           @if (reserveError(); as err) {
             <p class="error" role="alert">{{ err }}</p>
           }
+          @if (c.lifecycle !== 'removed') {
+            <details class="split">
+              <summary>Sätt in en site i kabeln</summary>
+              <p class="muted">
+                Kabeln delas vid siten. Alla ledare skarvas igenom, så kretsar och tjänster går som
+                förut, utom de du terminerar i siten.
+              </p>
+              <form class="split-form" (submit)="$event.preventDefault(); split(c)">
+                <label
+                  >Var längs kabeln (från A)
+                  <span class="row">
+                    <input
+                      type="range"
+                      min="5"
+                      max="95"
+                      [value]="at()"
+                      (input)="at.set(+$any($event.target).value)"
+                    />
+                    <span class="mono">{{ at() }} %</span>
+                  </span>
+                </label>
+                <label
+                  >Kod
+                  <input
+                    required
+                    [value]="siteCode() || c.code + '-S'"
+                    (input)="siteCode.set($any($event.target).value)"
+                /></label>
+                <label
+                  >Namn
+                  <input
+                    required
+                    [value]="siteName() || 'Skarvpunkt på ' + c.code"
+                    (input)="siteName.set($any($event.target).value)"
+                /></label>
+                <label
+                  >Typ
+                  <select [value]="siteType()" (change)="siteType.set($any($event.target).value)">
+                    <option value="splice">Skarvpunkt</option>
+                    <option value="cabinet">Teknikskåp</option>
+                    <option value="radio">Radiosite</option>
+                    <option value="aggregation">Aggregeringsnod</option>
+                    <option value="hub">Nav</option>
+                  </select>
+                </label>
+                <label
+                  >Terminera ledare (t.ex. 1–4, 7)
+                  <input
+                    [value]="terminate()"
+                    placeholder="Inga: alla skarvas igenom"
+                    (input)="terminate.set($any($event.target).value)"
+                /></label>
+                <button type="submit" class="action" [disabled]="splitting()">Sätt in site</button>
+              </form>
+              @if (splitError(); as err) {
+                <p class="error" role="alert">{{ err }}</p>
+              }
+            </details>
+          }
         </section>
       }
       <section>
@@ -102,6 +161,31 @@ import { ObjectLinkComponent } from './object-link';
       margin: 0;
       color: var(--text-muted);
     }
+    .split summary {
+      cursor: pointer;
+      font-weight: 600;
+      margin-top: var(--space-2);
+    }
+    .split-form {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-2);
+      margin-top: var(--space-2);
+      label {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-1);
+        font-size: var(--text-sm);
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+      }
+      .action {
+        align-self: flex-start;
+      }
+    }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -111,6 +195,49 @@ export class CablePanelComponent {
   private readonly http = inject(HttpClient);
   protected readonly conductor = signal(1);
   protected readonly reserveError = signal<string | null>(null);
+
+  // Inserting a site into the cable (#168).
+  protected readonly at = signal(50);
+  protected readonly siteCode = signal('');
+  protected readonly siteName = signal('');
+  protected readonly siteType = signal('splice');
+  protected readonly terminate = signal('');
+  protected readonly splitting = signal(false);
+  protected readonly splitError = signal<string | null>(null);
+
+  /** A new site at the chosen point along the cable, then the split itself, both in the active plan. */
+  protected async split(c: CableDetail): Promise<void> {
+    this.splitError.set(null);
+    const numbers = parseNumbers(this.terminate());
+    if (numbers === null) {
+      this.splitError.set('Ange ledare som nummer och intervall, t.ex. 1–4, 7.');
+      return;
+    }
+    this.splitting.set(true);
+    try {
+      const point = await firstValueFrom(
+        this.http.get<{ x: number; y: number }>(`/api/cables/${c.id}/point?at=${this.at() / 100}`),
+      );
+      const site = await this.plan.add({
+        kind: 'create_site',
+        code: (this.siteCode() || c.code + '-S').trim(),
+        name: (this.siteName() || 'Skarvpunkt på ' + c.code).trim(),
+        siteType: this.siteType(),
+        x: point.x,
+        y: point.y,
+      });
+      await this.plan.add({
+        kind: 'split_cable',
+        cableId: c.id,
+        siteId: site.target!.id,
+        terminate: numbers,
+      });
+    } catch (e: unknown) {
+      this.splitError.set(problem(e, 'Siten kunde inte sättas in.'));
+    } finally {
+      this.splitting.set(false);
+    }
+  }
 
   /** Reserves fibre N of the cable for the active plan (#25). */
   protected async reserve(cableId: number): Promise<void> {
@@ -122,14 +249,7 @@ export class CablePanelComponent {
       await this.plan.reserve('conductor', fibre.id);
       this.cable.reload();
     } catch (e: unknown) {
-      const body = (e as { error?: { detail?: string; errors?: Record<string, string[]> } }).error;
-      this.reserveError.set(
-        body?.detail ??
-          (Object.values(body?.errors ?? {})
-            .flat()
-            .join(' ') ||
-            'Fibern kunde inte reserveras.'),
-      );
+      this.reserveError.set(problem(e, 'Fibern kunde inte reserveras.'));
     }
   }
 
@@ -156,4 +276,42 @@ export class CablePanelComponent {
       }
     });
   }
+}
+
+/** The API's message for a failed request: a problem's detail, or its validation errors. */
+function problem(e: unknown, fallback: string): string {
+  const body = (e as { error?: { detail?: string; errors?: Record<string, string[]> } }).error;
+  return (
+    body?.detail ??
+    (Object.values(body?.errors ?? {})
+      .flat()
+      .join(' ') ||
+      fallback)
+  );
+}
+
+/** "1–4, 7" (hyphen or en dash) as [1, 2, 3, 4, 7]; empty is none; null when it does not parse. */
+export function parseNumbers(text: string): number[] | null {
+  const numbers = new Set<number>();
+  for (const part of text
+    .split(',')
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0)) {
+    const range = /^(\d+)\s*[-–]\s*(\d+)$/.exec(part);
+    const single = /^\d+$/.exec(part);
+    if (range) {
+      const [from, to] = [Number(range[1]), Number(range[2])];
+      if (to < from || to - from > 2000) {
+        return null;
+      }
+      for (let n = from; n <= to; n++) {
+        numbers.add(n);
+      }
+    } else if (single) {
+      numbers.add(Number(part));
+    } else {
+      return null;
+    }
+  }
+  return [...numbers].sort((a, b) => a - b);
 }

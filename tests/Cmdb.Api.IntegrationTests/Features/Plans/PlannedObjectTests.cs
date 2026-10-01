@@ -115,6 +115,98 @@ public sealed class PlannedObjectTests(ApiFactory factory)
         (await Add(new { kind = "create_site", code = "NY-1", name = "Igen", siteType = "radio", x = 600000.0, y = 7000000.0 })).ShouldBe(HttpStatusCode.BadRequest);
     }
 
+    [Fact]
+    public async Task A_site_inserted_into_a_cable_keeps_every_service_running_and_frees_the_terminated_fibre()
+    {
+        var (db, api) = await NetworkAsync(43);
+        await using var dbScope = db;
+        await using var apiScope = api;
+        using var client = NetworkFixture.Client(api);
+
+        // A cable with a circuit along one of its conductors and a conductor without any.
+        var cable = await Scalar(db, """
+            SELECT c.id FROM cable c
+            WHERE c.lifecycle = 'in_service'
+              AND EXISTS (SELECT 1 FROM conductor cd JOIN conductor_end e ON e.conductor_id = cd.id JOIN circuit_hop h ON h.terminal_id = e.terminal_id
+                          WHERE cd.cable_id = c.id)
+              AND EXISTS (SELECT 1 FROM conductor cd WHERE cd.cable_id = c.id AND NOT EXISTS (
+                          SELECT 1 FROM conductor_end e JOIN circuit_hop h ON h.terminal_id = e.terminal_id WHERE e.conductor_id = cd.id))
+            ORDER BY c.id LIMIT 1
+            """);
+        var code = await Text(db, $"SELECT code FROM cable WHERE id = {cable}");
+        // The circuit along the cable; the services ride on it through the circuits above.
+        var circuit = await Scalar(db, $"""
+            SELECT min(h.circuit_id) FROM conductor cd JOIN conductor_end e ON e.conductor_id = cd.id JOIN circuit_hop h ON h.terminal_id = e.terminal_id
+            WHERE cd.cable_id = {cable}
+            """);
+        var free = (int)await Scalar(db, $"""
+            SELECT min(cd.number) FROM conductor cd WHERE cd.cable_id = {cable} AND NOT EXISTS (
+                SELECT 1 FROM conductor_end e JOIN circuit_hop h ON h.terminal_id = e.terminal_id WHERE e.conductor_id = cd.id)
+            """);
+        var busy = (int)await Scalar(db, $"""
+            SELECT min(cd.number) FROM conductor cd JOIN conductor_end e ON e.conductor_id = cd.id JOIN circuit_hop h ON h.terminal_id = e.terminal_id
+            WHERE cd.cable_id = {cable}
+            """);
+        var x = await Scalar(db, $"SELECT round(ST_X(ST_LineInterpolatePoint(geom, 0.5)))::bigint FROM cable WHERE id = {cable}");
+        var y = await Scalar(db, $"SELECT round(ST_Y(ST_LineInterpolatePoint(geom, 0.5)))::bigint FROM cable WHERE id = {cable}");
+        var before = (await client.GetFromJsonAsync<TraceResult>($"/api/trace?circuit={circuit}", Ct))!;
+        before.Cables.Select(c => c.Id).ShouldContain(cable);
+
+        var plan = await CreateAsync(client, "Ny skarvpunkt på kabeln");
+        var site = (await AddAsync(client, plan.Id, new { kind = "create_site", code = "SKARV-PLAN-1", name = "Ny skarvpunkt", siteType = "splice", x = (double)x, y = (double)y }))
+            .Target!.Id;
+
+        // A conductor that carries a circuit cannot be terminated: the service would break.
+        var refused = await client.PostAsJsonAsync($"/api/plans/{plan.Id}/operations",
+            new { kind = "split_cable", cableId = cable, siteId = site, terminate = new[] { busy } }, Ct);
+        refused.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await refused.Content.ReadAsStringAsync(Ct)).ShouldContain("bär kretsar");
+
+        var split = await AddAsync(client, plan.Id, new { kind = "split_cable", cableId = cable, siteId = site, terminate = new[] { free } });
+        split.Problem.ShouldBeNull();
+        split.Summary.ShouldContain($"i kabel {code}");
+        split.Summary.ShouldContain("1 termineras");
+
+        var view = (await client.GetFromJsonAsync<PlanDiff>($"/api/plans/{plan.Id}/view", Ct))!;
+        view.Problems.ShouldBe(0);
+        view.Planned!.Cables.Select(c => c.Code).ShouldBe([$"{code}-A", $"{code}-B"]);
+        view.Planned.Cables.ShouldAllBe(c => c.Coordinates.Length >= 2);
+
+        // In the plan the circuit runs through the two new parts and the new site, not the old cable.
+        var planned = (await client.GetFromJsonAsync<TraceResult>($"/api/trace?circuit={circuit}&plan={plan.Id}", Ct))!;
+        planned.Cables.Select(c => c.Id).ShouldNotContain(cable);
+        planned.Cables.Select(c => c.Code).ShouldContain($"{code}-A");
+        planned.Cables.Select(c => c.Code).ShouldContain($"{code}-B");
+        planned.Services.Select(s => s.Id).ShouldBe(before.Services.Select(s => s.Id));
+
+        var applied = await client.PostAsync($"/api/plans/{plan.Id}/apply", null, Ct);
+        applied.StatusCode.ShouldBe(HttpStatusCode.OK, await applied.Content.ReadAsStringAsync(Ct));
+        await ApiFactory.GraphCaughtUpAsync(api.Services, db);
+
+        (await Text(db, $"SELECT lifecycle::text FROM cable WHERE id = {cable}")).ShouldBe("removed");
+        var partA = await Scalar(db, $"SELECT id FROM cable WHERE code = '{code}-A'");
+        var partB = await Scalar(db, $"SELECT id FROM cable WHERE code = '{code}-B'");
+        var realSite = await Scalar(db, "SELECT id FROM site WHERE code = 'SKARV-PLAN-1'");
+        (await Scalar(db, $"SELECT b_site_id FROM cable WHERE id = {partA}")).ShouldBe(realSite);
+        (await Scalar(db, $"SELECT a_site_id FROM cable WHERE id = {partB}")).ShouldBe(realSite);
+        // Spliced through in the site, except the terminated one, which is free there.
+        string Inner(long part, string side, int number) => $"""
+            SELECT e.terminal_id FROM conductor cd JOIN conductor_end e ON e.conductor_id = cd.id
+            WHERE cd.cable_id = {part} AND e.side = '{side}' AND cd.number = {number}
+            """;
+        (await Scalar(db, $"SELECT count(*) FROM connection WHERE valid_to IS NULL AND kind = 'splice' AND a_terminal_id IN (({Inner(partA, "B", busy)}), ({Inner(partB, "A", busy)})) AND b_terminal_id IN (({Inner(partA, "B", busy)}), ({Inner(partB, "A", busy)}))"))
+            .ShouldBe(1);
+        (await Scalar(db, $"SELECT count(*) FROM connection WHERE valid_to IS NULL AND (a_terminal_id = ({Inner(partA, "B", free)}) OR b_terminal_id = ({Inner(partA, "B", free)}))"))
+            .ShouldBe(0);
+
+        var after = (await client.GetFromJsonAsync<TraceResult>($"/api/trace?circuit={circuit}", Ct))!;
+        after.Cables.Select(c => c.Id).ShouldNotContain(cable);
+        after.Cables.Select(c => c.Id).ShouldContain(partA);
+        after.Cables.Select(c => c.Id).ShouldContain(partB);
+        after.Sites.Select(s => s.Id).ShouldContain(realSite);
+        after.Services.Select(s => s.Id).ShouldBe(before.Services.Select(s => s.Id));
+    }
+
     private async Task<(NpgsqlDataSource Db, WebApplicationFactory<Program> Api)> NetworkAsync(int seed)
     {
         var db = await factory.NewDatabaseAsync();
