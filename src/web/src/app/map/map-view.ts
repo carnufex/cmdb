@@ -53,7 +53,14 @@ interface RouteGeometry {
  * routes its fault takes down, so the map follows a call while it happens.
  */
 export interface Operations {
-  incidents: readonly { number: string; priority: string; site: MapPoint; createdAt: string }[];
+  incidents: readonly {
+    number: string;
+    priority: string;
+    site: MapPoint;
+    createdAt: string;
+    reference?: string;
+    conversationId?: string;
+  }[];
   live: {
     tool: string;
     reference: string;

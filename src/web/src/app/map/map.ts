@@ -548,9 +548,15 @@ export class MapComponent {
       ),
     ];
     const live = operations.live;
+    // Once the call has created its incident, the incident owns the impact and the panel's eye shows or hides it (#163).
+    const owned = live
+      ? operations.incidents.some(
+          (i) => i.conversationId === live.conversationId && i.reference === live.reference,
+        )
+      : false;
     const impacts = [
       ...(operations.incidentImpacts ?? []).map((i) => i.impact),
-      ...(live?.impact ? [live.impact] : []),
+      ...(live?.impact && !owned ? [live.impact] : []),
     ];
     for (const impact of impacts) {
       for (const [route, kind] of [

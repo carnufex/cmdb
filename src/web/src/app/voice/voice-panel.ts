@@ -7,6 +7,7 @@ import {
   effect,
   inject,
   signal,
+  untracked,
 } from '@angular/core';
 import { MapView, Operations } from '../map/map-view';
 import { PanelStack } from '../shell/panels';
@@ -721,7 +722,11 @@ export class VoicePanelComponent {
       this.onMap.set(shown);
       return;
     }
-    this.onMap.set(shown.add(number));
+    this.showOnMap(number);
+  }
+
+  private showOnMap(number: string): void {
+    this.onMap.set(new Set(this.onMap()).add(number));
     this.http
       .get<NonNullable<NonNullable<Operations['live']>['impact']>>(
         `/api/incidents/${number}/impact`,
@@ -808,6 +813,8 @@ export class VoicePanelComponent {
     params: { t: Math.floor(this.tick() / 10) },
   }));
   private lastLive: Pick<Operations, 'incidents' | 'live'> | undefined;
+  /** Incidents whose eye was switched on because the live call created them (#163); each only once. */
+  private readonly autoShown = new Set<string>();
   private lastWorks: Pick<Operations, 'works' | 'risks'> | undefined;
 
   constructor() {
@@ -819,6 +826,19 @@ export class VoicePanelComponent {
     effect(() => {
       if (this.liveResource.hasValue()) {
         this.lastLive = this.liveResource.value();
+        // The call's own incident takes over its impact, eye on, so it shows at once and can be hidden (#163).
+        const live = this.lastLive.live;
+        for (const i of this.lastLive.incidents) {
+          if (
+            live &&
+            i.conversationId === live.conversationId &&
+            i.reference === live.reference &&
+            !this.autoShown.has(i.number)
+          ) {
+            this.autoShown.add(i.number);
+            untracked(() => this.showOnMap(i.number));
+          }
+        }
       }
       if (this.worksResource.hasValue()) {
         this.lastWorks = this.worksResource.value();
