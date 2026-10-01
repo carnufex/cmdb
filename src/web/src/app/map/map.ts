@@ -377,11 +377,17 @@ export class MapComponent {
     return this.markStyleCache.style;
   }
 
-  private plannedStyleCache?: { key: string; line: Style[]; point: Style };
+  private plannedStyleCache?: {
+    key: string;
+    line: Style[];
+    point: Style;
+    removedLine: Style[];
+    removedPoint: Style;
+  };
 
   private plannedStyle(feature: FeatureLike): Style | Style[] {
     const palette = (this.palette ??= readPalette(this.host.nativeElement));
-    const key = `${palette.planned}|${palette.bg}`;
+    const key = `${palette.planned}|${palette.bg}|${palette.conflict}`;
     if (this.plannedStyleCache?.key !== key) {
       this.plannedStyleCache = {
         key,
@@ -397,11 +403,36 @@ export class MapComponent {
           }),
           zIndex: 1,
         }),
+        // Underneath what replaces it: a split's new parts follow the same line.
+        removedLine: [
+          new Style({ stroke: new Stroke({ color: palette.bg, width: 6 }), zIndex: -1 }),
+          new Style({
+            stroke: new Stroke({ color: palette.conflict, width: 2.5, lineDash: [3, 6] }),
+            zIndex: -1,
+          }),
+        ],
+        removedPoint: new Style({
+          image: new RegularShape({
+            points: 4,
+            radius: 7,
+            radius2: 0,
+            angle: Math.PI / 4,
+            stroke: new Stroke({ color: palette.conflict, width: 3 }),
+          }),
+          zIndex: 2,
+        }),
       };
     }
-    return feature.get('planned') === 'site'
-      ? this.plannedStyleCache.point
-      : this.plannedStyleCache.line;
+    switch (feature.get('planned')) {
+      case 'site':
+        return this.plannedStyleCache.point;
+      case 'removed-cable':
+        return this.plannedStyleCache.removedLine;
+      case 'removed-site':
+        return this.plannedStyleCache.removedPoint;
+      default:
+        return this.plannedStyleCache.line;
+    }
   }
 
   /** Draws what the active plan creates; nothing to open, since planned objects have no panel yet. */
@@ -422,6 +453,19 @@ export class MapComponent {
         const f = new Feature<Geometry>(new OlPoint([s.x, s.y]));
         f.set('planned', 'site');
         f.set('code', s.code);
+        return f;
+      }),
+      // Removed in the plan (#172), or replaced by a split (#168): struck out.
+      ...(planned.removed?.cables ?? []).map((c) => {
+        const f = new Feature<Geometry>(new LineString(c.coordinates.map((p) => [p[0], p[1]])));
+        f.set('planned', 'removed-cable');
+        f.set('code', `${c.code} (tas bort)`);
+        return f;
+      }),
+      ...(planned.removed?.sites ?? []).map((s) => {
+        const f = new Feature<Geometry>(new OlPoint([s.x, s.y]));
+        f.set('planned', 'removed-site');
+        f.set('code', 'Tas bort');
         return f;
       }),
     ]);

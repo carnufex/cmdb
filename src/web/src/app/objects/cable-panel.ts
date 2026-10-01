@@ -1,3 +1,4 @@
+import { PlanRemoveComponent } from '../plans/plan-remove';
 import { HttpClient, httpResource } from '@angular/common/http';
 import { DecimalPipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, effect, inject, input, signal } from '@angular/core';
@@ -13,6 +14,7 @@ import { ObjectLinkComponent } from './object-link';
 @Component({
   selector: 'cmdb-cable-panel',
   imports: [
+    PlanRemoveComponent,
     ObjectLinkComponent,
     StatusComponent,
     ImpactListComponent,
@@ -31,6 +33,7 @@ import { ObjectLinkComponent } from './object-link';
           <span>{{ c.conductorsInUse }} av {{ c.conductors }} ledare i bruk</span>
         </div>
       </header>
+      <cmdb-plan-remove type="cable" [objectId]="c.id" />
       <section>
         <h3>Ändar</h3>
         <dl class="facts">

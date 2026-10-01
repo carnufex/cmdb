@@ -39,6 +39,9 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx)
             case "split_cable":
                 return await SplitCableAsync(op, p, ct);
 
+            case "remove":
+                return await RemoveAsync(p, ct);
+
             case "connect":
                 return await ExecuteAsync("""
                     INSERT INTO connection (a_terminal_id, b_terminal_id, kind, lifecycle)
@@ -328,6 +331,33 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx)
         }
 
         await ExecuteAsync("UPDATE cable SET lifecycle = 'removed' WHERE id = $1", ct, old);
+        return true;
+    }
+
+    /// <summary>
+    /// A removal (#172): every connection on the terminals goes, and the object (for a site, with its equipment and the
+    /// cables ending there) gets the lifecycle removed. False when it was removed already.
+    /// </summary>
+    private async Task<bool> RemoveAsync(JsonElement p, CancellationToken ct)
+    {
+        var (equipment, cables) = ObjectRemoval.Objects(p);
+        var type = p.GetProperty("type").GetString()!;
+        var id = p.GetProperty("id").GetInt64();
+        if (await ExecuteAsync($"UPDATE {Table(p)} SET lifecycle = 'removed' WHERE id = $1 AND lifecycle <> 'removed'", ct, id) == 0)
+        {
+            return false;
+        }
+        await ExecuteAsync("""
+            WITH t AS (SELECT terminal_id FROM port WHERE equipment_id = ANY($1)
+                       UNION ALL SELECT e.terminal_id FROM conductor_end e JOIN conductor c ON c.id = e.conductor_id WHERE c.cable_id = ANY($2))
+            UPDATE connection SET valid_to = now(), lifecycle = 'removed'
+            WHERE valid_to IS NULL AND (a_terminal_id IN (SELECT terminal_id FROM t) OR b_terminal_id IN (SELECT terminal_id FROM t))
+            """, ct, equipment, cables);
+        if (type == "site")
+        {
+            await ExecuteAsync("UPDATE equipment SET lifecycle = 'removed' WHERE id = ANY($1)", ct, equipment);
+            await ExecuteAsync("UPDATE cable SET lifecycle = 'removed' WHERE id = ANY($1)", ct, cables);
+        }
         return true;
     }
 

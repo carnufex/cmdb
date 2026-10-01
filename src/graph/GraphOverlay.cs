@@ -37,6 +37,9 @@ public enum GraphChangeProblem
 
     /// <summary>A circuit rides on one that does not exist, or a removed one still carries others (#121).</summary>
     UnknownCircuit,
+
+    /// <summary>Something to be removed still carries a circuit (#172): the services would break.</summary>
+    CarriesCircuits,
 }
 
 public sealed record GraphChangeIssue(int Index, GraphChange Change, GraphChangeProblem Problem);

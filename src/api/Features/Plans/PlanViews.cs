@@ -97,7 +97,7 @@ public sealed record PlanView(PlanChain Chain, Cmdb.Graph.Graph Graph, IReadOnly
 internal static class PlanKinds
 {
     public static readonly string[] Operations =
-        ["connect", "disconnect", "set_lifecycle", "rename", "set_attributes", "create_site", "create_equipment", "create_cable", "split_cable"];
+        ["connect", "disconnect", "set_lifecycle", "rename", "set_attributes", "create_site", "create_equipment", "create_cable", "split_cable", "remove"];
 
     public static readonly string[] SiteTypes = ["hub", "aggregation", "radio", "cabinet", "splice"];
     public static readonly string[] Connections = ["patch", "splice", "termination", "internal"];
@@ -118,6 +118,7 @@ internal static class PlanKinds
         GraphChangeProblem.Occupied => "Porten eller fibern är redan upptagen av en koppling av samma slag.",
         GraphChangeProblem.InvalidObject => "Objektet finns redan.",
         GraphChangeProblem.UnknownCircuit => "Kretsen finns inte.",
+        GraphChangeProblem.CarriesCircuits => "Kretsar går genom objektet. Flytta dem först, annars bryts tjänsterna.",
         _ => "En terminal kan inte kopplas till sig själv.",
     };
 }
@@ -195,6 +196,18 @@ public sealed class PlanViews(SystemDb system)
             {
                 Flush();
                 pending.AddRange(CableSplit.Changes(graph, op).Select(c => (op.Id, c)));
+                Flush();
+            }
+            else if (op.Kind == "remove")
+            {
+                // Worked out against the view so far (#172): a circuit added through the object since is a problem.
+                Flush();
+                var (equipment, cables) = ObjectRemoval.Objects(op.Payload);
+                if (ObjectRemoval.Circuits(graph, ObjectRemoval.Nodes(graph, equipment, cables)).Count > 0)
+                {
+                    problems.TryAdd(op.Id, GraphChangeProblem.CarriesCircuits);
+                }
+                pending.AddRange(ObjectRemoval.Changes(graph, op).Select(c => (op.Id, c)));
                 Flush();
             }
             else if (op.Change is { } change)

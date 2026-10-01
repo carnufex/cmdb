@@ -108,6 +108,10 @@ Regler:
 4. När en plan avbryts markeras alla planer som beror på den.
 5. Konflikter detekteras på **resursnivå** (terminal, ledare, slot, kanal) via reservationer, inte bara på fältnivå. En plans kopplingar är anspråk på sina terminaler och ledare. En reservation håller resursen åt en plan eller tjänst, och en terminal tar en koppling av varje slag (#25).
 
+### Ta bort en site, utrustning eller kabel (#172)
+
+Operationen `remove` sätter livscykeln borttagen och avslutar varje koppling på objektets portar och ledarändar. Raden ligger kvar, och grafen ändras bara genom kopplingar. En site tar med sig sin utrustning och kablarna som slutar där. Ett objekt som bär en krets kan inte tas bort, eftersom tjänsterna då skulle brytas utan att någon beslutat det. Kretsarna måste flyttas först. Kartans planlager visar det som tas bort, och den kabel en kapning ersätter, överstruket.
+
 ### Sätta in en site i en befintlig kabel (#168)
 
 Operationen `split_cable` delar en kabel vid en site (befintlig eller planerad i samma plan, högst 2 km från kabeln och inte vid en ände):

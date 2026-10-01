@@ -25,7 +25,8 @@ public sealed record AgentPlanAdded(AgentPlan Plan, IReadOnlyList<AgentPlanChang
 /// <summary>One change for <c>add_to_plan</c>.</summary>
 public sealed class AgentPlanOperation
 {
-    [Description("connect, disconnect, set_lifecycle, rename, create_site, create_equipment, create_cable or split_cable (insert a site into a cable).")]
+    [Description("connect, disconnect, set_lifecycle, rename, create_site, create_equipment, create_cable, split_cable (insert a site into a cable) " +
+        "or remove (a site, equipment or cable that carries no circuits; a site takes its equipment and cables along).")]
     public string Kind { get; set; } = "";
 
     [Description("connect/disconnect: the first terminal id (ports and conductor ends have terminal ids in get_object).")]
@@ -37,7 +38,7 @@ public sealed class AgentPlanOperation
     [Description("connect: patch, splice, termination or internal. Default patch.")]
     public string? ConnectionKind { get; set; }
 
-    [Description("set_lifecycle/rename: a reference \"site:12\", \"equipment:34\" or \"cable:56\" (rename: site or equipment).")]
+    [Description("set_lifecycle/rename/remove: a reference \"site:12\", \"equipment:34\" or \"cable:56\" (rename: site or equipment).")]
     public string? Target { get; set; }
 
     [Description("set_lifecycle: planned, under_construction, in_service, decommissioning or removed.")]
