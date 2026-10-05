@@ -2,7 +2,7 @@
 
 Tre agenter (ADR-0015, ADR-0016, #151). Här finns allt de består av: prompter, runbooks och inställningar. Skriptet `deploy.py` gör ElevenLabs likt repot.
 
-- **Service desk (Saga)** svarar alla samtal, på svenska och engelska: "Hej, det här är Saga på service desk, hur kan jag hjälpa dig? Hi, this is Saga at the service desk, how can I help you?"
+- **Service desk (Saga)** svarar alla samtal: "Hej, det här är Saga på service desk, hur kan jag hjälpa dig?" Alla agenter svarar på det språk uppringaren talar (svenska eller engelska), byter utan att nämna det och är rakt på sak.
   - Passertaggar som slutat fungera löser hon själv, efter verifiering.
   - IT (lösenord, konto, dator, utrustning) lämnas över till **IT-självhjälpen**.
   - Nätet (CMDB, fiber, stationer, larm) lämnas över till **NOC-agenten** (Driftagenten).
