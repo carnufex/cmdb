@@ -22,6 +22,35 @@
       <li><span class="sym risk" aria-hidden="true"></span>Risk</li>
     </ul>
   }
+  <label class="cls">
+    Klassning
+    <select
+      [value]="classMin()"
+      (change)="classMin.set(+$any($event.target).value)"
+      aria-label="Visa klassning från nivå"
+    >
+      <option value="0">Av</option>
+      @for (n of classLevels; track n) {
+        <option [value]="n">från nivå {{ n }}</option>
+      }
+    </select>
+  </label>
+  @if (classMin() > 0) {
+    @if (classLayer.value(); as layer) {
+      <ul class="ops" aria-label="Klassning">
+        <li>
+          <span class="sym fault" aria-hidden="true"></span>Kritisk, nivå
+          {{ layer.criticalFrom }} eller högre
+        </li>
+        <li><span class="sym amber" aria-hidden="true"></span>Lägre nivå</li>
+      </ul>
+      @if (layer.truncated) {
+        <p class="hint">Fler än kartan ritar; de högsta nivåerna visas.</p>
+      }
+    } @else if (classLayer.error()) {
+      <p class="hint">Klassningen kunde inte läsas.</p>
+    }
+  }
   @if (zoom() < detailZoom) {
     <p class="hint">Zooma in för att se accessiter och små kablar.</p>
   }
