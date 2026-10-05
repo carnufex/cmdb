@@ -133,6 +133,7 @@ internal static class PlanSql
         {
             "site" => $"SELECT EXISTS (SELECT 1 FROM site s WHERE s.id = $1 AND {ScopeSql.Site("s.id", 2)})",
             "equipment" => $"SELECT EXISTS (SELECT 1 FROM equipment e WHERE e.id = $1 AND {ScopeSql.Site("e.site_id", 2)})",
+            "service" => $"SELECT EXISTS (SELECT 1 FROM service s WHERE s.id = $1 AND {ScopeSql.Service("s.id", 2)})",
             _ => $"SELECT EXISTS (SELECT 1 FROM cable c WHERE c.id = $1 AND {ScopeSql.Cable("c.id", 2)})",
         };
         await using var cmd = db.CreateCommand(sql);
@@ -169,7 +170,7 @@ internal static class PlanSql
         var conflicts = (await ClaimsSql.ConflictsAsync(db, [.. operations.Select(o => o.PlanId).Distinct()], ct)).ToLookup(c => c.OperationId);
         var names = await TraceNames.LoadAsync(db, [.. terminals.Where(t => t > 0)], [], [], ct);
         names.AddPlanned(planned.Terminals);
-        var objects = await ObjectsAsync(db, [.. operations.Where(o => o.Kind is "set_lifecycle" or "rename" or "set_attributes" or "remove").Select(o => (o.ObjectType!, o.ObjectId)).Distinct()],
+        var objects = await ObjectsAsync(db, [.. operations.Where(o => o.Kind is "set_lifecycle" or "rename" or "set_attributes" or "remove" or "set_classification").Select(o => (o.ObjectType!, o.ObjectId)).Distinct()],
             scope, ct);
 
         TraceHop Hop(long terminal) =>
@@ -218,6 +219,7 @@ internal static class PlanSql
             {
                 "set_lifecycle" => $"Sätt livscykel för {target.Code} till {LifecycleName(lifecycle)}",
                 "set_attributes" => $"Ändra attribut på {target.Code}: {AttributeText(op.Payload.GetProperty("attributes"))}",
+                "set_classification" => ClassificationText(op, target),
                 "remove" when op.ObjectType == "site" => $"Ta bort site {target.Code} {target.Name}".TrimEnd() +
                     $" med {ObjectRemoval.Objects(op.Payload).Equipment.Length} utrustningar och {ObjectRemoval.Objects(op.Payload).Cables.Length} kablar",
                 "remove" => $"Ta bort {(op.ObjectType == "cable" ? "kabel" : "utrustning")} {target.Code}",
@@ -258,11 +260,13 @@ internal static class PlanSql
             SELECT 'site', s.id, s.code, s.name, s.lifecycle::text, {ScopeSql.Site("s.id", 4)} FROM site s WHERE s.id = ANY($1)
             UNION ALL SELECT 'equipment', e.id, e.name, NULL, e.lifecycle::text, {ScopeSql.Site("e.site_id", 4)} FROM equipment e WHERE e.id = ANY($2)
             UNION ALL SELECT 'cable', c.id, c.code, NULL, c.lifecycle::text, {ScopeSql.Cable("c.id", 4)} FROM cable c WHERE c.id = ANY($3)
+            UNION ALL SELECT 'service', v.id, v.code, v.name, 'in_service', {ScopeSql.Service("v.id", 4)} FROM service v WHERE v.id = ANY($5)
             """);
         cmd.Parameters.Add(new() { Value = refs.Where(r => r.Type == "site").Select(r => r.Id).ToArray() });
         cmd.Parameters.Add(new() { Value = refs.Where(r => r.Type == "equipment").Select(r => r.Id).ToArray() });
         cmd.Parameters.Add(new() { Value = refs.Where(r => r.Type == "cable").Select(r => r.Id).ToArray() });
         cmd.Parameters.Add(scope.Parameter());
+        cmd.Parameters.Add(new() { Value = refs.Where(r => r.Type == "service").Select(r => r.Id).ToArray() });
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
         {
@@ -277,6 +281,17 @@ internal static class PlanSql
     {
         var site = g.SiteIndexOfNode(node);
         return mask.NodeVisible(g, node);
+    }
+
+    private static string ClassificationText(PlanOp op, ObjectRef target)
+    {
+        var schema = Cmdb.Catalog.ClassificationCatalog.Embedded.Find(op.Payload.GetProperty("schema").GetString()!);
+        var name = schema?.Name ?? op.Payload.GetProperty("schema").GetString();
+        if (op.Payload.TryGetProperty("level", out var level) && level.ValueKind == System.Text.Json.JsonValueKind.Number)
+        {
+            return $"Sätt {name} för {target.Code} till {level.GetInt32()} ({schema?.Level(level.GetInt32())?.Name})";
+        }
+        return $"Ta bort {name} från {target.Code}";
     }
 
     private static string AttributeText(System.Text.Json.JsonElement attributes) => string.Join(", ", attributes.EnumerateObject()

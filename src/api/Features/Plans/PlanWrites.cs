@@ -88,6 +88,19 @@ public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views
             }
             payload = created;
         }
+        else if (req.Kind == "set_classification")
+        {
+            // The same checks as setting it directly: the object is in the caller's scopes, the schema and level exist and fit (#176).
+            if (!await PlanSql.ObjectVisibleAsync(db, req.Type!, req.ObjectId!.Value, scope, ct))
+            {
+                return PlanWrite.Fail<PlanOperationView>(PlanWriteFailure.Invalid, $"{req.Type} {req.ObjectId} finns inte.");
+            }
+            if (Classifications.ClassificationStore.Problem(req.Type!, req.Schema!, req.Level) is { } classificationProblem)
+            {
+                return PlanWrite.Fail<PlanOperationView>(PlanWriteFailure.Invalid, classificationProblem);
+            }
+            payload = System.Text.Json.JsonSerializer.Serialize(new { type = req.Type, id = req.ObjectId, schema = req.Schema, level = req.Level });
+        }
         else if (req.Kind == "remove")
         {
             var (removal, error) = await RemovalAsync(scope, view, req, ct);

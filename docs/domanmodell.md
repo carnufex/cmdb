@@ -108,6 +108,18 @@ Regler:
 4. När en plan avbryts markeras alla planer som beror på den.
 5. Konflikter detekteras på **resursnivå** (terminal, ledare, slot, kanal) via reservationer, inte bara på fältnivå. En plans kopplingar är anspråk på sina terminaler och ledare. En reservation håller resursen åt en plan eller tjänst, och en terminal tar en koppling av varje slag (#25).
 
+### Klassningar (#176, ADR-0017)
+
+En klassning är en nivå i ett schema, till exempel kritikalitet 1–5, på en site, utrustning, kabel eller tjänst. Schemat är data i katalogen och nivåerna är rader i `classification`, så en ny klassning är en fil och inte en migrering.
+
+- **Schema** (`catalog/classifications/*.json`): nyckel, namn, vilka objekttyper det gäller, nivåerna med namn, vilken nivå som räknas som kritisk (`criticalFrom`) och ärvningsregeln (`max` genom inneslutning och beroende, som #177 räknar fram).
+- **Tilldelning:** en nivå per schema och objekt, med källa (satt eller importerad), vem och när.
+- **Sätta:**
+  - Direkt i panelerna av den som har skrivbehörighet (`PUT /api/classifications`, inom omfånget).
+  - I en plan som operationen `set_classification`, som MCP-verktyget `add_to_plan` också använder. Agenter sätter dem inte direkt.
+- **Läsa:** `GET /api/classifications` och MCP-verktygen `describe_classifications` och `get_classification`.
+- **Kritisk tjänst:** felanalysen, prioritetsreglerna och driftagenten läser nivån i stället för tjänstens fria attribut. En tjänst är kritisk från schemats `criticalFrom` (kritikalitet 5). Attributet `criticality` flyttades in i schemat av migreringen.
+
 ### Rack och positioner (#173)
 
 Utrustning i ett rack har en position, dess lägsta rackenhet (`equipment.rack_position`), och modellens höjd (`rackUnits` i katalogen) säger hur många enheter den tar. Ett rack är 42 U om inget annat anges.

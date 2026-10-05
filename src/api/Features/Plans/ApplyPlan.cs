@@ -83,7 +83,7 @@ public sealed partial class ApplyPlanEndpoint(RequestDb db, GraphHolder holder, 
                     return;
                 }
             }
-            run = new PlanApply(conn, tx);
+            run = new PlanApply(conn, tx, PlanSql.Actor(User));
             foreach (var op in operations)
             {
                 if (!await run.RunAsync(op, ct))

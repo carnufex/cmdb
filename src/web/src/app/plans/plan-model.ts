@@ -119,6 +119,13 @@ export type NewOperation =
   | { kind: 'split_cable'; cableId: number; siteId: number; terminate: number[] }
   | { kind: 'remove'; type: 'site' | 'equipment' | 'cable'; objectId: number }
   | {
+      kind: 'set_classification';
+      type: 'site' | 'equipment' | 'cable' | 'service';
+      objectId: number;
+      schema: string;
+      level: number | null;
+    }
+  | {
       kind: 'set_attributes';
       type: 'site' | 'equipment';
       objectId: number;
