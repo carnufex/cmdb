@@ -43,7 +43,7 @@ export interface Incident {
 /** GET /api/risks (#137) */
 export interface Risk {
   id: string;
-  kind: 'digging' | 'false-redundancy' | 'battery';
+  kind: 'digging' | 'false-redundancy' | 'battery' | 'classification';
   title: string;
   description: string;
   reference: string;
@@ -61,6 +61,7 @@ export const riskKindLabels: Record<Risk['kind'], string> = {
   digging: 'Grävning',
   'false-redundancy': 'Falsk redundans',
   battery: 'Reservkraft',
+  classification: 'Klassningskrav',
 };
 
 /** GET /api/voice/service-requests (ADR-0016) */
@@ -576,7 +577,8 @@ const FRESH_SMS_MS = 5 * 60_000;
       align-items: center;
     }
     [data-kind='digging'] .dot,
-    [data-kind='false-redundancy'] .dot {
+    [data-kind='false-redundancy'] .dot,
+    [data-kind='classification'] .dot {
       background: var(--status-conflict);
     }
     [data-kind='battery'] .dot {

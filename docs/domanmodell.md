@@ -129,6 +129,19 @@ Ett objekt har också en härledd nivå: den högsta av dess egen nivå, nivåer
 - **Förklaring:** varje härledd nivå säger vad den kommer från ("innehåller SW-1 (5)", "bär tjänst TJ-… (4)").
 - **Beräkning:** på begäran ur grafens vy, `GET /api/classifications/derived?type=&id=&plan=`. Den följer därför deltan och planvyer av sig själv, och en plans egna `set_classification` räknas i dess vy. Tjänster utanför användarens omfång räknas inte. Panelerna visar den härledda raden, och sitepanelen nivån per rack. MCP-verktyget `get_classification` ger både satt och härledd nivå.
 
+#### Krav per nivå (#178)
+
+Ett schema kan ha regler: krav som gäller när ett objekts härledda nivå når en viss nivå. Reglerna är data i schemat med två typer.
+
+- **`cables`:** antalet kablar vid en site mot ett minimum. `supporting` räknar bara kablar som själva bär minst sitens nivå, och `independent` räknar siterna i andra änden, så två kablar till samma granne räknas som en.
+- **`attribute`:** ett numeriskt attribut på objektet självt ska vara minst ett värde.
+
+Kritikalitet 4 och uppåt kräver två kablar till olika siter som bär nivån, och reservkraft i minst 4 timmar (`backupHours` på siten).
+
+- **Utvärdering:** `GET /api/classifications/rules?type=site&id=&plan=` ger varje krav med uppfyllt eller inte, värdet, kablarna som räknas och vad som skulle uppfylla det. Mot en plans vy räknas planens nya, delade och borttagna kablar och dess attributändringar.
+- **Risker:** siter som någon klassat (själva siten, eller utrustning i den) vars krav inte är uppfyllda blir risken *Klassningskrav* i driftläget och i driftagentens risklista, med åtgärdsförslag. Siter som bara är kritiska för att tjänster går genom dem lämnas åt felanalysen, annars drunknar resten. Högst 50 siter kontrolleras per körning.
+- **MCP:** `get_classification` ger kraven tillsammans med satt och härledd nivå.
+
 ### Rack och positioner (#173)
 
 Utrustning i ett rack har en position, dess lägsta rackenhet (`equipment.rack_position`), och modellens höjd (`rackUnits` i katalogen) säger hur många enheter den tar. Ett rack är 42 U om inget annat anges.

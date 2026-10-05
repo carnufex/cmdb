@@ -11,5 +11,26 @@
     { "level": 5, "name": "Kritisk", "description": "Får inte falla: oberoende reservväg och reservkraft krävs." }
   ],
   "criticalFrom": 5,
-  "inheritance": { "containment": "max", "dependency": "max" }
+  "inheritance": { "containment": "max", "dependency": "max" },
+  "rules": [
+    {
+      "id": "two-independent-cables",
+      "fromLevel": 4,
+      "appliesTo": ["site"],
+      "type": "cables",
+      "min": 2,
+      "supporting": true,
+      "independent": true,
+      "requirement": "Minst två kablar till olika siter som bär nivån"
+    },
+    {
+      "id": "backup-power",
+      "fromLevel": 4,
+      "appliesTo": ["site"],
+      "type": "attribute",
+      "attribute": "backupHours",
+      "min": 4,
+      "requirement": "Reservkraft i minst 4 timmar (attributet backupHours)"
+    }
+  ]
 }

@@ -16,4 +16,16 @@ public sealed class ClassificationCatalogTests
         schema.AppliesTo.Order().ShouldBe(["cable", "equipment", "service", "site"]);
         schema.Level(6).ShouldBeNull();
     }
+
+    [Fact]
+    public void The_criticality_schema_has_requirements_for_levels_four_and_five()
+    {
+        var rules = ClassificationCatalog.Embedded.Find("criticality")!.RuleList;
+
+        rules.Select(r => r.Id).ShouldBe(["two-independent-cables", "backup-power"]);
+        rules.ShouldAllBe(r => r.FromLevel == 4 && r.AppliesTo.Contains("site"));
+        rules.Single(r => r.Type == "cables").ShouldSatisfyAllConditions(
+            r => r.Min.ShouldBe(2), r => r.Supporting.ShouldBeTrue(), r => r.Independent.ShouldBeTrue());
+        rules.Single(r => r.Type == "attribute").Attribute.ShouldBe("backupHours");
+    }
 }

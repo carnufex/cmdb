@@ -167,6 +167,68 @@ public sealed class ClassificationTests(ApiFactory factory)
         (await Derived("cable", cable, plan.Id)).ElapsedMs.ShouldBeLessThan(500);
     }
 
+    [Fact]
+    public async Task A_classified_site_must_meet_the_requirements_of_its_level_and_what_is_missing_shows_as_a_risk()
+    {
+        var db = await factory.NewDatabaseAsync();
+        await Loader.LoadAsync(db, NetworkBuilder.Build(54, Scale.Small, TypeCatalog.Embedded), reset: false, TextWriter.Null, ct: Ct);
+        var connectionString = new NpgsqlConnectionStringBuilder(factory.ConnectionString)
+        {
+            Database = new NpgsqlConnectionStringBuilder(db.ConnectionString).Database,
+        }.ConnectionString;
+        await using var api = factory.WithWebHostBuilder(b => b.UseSetting("ConnectionStrings:Cmdb", connectionString));
+        await api.Services.GetRequiredService<Cmdb.Graph.GraphHolder>().Ready.WaitAsync(TimeSpan.FromSeconds(60), Ct);
+        await api.Services.GetRequiredService<Cmdb.Api.Auth.ScopeRefreshService>().Ready.WaitAsync(TimeSpan.FromSeconds(60), Ct);
+        using var client = NetworkFixture.Client(api);
+
+        // A site with exactly one in-service cable to one neighbour: two independent cables cannot be met.
+        var site = await Scalar(db, """
+            SELECT s.id FROM site s WHERE s.lifecycle = 'in_service'
+              AND (SELECT count(*) FROM cable c WHERE (c.a_site_id = s.id OR c.b_site_id = s.id) AND c.lifecycle = 'in_service') = 1
+            ORDER BY s.id LIMIT 1
+            """);
+        async Task<RuleReport> Rules() => (await client.GetFromJsonAsync<RuleReport>($"/api/classifications/rules?type=site&id={site}", Ct))!;
+
+        (await Rules()).Results.ShouldBeEmpty();
+        (await client.PutAsJsonAsync("/api/classifications", new { type = "site", id = site, schema = "criticality", level = 5 }, Ct)).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        var report = await Rules();
+        report.Level.ShouldBe(5);
+        report.Unmet.ShouldBe(2);
+        var cables = report.Results.Single(r => r.Rule == "two-independent-cables");
+        (cables.Met, cables.Required).ShouldBe((false, 2));
+        cables.Hint.ShouldContain("Dra");
+        var power = report.Results.Single(r => r.Rule == "backup-power");
+        (power.Met, power.Actual).ShouldBe((false, null));
+
+        // The requirement shows as a risk with what to do about it.
+        var risks = (await client.GetFromJsonAsync<JsonElement>("/api/risks", Ct)).EnumerateArray().ToList();
+        var risk = risks.Single(r => r.GetProperty("id").GetString() == $"classification-{site}");
+        risk.GetProperty("kind").GetString().ShouldBe("classification");
+        risk.GetProperty("description").GetString()!.ShouldContain("2 av 2 krav");
+
+        // Setting the attribute meets that requirement.
+        await using (var cmd = db.CreateCommand($"UPDATE site SET attributes = attributes || '{{\"backupHours\": 8}}'::jsonb WHERE id = {site}"))
+        {
+            await cmd.ExecuteNonQueryAsync(Ct);
+        }
+        var after = await Rules();
+        after.Results.Single(r => r.Rule == "backup-power").Met.ShouldBeTrue();
+        after.Unmet.ShouldBe(1);
+
+        // A plan that adds two cables to different neighbours, which carry nothing, still does not meet it: the cables must carry the level.
+        var plan = (await (await client.PostAsJsonAsync("/api/plans", new { name = "Fler kablar" }, Ct)).Content.ReadFromJsonAsync<PlanSummary>(Ct))!;
+        var others = await Ids(db, $"SELECT id FROM site WHERE id <> {site} AND lifecycle = 'in_service' ORDER BY id LIMIT 2");
+        foreach (var other in others)
+        {
+            (await client.PostAsJsonAsync($"/api/plans/{plan.Id}/operations", new { kind = "create_cable", aSiteId = site, bSiteId = other, typeKey = "fiber-12" }, Ct))
+                .StatusCode.ShouldBe(HttpStatusCode.OK);
+        }
+        var planned = (await client.GetFromJsonAsync<RuleReport>($"/api/classifications/rules?type=site&id={site}&plan={plan.Id}", Ct))!;
+        var plannedCables = planned.Results.Single(r => r.Rule == "two-independent-cables");
+        plannedCables.Met.ShouldBeFalse();
+        plannedCables.Hint.ShouldContain("bär inte nivån");
+    }
+
     private static async Task<List<long>> Ids(NpgsqlDataSource db, string sql)
     {
         await using var cmd = db.CreateCommand(sql);

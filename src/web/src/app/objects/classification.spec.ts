@@ -129,4 +129,50 @@ describe('classification of an object (#176)', () => {
     expect(text).toContain('innehåller SW-1 AX-48 (5)');
     fixture.destroy();
   });
+
+  it('lists the requirements of the level and what is missing (#178)', async () => {
+    const { http, fixture, settle } = await setup('/');
+    http.expectOne('/api/classifications/schemas').flush([schema]);
+    http.expectOne((r) => r.url === '/api/classifications' && r.method === 'GET').flush([]);
+    await settle();
+    http.match((r) => r.url.startsWith('/api/classifications/derived'));
+    http
+      .expectOne((r) => r.url.startsWith('/api/classifications/rules'))
+      .flush({
+        schema: 'criticality',
+        level: 5,
+        name: 'Kritisk',
+        unmet: 1,
+        results: [
+          {
+            rule: 'two-independent-cables',
+            requirement: 'Minst två kablar till olika siter som bär nivån',
+            met: false,
+            actual: 1,
+            required: 2,
+            objects: [],
+            hint: 'Dra 1 kabel till en annan site som bär nivån.',
+          },
+          {
+            rule: 'backup-power',
+            requirement: 'Reservkraft i minst 4 timmar',
+            met: true,
+            actual: 8,
+            required: 4,
+            objects: [],
+            hint: '',
+          },
+        ],
+      });
+    await settle();
+    const el = fixture.nativeElement as HTMLElement;
+    const items = [...el.querySelectorAll('.rules li')];
+    expect(items.length).toBe(2);
+    expect(items[0].getAttribute('data-met')).toBe('false');
+    expect(items[0].textContent).toContain('Saknas');
+    expect(items[0].textContent).toContain('(1 av 2)');
+    expect(items[0].textContent).toContain('Dra 1 kabel');
+    expect(items[1].textContent).toContain('Uppfyllt');
+    fixture.destroy();
+  });
 });
