@@ -191,6 +191,28 @@ export interface ImportResult {
             </select>
           </label>
           <label>Namn <input name="name" [(ngModel)]="name" required maxlength="200" /></label>
+          <label
+            >Rack
+            <input name="rack" [(ngModel)]="rack" placeholder="Sitens första rack" maxlength="100"
+          /></label>
+          <label
+            >Rum
+            <input
+              name="room"
+              [(ngModel)]="room"
+              placeholder="Bara för ett nytt rack"
+              maxlength="100"
+          /></label>
+          <label
+            >Position (U)
+            <input
+              name="position"
+              type="number"
+              min="1"
+              max="60"
+              [(ngModel)]="rackUnit"
+              placeholder="Överst i racket"
+          /></label>
           <button
             type="submit"
             class="action"
@@ -504,6 +526,9 @@ export class PlanCreateComponent implements OnDestroy {
   protected name = '';
   protected siteType = 'radio';
   protected site = '';
+  protected rack = '';
+  protected room = '';
+  protected rackUnit: number | null = null;
   protected typeKey = '';
   protected siteA = '';
   protected siteB = '';
@@ -636,7 +661,12 @@ export class PlanCreateComponent implements OnDestroy {
         siteId,
         typeKey: this.typeKey,
         name: this.name.trim(),
+        // Rack, room and position (#173): left out, the site's first rack and the top of what it holds.
+        ...(this.rack.trim() ? { rack: this.rack.trim() } : {}),
+        ...(this.room.trim() ? { room: this.room.trim() } : {}),
+        ...(this.rackUnit ? { position: Number(this.rackUnit) } : {}),
       });
+      this.rackUnit = null;
       this.name = '';
     });
   }

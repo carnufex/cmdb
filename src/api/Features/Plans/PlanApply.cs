@@ -153,6 +153,7 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx)
         // Equipment sits in a rack: the named one (#26), created in a building on the site when missing; without a name,
         // the site's first rack, or a new "Rack 1".
         var rack = p.TryGetProperty("rack", out var r) && r.ValueKind == JsonValueKind.String ? r.GetString()! : null;
+        var room = p.TryGetProperty("room", out var rm) && rm.ValueKind == JsonValueKind.String ? rm.GetString()! : null;
         var location = rack is null
             ? await ScalarAsync<long?>("SELECT id FROM location WHERE site_id = $1 ORDER BY (kind = 'rack') DESC, id LIMIT 1", ct, site)
             : await ScalarAsync<long?>("SELECT id FROM location WHERE site_id = $1 AND kind = 'rack' AND name = $2 ORDER BY id LIMIT 1", ct, site, rack);
@@ -160,13 +161,25 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx)
         {
             var building = await ScalarAsync<long?>("SELECT id FROM location WHERE site_id = $1 AND kind = 'building' ORDER BY id LIMIT 1", ct, site)
                 ?? await ScalarAsync<long>("INSERT INTO location (site_id, kind, name) VALUES ($1, 'building', 'Byggnad A') RETURNING id", ct, site);
-            location = await ScalarAsync<long>("INSERT INTO location (site_id, parent_id, kind, name) VALUES ($1, $2, 'rack', $3) RETURNING id", ct,
-                site, building, rack ?? "Rack 1");
+            // A named room (#173) holds the rack; it is created in the building when missing.
+            var parent = room is null ? building
+                : await ScalarAsync<long?>("SELECT id FROM location WHERE site_id = $1 AND kind = 'room' AND name = $2 ORDER BY id LIMIT 1", ct, site, room)
+                    ?? await ScalarAsync<long>("INSERT INTO location (site_id, parent_id, kind, name) VALUES ($1, $2, 'room', $3) RETURNING id", ct,
+                        site, building, room);
+            location = await ScalarAsync<long>("INSERT INTO location (site_id, parent_id, kind, name, rack_units) VALUES ($1, $2, 'rack', $3, 42) RETURNING id", ct,
+                site, parent, rack ?? "Rack 1");
         }
+        // Its lowest rack unit (#173): the planned one, or on top of what the rack holds.
+        var position = p.TryGetProperty("position", out var at) && at.ValueKind == JsonValueKind.Number ? (object)at.GetInt16() : DBNull.Value;
         var equipment = await ScalarAsync<long>("""
-            INSERT INTO equipment (equipment_type_id, site_id, location_id, name)
-            SELECT t.id, $1, $2, $3 FROM equipment_type t WHERE t.key = $4 RETURNING id
-            """, ct, site, location, p.GetProperty("name").GetString()!, typeKey);
+            INSERT INTO equipment (equipment_type_id, site_id, location_id, name, rack_position)
+            SELECT t.id, $1, $2, $3,
+                   CASE WHEN t.rack_units IS NULL THEN NULL
+                        ELSE coalesce($5::smallint, (SELECT coalesce(max(e.rack_position + coalesce(u.rack_units, 1)), 1)::smallint
+                                                     FROM equipment e JOIN equipment_type u ON u.id = e.equipment_type_id
+                                                     WHERE e.location_id = $2 AND e.rack_position IS NOT NULL AND e.lifecycle <> 'removed')) END
+            FROM equipment_type t WHERE t.key = $4 RETURNING id
+            """, ct, site, location, p.GetProperty("name").GetString()!, typeKey, position);
         Ids[Planned.ObjectId(op.Id)] = equipment;
 
         var ports = PortExpansion.Expand(type);

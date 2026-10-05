@@ -104,6 +104,12 @@ public sealed class AddOperationRequest
     /// <summary>create_equipment: the rack it sits in, created in a building on the site when missing (#26).</summary>
     public string? Rack { get; set; }
 
+    /// <summary>create_equipment: the room the rack stands in, created when missing (#173).</summary>
+    public string? Room { get; set; }
+
+    /// <summary>create_equipment: its lowest rack unit (#173); without it, it goes on top of what the rack holds.</summary>
+    public int? Position { get; set; }
+
     /// <summary>set_attributes: keys to set; a null value removes the key (#27).</summary>
     public System.Text.Json.JsonElement? Attributes { get; set; }
 

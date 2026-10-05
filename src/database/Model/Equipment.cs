@@ -33,6 +33,9 @@ public class Equipment : Tracked
     public long? ParentId { get; set; }
     public Equipment? Parent { get; set; }
     public string? Slot { get; set; }
+
+    /// <summary>The lowest rack unit it takes in its rack (#173); its model's height says how many.</summary>
+    public short? RackPosition { get; set; }
     public required string Name { get; set; }
     public string Attributes { get; set; } = "{}";
     public List<Port> Ports { get; } = [];
@@ -68,6 +71,7 @@ internal sealed class EquipmentConfiguration : IEntityTypeConfiguration<Equipmen
             t.HasCheckConstraint("ck_equipment_placement", "(location_id IS NOT NULL) <> (parent_id IS NOT NULL)");
             t.HasCheckConstraint("ck_equipment_slot", "(parent_id IS NULL) = (slot IS NULL)");
             t.HasCheckConstraint("ck_equipment_not_own_parent", "parent_id IS DISTINCT FROM id");
+            t.HasCheckConstraint("ck_equipment_rack_position", "rack_position IS NULL OR (rack_position > 0 AND parent_id IS NULL)");
         });
         e.Property(x => x.Id).UseIdentityAlwaysColumn();
         e.HasOne(x => x.EquipmentType).WithMany().OnDelete(DeleteBehavior.Restrict);

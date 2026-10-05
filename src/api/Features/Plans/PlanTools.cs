@@ -71,6 +71,15 @@ public sealed class AgentPlanOperation
     [Description("create_cable: the site at the B end.")]
     public string? BSite { get; set; }
 
+    [Description("create_equipment: the rack it sits in (by name); the site's first rack when left out, created when missing.")]
+    public string? Rack { get; set; }
+
+    [Description("create_equipment: the room the rack stands in, created when missing.")]
+    public string? Room { get; set; }
+
+    [Description("create_equipment: its lowest rack unit; checked against the rack's height and what sits there. Left out, it goes on top.")]
+    public int? Position { get; set; }
+
     [Description("split_cable: the cable to insert the site (Site) into, \"cable:56\". Its conductors are spliced through in the site, " +
         "connections move to the new cables' ends and circuits keep running.")]
     public string? Cable { get; set; }
@@ -161,6 +170,9 @@ public sealed class PlanTools(RequestDb db, PlanWrites writes, PlanViews views, 
                 ASiteId = op.ASite is null ? null : ParseRef(op.ASite, "site", planned: true),
                 BSiteId = op.BSite is null ? null : ParseRef(op.BSite, "site", planned: true),
                 CableId = op.Cable is null ? null : ParseRef(op.Cable, "cable", planned: false),
+                Rack = op.Rack,
+                Room = op.Room,
+                Position = op.Position,
                 Terminate = op.Terminate,
             });
         }
