@@ -50,7 +50,7 @@ public sealed record PlanOp(long Id, long PlanId, int Seq, string Kind, JsonElem
         "connect" or "disconnect" => new[] { A, B }.Where(id => id < 0),
         "create_equipment" => new[] { Payload.GetProperty("site").GetInt64() }.Where(id => id < 0),
         "create_cable" => new[] { Payload.GetProperty("a").GetInt64(), Payload.GetProperty("b").GetInt64() }.Where(id => id < 0),
-        "split_cable" => new[] { Payload.GetProperty("site").GetInt64() }.Where(id => id < 0),
+        "split_cable" or "move" => new[] { Payload.GetProperty("site").GetInt64() }.Where(id => id < 0),
         "set_classification" => new[] { Payload.GetProperty("id").GetInt64() }.Where(id => id < 0),
         _ => [],
     };
@@ -98,7 +98,7 @@ public sealed record PlanView(PlanChain Chain, Cmdb.Graph.Graph Graph, IReadOnly
 internal static class PlanKinds
 {
     public static readonly string[] Operations =
-        ["connect", "disconnect", "set_lifecycle", "rename", "set_attributes", "create_site", "create_equipment", "create_cable", "split_cable", "remove", "set_classification"];
+        ["connect", "disconnect", "set_lifecycle", "rename", "set_attributes", "create_site", "create_equipment", "create_cable", "split_cable", "remove", "set_classification", "move"];
 
     public static readonly string[] SiteTypes = ["hub", "aggregation", "radio", "cabinet", "splice"];
     public static readonly string[] Connections = ["patch", "splice", "termination", "internal"];
@@ -209,6 +209,18 @@ public sealed class PlanViews(SystemDb system)
                     problems.TryAdd(op.Id, GraphChangeProblem.CarriesCircuits);
                 }
                 pending.AddRange(ObjectRemoval.Changes(graph, op).Select(c => (op.Id, c)));
+                Flush();
+            }
+            else if (op.Kind == "move")
+            {
+                // The connections on what changes site go (#187); a circuit through it is a problem, as for a removal.
+                Flush();
+                var nodes = ObjectMove.Nodes(graph, op.Payload);
+                if (ObjectRemoval.Circuits(graph, nodes).Count > 0)
+                {
+                    problems.TryAdd(op.Id, GraphChangeProblem.CarriesCircuits);
+                }
+                pending.AddRange(ObjectRemoval.Disconnect(graph, nodes).Select(c => (op.Id, c)));
                 Flush();
             }
             else if (op.Change is { } change)

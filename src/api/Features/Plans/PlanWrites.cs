@@ -115,6 +115,15 @@ public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views
             }
             payload = removal;
         }
+        else if (req.Kind == "move")
+        {
+            var (move, error) = await MoveAsync(scope, view, req, ct);
+            if (move is null)
+            {
+                return PlanWrite.Fail<PlanOperationView>(PlanWriteFailure.Invalid, error!);
+            }
+            payload = move;
+        }
         else if (req.Kind == "split_cable")
         {
             var (split, error) = await SplitAsync(scope, view, req, ct);
@@ -384,6 +393,153 @@ public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views
     }
 
     /// <summary>
+    /// Checks a move (#187) and gives its payload: equipment to another rack or site, or one end of a cable to another site.
+    /// The object and the target site exist and are visible, nothing else in the plan removes, splits or moves the same thing,
+    /// a rack position fits, and nothing that changes site carries a circuit. What moves keeps its row; the connections on
+    /// equipment that changes site and on a moved cable end go.
+    /// </summary>
+    private async Task<(string? Payload, string? Error)> MoveAsync(UserScope scope, PlanView view, AddOperationRequest req, CancellationToken ct)
+    {
+        var (type, id, site) = (req.Type!, req.ObjectId!.Value, req.SiteId!.Value);
+        var end = req.End?.ToUpperInvariant();
+        if (!await PlanSql.ObjectVisibleAsync(db, type, id, scope, ct)
+            || !(type == "equipment" ? view.Graph.TryGetEquipment(id, out _) : view.Graph.TryGetCable(id, out _)))
+        {
+            return (null, $"{type} {id} finns inte.");
+        }
+        foreach (var o in view.Chain.Operations)
+        {
+            var same = o.Kind switch
+            {
+                "remove" => o.ObjectType == type && o.ObjectId == id || (o.ObjectType == "site" && ObjectRemoval.Objects(o.Payload) is var taken
+                    && (type == "equipment" ? taken.Equipment : taken.Cables).Contains(id)),
+                "split_cable" => type == "cable" && o.Payload.GetProperty("cable").GetInt64() == id,
+                "move" => o.ObjectType == type && o.ObjectId == id
+                    && (type == "equipment" || string.Equals(o.Payload.GetProperty("end").GetString(), end, StringComparison.Ordinal)),
+                _ => false,
+            };
+            if (same)
+            {
+                return (null, "Objektet tas bort, kapas eller flyttas redan i planen.");
+            }
+        }
+
+        string siteCode;
+        if (site < 0)
+        {
+            if (view.Chain.Operations.FirstOrDefault(o => o.Kind == "create_site" && Planned.ObjectId(o.Id) == site) is not { } created)
+            {
+                return (null, $"Den planerade siten {site} finns inte i planen.");
+            }
+            siteCode = created.Payload.GetProperty("code").GetString()!;
+        }
+        else
+        {
+            if (!await PlanSql.ObjectVisibleAsync(db, "site", site, scope, ct))
+            {
+                return (null, $"Site {site} finns inte.");
+            }
+            await using var cmd = db.CreateCommand("SELECT code FROM site WHERE id = $1");
+            cmd.Parameters.Add(new() { Value = site });
+            siteCode = (string)(await cmd.ExecuteScalarAsync(ct))!;
+        }
+
+        if (type == "equipment")
+        {
+            await using var cmd = db.CreateCommand("""
+                SELECT e.site_id, e.name, t.key, s.code, e.lifecycle::text FROM equipment e
+                JOIN equipment_type t ON t.id = e.equipment_type_id JOIN site s ON s.id = e.site_id WHERE e.id = $1
+                """);
+            cmd.Parameters.Add(new() { Value = id });
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            if (!await reader.ReadAsync(ct) || reader.GetString(4) == "removed")
+            {
+                return (null, "Utrustningen finns inte längre.");
+            }
+            var (fromSite, name, typeKey, fromCode) = (reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3));
+            await reader.CloseAsync();
+            var rack = string.IsNullOrWhiteSpace(req.Rack) ? null : req.Rack.Trim();
+            if (site == fromSite && rack is null && req.Position is null)
+            {
+                return (null, "Utrustningen sitter redan på siten: ange rack eller position, eller en annan site.");
+            }
+            if (req.Position is { } position && await RackProblemAsync(view, site, rack, typeKey, position, ct, except: id) is { } rackProblem)
+            {
+                return (null, rackProblem);
+            }
+            if (site != fromSite)
+            {
+                var circuits = ObjectRemoval.Circuits(view.Graph, ObjectRemoval.Nodes(view.Graph, [id], []));
+                if (circuits.Count > 0)
+                {
+                    return (null, $"{circuits.Count} kretsar går genom utrustningen. Flytta dem först, annars bryts tjänsterna.");
+                }
+            }
+            return (System.Text.Json.JsonSerializer.Serialize(new
+            {
+                type,
+                id,
+                code = name,
+                site,
+                siteCode,
+                fromSite,
+                fromCode,
+                rack,
+                room = string.IsNullOrWhiteSpace(req.Room) ? null : req.Room.Trim(),
+                position = req.Position,
+            }), null);
+        }
+
+        await using var cableCmd = db.CreateCommand("""
+            SELECT c.a_site_id, c.b_site_id, c.code, c.lifecycle::text, a.code, b.code,
+                   ARRAY(SELECT ce.terminal_id FROM conductor_end ce JOIN conductor k ON k.id = ce.conductor_id
+                         WHERE k.cable_id = c.id AND ce.side = $2 ORDER BY ce.terminal_id)
+            FROM cable c JOIN site a ON a.id = c.a_site_id JOIN site b ON b.id = c.b_site_id WHERE c.id = $1
+            """);
+        cableCmd.Parameters.Add(new() { Value = id });
+        cableCmd.Parameters.Add(new() { Value = end!, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text });
+        await using var cableReader = await cableCmd.ExecuteReaderAsync(ct);
+        if (!await cableReader.ReadAsync(ct) || cableReader.GetString(3) == "removed")
+        {
+            return (null, "Kabeln finns inte längre.");
+        }
+        var (a, b, code) = (cableReader.GetInt64(0), cableReader.GetInt64(1), cableReader.GetString(2));
+        var (fromEnd, other) = end == "A" ? (a, b) : (b, a);
+        var fromEndCode = end == "A" ? cableReader.GetString(4) : cableReader.GetString(5);
+        var terminals = cableReader.GetFieldValue<long[]>(6);
+        if (site == fromEnd)
+        {
+            return (null, $"Änden sitter redan på {siteCode}.");
+        }
+        if (site == other)
+        {
+            return (null, "Kabeln skulle sluta på samma site i båda ändar.");
+        }
+        var carried = ObjectRemoval.Circuits(view.Graph, [.. terminals.Where(t => view.Graph.TryGetNode(t, out _)).Select(t =>
+        {
+            view.Graph.TryGetNode(t, out var node);
+            return node;
+        })]);
+        if (carried.Count > 0)
+        {
+            return (null, $"{carried.Count} kretsar går genom änden. Flytta dem först, annars bryts tjänsterna.");
+        }
+        return (System.Text.Json.JsonSerializer.Serialize(new
+        {
+            type,
+            id,
+            code,
+            end,
+            site,
+            siteCode,
+            fromSite = fromEnd,
+            fromCode = fromEndCode,
+            otherSite = other,
+            terminals,
+        }), null);
+    }
+
+    /// <summary>
     /// Checks a removal (#172) and gives its payload: the object exists, is visible and not removed already, and nothing it
     /// takes along carries a circuit. A site takes its equipment and the cables that end at it.
     /// </summary>
@@ -436,7 +592,8 @@ public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views
     /// production and the plan's view put there (equipment the plan removes frees its units). The rack is the named one,
     /// or the site's first, as the apply picks it.
     /// </summary>
-    private async Task<string?> RackProblemAsync(PlanView view, long site, string? rack, string typeKey, int position, CancellationToken ct)
+    private async Task<string?> RackProblemAsync(PlanView view, long site, string? rack, string typeKey, int position, CancellationToken ct,
+        long? except = null)
     {
         if (Cmdb.Catalog.TypeCatalog.Embedded.Find(typeKey)?.RackUnits is not { } units)
         {
@@ -457,6 +614,10 @@ public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views
             cmd.Parameters.Add(new() { Value = site });
             cmd.Parameters.Add(new() { Value = (object?)rack ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text });
             var removed = view.Chain.Operations.Where(o => o.Kind == "remove").SelectMany(o => ObjectRemoval.Objects(o.Payload).Equipment).ToHashSet();
+            if (except is { } moving)
+            {
+                removed.Add(moving);
+            }
             await using var reader = await cmd.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct))
             {

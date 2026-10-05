@@ -401,6 +401,80 @@ public sealed class PlannedObjectTests(ApiFactory factory)
         (await Scalar(db, $"SELECT rack_position FROM equipment WHERE name = 'SW-RACK-'")).ShouldBe(System.Math.Max(top, 41));
     }
 
+    [Fact]
+    public async Task Equipment_and_cable_ends_move_between_racks_and_sites_and_what_carries_circuits_stays()
+    {
+        var (db, api) = await NetworkAsync(46);
+        await using var dbScope = db;
+        await using var apiScope = api;
+        using var client = NetworkFixture.Client(api);
+
+        // Equipment that carries circuits cannot change site: its services would break.
+        var busy = await Scalar(db, "SELECT min(p.equipment_id) FROM port p JOIN circuit_hop h ON h.terminal_id = p.terminal_id");
+        var busySite = await Scalar(db, $"SELECT site_id FROM equipment WHERE id = {busy}");
+        var other = await Scalar(db, $"SELECT min(id) FROM site WHERE id <> {busySite}");
+        var refusePlan = await CreateAsync(client, "Flytta utrustning med kretsar");
+        var refused = await client.PostAsJsonAsync($"/api/plans/{refusePlan.Id}/operations", new { kind = "move", type = "equipment", objectId = busy, siteId = other }, Ct);
+        refused.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await refused.Content.ReadAsStringAsync(Ct)).ShouldContain("kretsar går genom");
+
+        // A site with a switch and a cable patched to the network.
+        var (site, port) = await SiteWithFreePortAsync(db);
+        var build = await CreateAsync(client, "Bygg en site");
+        var newSite = (await AddAsync(client, build.Id, new { kind = "create_site", code = "RAD-FLYTT-1", name = "Flyttsite", siteType = "radio", x = 651000.0, y = 7101000.0 })).Target!.Id;
+        var radio = await AddAsync(client, build.Id, new { kind = "create_equipment", siteId = newSite, typeKey = "acme-ax-24", name = "RAD-FLYTT-1 AX-24 1" });
+        var cableOp = await AddAsync(client, build.Id, new { kind = "create_cable", aSiteId = site, bSiteId = newSite, typeKey = "fiber-12" });
+        (await AddAsync(client, build.Id, new { kind = "connect", a = port, b = -((cableOp.Id * 10_000) + 1), connectionKind = "splice" })).Problem.ShouldBeNull();
+        (await AddAsync(client, build.Id, new { kind = "connect", a = -((cableOp.Id * 10_000) + 2), b = -((radio.Id * 10_000) + 1), connectionKind = "splice" })).Problem.ShouldBeNull();
+        (await client.PostAsync($"/api/plans/{build.Id}/apply", null, Ct)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        await ApiFactory.GraphCaughtUpAsync(api.Services, db);
+        var realSite = await Scalar(db, "SELECT id FROM site WHERE code = 'RAD-FLYTT-1'");
+        var cable = await Scalar(db, $"SELECT id FROM cable WHERE b_site_id = {realSite}");
+        var switchId = await Scalar(db, $"SELECT id FROM equipment WHERE site_id = {realSite}");
+        var third = await Scalar(db, $"SELECT min(id) FROM site WHERE id NOT IN ({site}, {realSite})");
+        var switchPort = await Scalar(db, $"SELECT min(terminal_id) FROM port WHERE equipment_id = {switchId}");
+        var cableEnd = await Scalar(db, $"SELECT e.terminal_id FROM conductor_end e JOIN conductor k ON k.id = e.conductor_id WHERE k.cable_id = {cable} AND k.number = 1 AND e.side = 'B'");
+        async Task<long> Live(long terminal) => await Scalar(db, $"SELECT count(*) FROM connection WHERE valid_to IS NULL AND ({terminal} IN (a_terminal_id, b_terminal_id))");
+        (await Live(switchPort)).ShouldBe(1);
+        (await Live(cableEnd)).ShouldBe(1);
+
+        // Checked before they are added.
+        var move = await CreateAsync(client, "Flytta");
+        async Task<HttpResponseMessage> Try(object op) => await client.PostAsJsonAsync($"/api/plans/{move.Id}/operations", op, Ct);
+        (await Try(new { kind = "move", type = "equipment", objectId = switchId, siteId = realSite })).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await Try(new { kind = "move", type = "cable", objectId = cable, siteId = site, end = "B" })).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await Try(new { kind = "move", type = "cable", objectId = cable, siteId = third })).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+
+        // The switch goes to the other site, and the cable's far end to a third; the connections on them go.
+        var movedSwitch = await AddAsync(client, move.Id, new { kind = "move", type = "equipment", objectId = switchId, siteId = site });
+        movedSwitch.Problem.ShouldBeNull();
+        movedSwitch.Summary.ShouldContain("Flytta utrustning");
+        var movedEnd = await AddAsync(client, move.Id, new { kind = "move", type = "cable", objectId = cable, siteId = third, end = "B" });
+        movedEnd.Problem.ShouldBeNull();
+        movedEnd.Summary.ShouldContain("Flytta ände B av kabel");
+        (await Try(new { kind = "move", type = "cable", objectId = cable, siteId = third, end = "B" })).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await client.GetFromJsonAsync<PlanDiff>($"/api/plans/{move.Id}/view", Ct))!.Problems.ShouldBe(0);
+        (await client.PostAsync($"/api/plans/{move.Id}/apply", null, Ct)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        await ApiFactory.GraphCaughtUpAsync(api.Services, db);
+        (await Scalar(db, $"SELECT site_id FROM equipment WHERE id = {switchId}")).ShouldBe(site);
+        (await Scalar(db, $"SELECT b_site_id FROM cable WHERE id = {cable}")).ShouldBe(third);
+        (await Scalar(db, $"SELECT a_site_id FROM cable WHERE id = {cable}")).ShouldBe(site);
+        (await Scalar(db, $"SELECT CASE WHEN ST_Equals(ST_EndPoint(geom), (SELECT ST_PointOnSurface(geom) FROM site WHERE id = {third})) THEN 1 ELSE 0 END FROM cable WHERE id = {cable}")).ShouldBe(1);
+        (await Live(switchPort)).ShouldBe(0);
+        (await Live(cableEnd)).ShouldBe(0);
+        // The connection at the end that stayed is still there.
+        (await Scalar(db, $"SELECT count(*) FROM connection WHERE valid_to IS NULL AND kind = 'splice' AND {port} IN (a_terminal_id, b_terminal_id)")).ShouldBe(1);
+
+        // Within a site only the rack and the position change.
+        var rack = await CreateAsync(client, "Annat rack");
+        (await AddAsync(client, rack.Id, new { kind = "move", type = "equipment", objectId = switchId, siteId = site, rack = "Rack Flytt", position = 10 })).Problem.ShouldBeNull();
+        (await client.PostAsync($"/api/plans/{rack.Id}/apply", null, Ct)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        await ApiFactory.GraphCaughtUpAsync(api.Services, db);
+        (await Text(db, $"SELECT l.name FROM equipment e JOIN location l ON l.id = e.location_id WHERE e.id = {switchId}")).ShouldBe("Rack Flytt");
+        (await Scalar(db, $"SELECT rack_position FROM equipment WHERE id = {switchId}")).ShouldBe(10);
+        (await Scalar(db, $"SELECT site_id FROM equipment WHERE id = {switchId}")).ShouldBe(site);
+    }
+
     private async Task<(NpgsqlDataSource Db, WebApplicationFactory<Program> Api)> NetworkAsync(int seed)
     {
         var db = await factory.NewDatabaseAsync();

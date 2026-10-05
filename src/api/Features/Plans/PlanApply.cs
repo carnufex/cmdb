@@ -42,6 +42,9 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx, str
             case "remove":
                 return await RemoveAsync(p, ct);
 
+            case "move":
+                return await MoveAsync(p, ct);
+
             case "set_classification":
                 {
                     // Classifications are not in the graph yet (#177): the row is all there is to change.
@@ -141,7 +144,7 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx, str
         string[] fields = op.Kind switch
         {
             "connect" or "disconnect" or "create_cable" => ["a", "b"],
-            "create_equipment" or "split_cable" => ["site"],
+            "create_equipment" or "split_cable" or "move" => ["site"],
             "set_classification" => ["id"],
             _ => [],
         };
@@ -160,15 +163,12 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx, str
         return op with { Payload = JsonDocument.Parse(node.ToJsonString()).RootElement.Clone() };
     }
 
-    private async Task CreateEquipmentAsync(PlanOp op, JsonElement p, CancellationToken ct)
+    /// <summary>
+    /// The rack equipment goes in: the named one on the site, or the site's first, or a new one (in the named room, in a
+    /// building that is created when the site has none).
+    /// </summary>
+    private async Task<long> RackAsync(long site, string? rack, string? room, CancellationToken ct)
     {
-        var site = p.GetProperty("site").GetInt64();
-        var typeKey = p.GetProperty("typeKey").GetString()!;
-        var type = TypeCatalog.Embedded.Find(typeKey) ?? throw new InvalidOperationException($"Unknown equipment type {typeKey}.");
-        // Equipment sits in a rack: the named one (#26), created in a building on the site when missing; without a name,
-        // the site's first rack, or a new "Rack 1".
-        var rack = p.TryGetProperty("rack", out var r) && r.ValueKind == JsonValueKind.String ? r.GetString()! : null;
-        var room = p.TryGetProperty("room", out var rm) && rm.ValueKind == JsonValueKind.String ? rm.GetString()! : null;
         var location = rack is null
             ? await ScalarAsync<long?>("SELECT id FROM location WHERE site_id = $1 ORDER BY (kind = 'rack') DESC, id LIMIT 1", ct, site)
             : await ScalarAsync<long?>("SELECT id FROM location WHERE site_id = $1 AND kind = 'rack' AND name = $2 ORDER BY id LIMIT 1", ct, site, rack);
@@ -184,6 +184,19 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx, str
             location = await ScalarAsync<long>("INSERT INTO location (site_id, parent_id, kind, name, rack_units) VALUES ($1, $2, 'rack', $3, 42) RETURNING id", ct,
                 site, parent, rack ?? "Rack 1");
         }
+        return location.Value;
+    }
+
+    private async Task CreateEquipmentAsync(PlanOp op, JsonElement p, CancellationToken ct)
+    {
+        var site = p.GetProperty("site").GetInt64();
+        var typeKey = p.GetProperty("typeKey").GetString()!;
+        var type = TypeCatalog.Embedded.Find(typeKey) ?? throw new InvalidOperationException($"Unknown equipment type {typeKey}.");
+        // Equipment sits in a rack: the named one (#26), created in a building on the site when missing; without a name,
+        // the site's first rack, or a new "Rack 1".
+        var rack = p.TryGetProperty("rack", out var r) && r.ValueKind == JsonValueKind.String ? r.GetString()! : null;
+        var room = p.TryGetProperty("room", out var rm) && rm.ValueKind == JsonValueKind.String ? rm.GetString()! : null;
+        var location = await RackAsync(site, rack, room, ct);
         // Its lowest rack unit (#173): the planned one, or on top of what the rack holds.
         var position = p.TryGetProperty("position", out var at) && at.ValueKind == JsonValueKind.Number ? (object)at.GetInt16() : DBNull.Value;
         var equipment = await ScalarAsync<long>("""
@@ -393,6 +406,66 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx, str
             await ExecuteAsync("UPDATE equipment SET lifecycle = 'removed' WHERE id = ANY($1)", ct, equipment);
             await ExecuteAsync("UPDATE cable SET lifecycle = 'removed' WHERE id = ANY($1)", ct, cables);
         }
+        return true;
+    }
+
+    /// <summary>
+    /// A move (#187): equipment to another rack or site, or a cable's end to another site. What changes site (equipment) or
+    /// moves (a cable end) loses the connections on its terminals; a cable's geometry follows the end to the site's point.
+    /// False when the object is removed already.
+    /// </summary>
+    private async Task<bool> MoveAsync(JsonElement p, CancellationToken ct)
+    {
+        var type = p.GetProperty("type").GetString()!;
+        var id = p.GetProperty("id").GetInt64();
+        var site = p.GetProperty("site").GetInt64();
+        if (type == "equipment")
+        {
+            if (await ScalarAsync<long?>("SELECT site_id FROM equipment WHERE id = $1 AND lifecycle <> 'removed'", ct, id) is not { } current)
+            {
+                return false;
+            }
+            var rack = p.TryGetProperty("rack", out var r) && r.ValueKind == JsonValueKind.String ? r.GetString() : null;
+            var room = p.TryGetProperty("room", out var rm) && rm.ValueKind == JsonValueKind.String ? rm.GetString() : null;
+            var location = current == site && rack is null
+                ? await ScalarAsync<long>("SELECT location_id FROM equipment WHERE id = $1", ct, id)
+                : await RackAsync(site, rack, room, ct);
+            if (current != site)
+            {
+                await ExecuteAsync("""
+                    UPDATE connection SET valid_to = now(), lifecycle = 'removed'
+                    WHERE valid_to IS NULL AND (a_terminal_id IN (SELECT terminal_id FROM port WHERE equipment_id = $1)
+                                             OR b_terminal_id IN (SELECT terminal_id FROM port WHERE equipment_id = $1))
+                    """, ct, id);
+            }
+            var position = p.TryGetProperty("position", out var at) && at.ValueKind == JsonValueKind.Number ? (object)at.GetInt16() : DBNull.Value;
+            await ExecuteAsync("""
+                UPDATE equipment e SET site_id = $2, location_id = $3,
+                       rack_position = CASE WHEN t.rack_units IS NULL THEN NULL
+                            ELSE coalesce($4::smallint, (SELECT coalesce(max(o.rack_position + coalesce(u.rack_units, 1)), 1)::smallint
+                                                         FROM equipment o JOIN equipment_type u ON u.id = o.equipment_type_id
+                                                         WHERE o.location_id = $3 AND o.id <> e.id AND o.rack_position IS NOT NULL
+                                                           AND o.lifecycle <> 'removed')) END
+                FROM equipment_type t WHERE e.id = $1 AND t.id = e.equipment_type_id
+                """, ct, id, site, location, position);
+            return true;
+        }
+
+        var end = p.GetProperty("end").GetString()!;
+        if (await ScalarAsync<long?>("SELECT id FROM cable WHERE id = $1 AND lifecycle <> 'removed'", ct, id) is null)
+        {
+            return false;
+        }
+        await ExecuteAsync("""
+            WITH t AS (SELECT e.terminal_id FROM conductor_end e JOIN conductor c ON c.id = e.conductor_id WHERE c.cable_id = $1 AND e.side = $2)
+            UPDATE connection SET valid_to = now(), lifecycle = 'removed'
+            WHERE valid_to IS NULL AND (a_terminal_id IN (SELECT terminal_id FROM t) OR b_terminal_id IN (SELECT terminal_id FROM t))
+            """, ct, id, end);
+        await ExecuteAsync($"""
+            UPDATE cable SET {(end == "A" ? "a_site_id" : "b_site_id")} = $2,
+                   geom = ST_SetPoint(geom, {(end == "A" ? "0" : "ST_NPoints(geom) - 1")}, (SELECT ST_PointOnSurface(geom) FROM site WHERE id = $2))
+            WHERE id = $1
+            """, ct, id, site);
         return true;
     }
 

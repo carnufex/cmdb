@@ -105,6 +105,10 @@ public sealed class ClassificationRules(RequestDb db, ClassificationDerivation d
             {
                 removed.UnionWith(ObjectRemoval.Objects(op.Payload).Cables);
             }
+            else if (op.Kind == "move" && op.ObjectType == "cable")
+            {
+                removed.Add(op.ObjectId);
+            }
         }
         var list = new List<SiteCable>();
         await using (var cmd = db.Source.CreateCommand($"""
@@ -134,6 +138,13 @@ public sealed class ClassificationRules(RequestDb db, ClassificationDerivation d
                 case "create_cable":
                     planned.Add((Planned.ObjectId(op.Id), $"NY-K{op.Id}", op.Payload.GetProperty("a").GetInt64(), op.Payload.GetProperty("b").GetInt64()));
                     break;
+                case "move" when op.ObjectType == "cable":
+                    {
+                        var (moved, other) = (op.Payload.GetProperty("site").GetInt64(), op.Payload.GetProperty("otherSite").GetInt64());
+                        var atA = op.Payload.GetProperty("end").GetString() == "A";
+                        planned.Add((op.ObjectId, op.Payload.GetProperty("code").GetString()!, atA ? moved : other, atA ? other : moved));
+                        break;
+                    }
                 case "split_cable":
                     {
                         var code = op.Payload.GetProperty("code").GetString()!;

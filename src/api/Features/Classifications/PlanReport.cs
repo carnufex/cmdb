@@ -91,6 +91,10 @@ public sealed class PlanClassification(RequestDb db, ClassificationDerivation de
                 case "create_equipment" or "split_cable":
                     sites.Add(op.Payload.GetProperty("site").GetInt64());
                     break;
+                case "move":
+                    sites.Add(op.Payload.GetProperty("site").GetInt64());
+                    sites.Add(op.Payload.GetProperty("fromSite").GetInt64());
+                    break;
                 case "create_cable":
                     sites.Add(op.Payload.GetProperty("a").GetInt64());
                     sites.Add(op.Payload.GetProperty("b").GetInt64());

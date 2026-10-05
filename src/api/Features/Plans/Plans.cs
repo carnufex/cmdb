@@ -128,6 +128,9 @@ public sealed class AddOperationRequest
 
     /// <summary>split_cable: conductor numbers terminated in the site instead of spliced through.</summary>
     public int[]? Terminate { get; set; }
+
+    /// <summary>move a cable: the end that moves, A or B.</summary>
+    public string? End { get; set; }
 }
 
 public sealed class AddOperationValidator : Validator<AddOperationRequest>
@@ -169,6 +172,16 @@ public sealed class AddOperationValidator : Validator<AddOperationRequest>
         {
             RuleFor(r => r.Type).Must(t => t is "site" or "equipment" or "cable").WithMessage("type is site, equipment or cable.");
             RuleFor(r => r.ObjectId).NotNull().GreaterThan(0).WithMessage("objectId is an existing object; remove a planned one by deleting its operation.");
+        });
+        When(r => r.Kind == "move", () =>
+        {
+            RuleFor(r => r.Type).Must(t => t is "equipment" or "cable").WithMessage("type is equipment or cable.");
+            RuleFor(r => r.ObjectId).NotNull().GreaterThan(0).WithMessage("objectId is an existing object.");
+            RuleFor(r => r.SiteId).NotNull().NotEqual(0).WithMessage("site is the site it moves to, existing or planned.");
+            RuleFor(r => r.Rack).MaximumLength(100);
+            When(r => r.Type == "cable", () =>
+                RuleFor(r => r.End).Must(e => e is not null && (e.Equals("A", StringComparison.OrdinalIgnoreCase) || e.Equals("B", StringComparison.OrdinalIgnoreCase)))
+                    .WithMessage("end is A or B."));
         });
         When(r => r.Kind == "split_cable", () =>
         {

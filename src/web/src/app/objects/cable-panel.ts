@@ -1,3 +1,4 @@
+import { PlanMoveComponent } from '../plans/plan-move';
 import { PlanRemoveComponent } from '../plans/plan-remove';
 import { ClassificationComponent } from './classification';
 import { HttpClient, httpResource } from '@angular/common/http';
@@ -16,6 +17,7 @@ import { ObjectLinkComponent } from './object-link';
   selector: 'cmdb-cable-panel',
   imports: [
     ClassificationComponent,
+    PlanMoveComponent,
     PlanRemoveComponent,
     ObjectLinkComponent,
     StatusComponent,
@@ -37,6 +39,7 @@ import { ObjectLinkComponent } from './object-link';
       </header>
       <cmdb-classification type="cable" [objectId]="c.id" />
       <cmdb-plan-remove type="cable" [objectId]="c.id" />
+      <cmdb-plan-move type="cable" [objectId]="c.id" />
       <section>
         <h3>Ändar</h3>
         <dl class="facts">

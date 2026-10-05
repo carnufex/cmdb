@@ -204,6 +204,17 @@ Siter och kablar kan importeras i bulk till en plan, från CSV eller GeoJSON. Ex
 
 Operationen `remove` sätter livscykeln borttagen och avslutar varje koppling på objektets portar och ledarändar. Raden ligger kvar, och grafen ändras bara genom kopplingar. En site tar med sig sin utrustning och kablarna som slutar där. Ett objekt som bär en krets kan inte tas bort, eftersom tjänsterna då skulle brytas utan att någon beslutat det. Kretsarna måste flyttas först. Kartans planlager visar det som tas bort, och den kabel en kapning ersätter, överstruket.
 
+### Flytta utrustning och kabeländar (#187)
+
+Operationen `move` flyttar utrustning till ett annat rack eller en annan site, eller en kabels ena ände (A eller B) till en annan site. Målsiten kan vara en site som planen själv skapar.
+
+- **Inom en site:** utrustningen byter rack (och rum) och enhet. Racket skapas om det saknas, och enheten kontrolleras som för ny utrustning (ryms, ingen krock, utrustningens egna enheter räknas som lediga).
+- **Till en annan site:** utrustningens kopplingar följer inte med och tas bort. Kabeln hålls kvar i sin andra ände, och dess geometri följer änden till målsitens punkt.
+- **Kabelände:** kopplingarna på ledarna i den änden tas bort. Kabeln får inte sluta på samma site i båda ändar.
+- **Kretsar:** det som bär en krets kan inte flyttas, som vid borttag (#172): kretsarna måste flyttas först. Ett nekande kommer redan när operationen läggs till, och som problem i planens vy om en krets lagts till under tiden.
+- **Förhandsvisning:** planens vy visar att kopplingarna försvinner, men utrustningen står fortfarande på sin gamla site där tills planen förts in (grafen håller siten per utrustning, #123). Klassningsrapporten och reglerna räknar dock med målsiten för kabeländar och tar med båda siterna för en utrustning som flyttas.
+- **Gränssnitt:** *Flytta* i utrustnings- och kabelpanelerna, och MCP: `add_to_plan` med `kind: move`, `target`, `site`, `end` (kabel) eller `rack`/`position` (utrustning).
+
 ### Sätta in en site i en befintlig kabel (#168)
 
 Operationen `split_cable` delar en kabel vid en site (befintlig eller planerad i samma plan, högst 2 km från kabeln och inte vid en ände):

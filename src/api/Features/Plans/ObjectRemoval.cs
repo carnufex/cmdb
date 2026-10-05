@@ -59,7 +59,12 @@ public static class ObjectRemoval
     public static IReadOnlyList<GraphChange> Changes(Cmdb.Graph.Graph g, PlanOp op)
     {
         var (equipment, cables) = Objects(op.Payload);
-        var nodes = Nodes(g, equipment, cables);
+        return Disconnect(g, Nodes(g, equipment, cables));
+    }
+
+    /// <summary>Every connection on the nodes goes, once; a conductor's own two ends stay together.</summary>
+    public static IReadOnlyList<GraphChange> Disconnect(Cmdb.Graph.Graph g, List<int> nodes)
+    {
         var removing = nodes.ToHashSet();
         var changes = new List<GraphChange>();
         var seen = new HashSet<(int, int)>();
@@ -78,5 +83,35 @@ public static class ObjectRemoval
             }
         }
         return changes;
+    }
+}
+
+/// <summary>
+/// Moving equipment to another rack or site, or a cable's end to another site (#187). Equipment that changes site and a cable
+/// end lose the connections on them: the cabling does not follow, and nothing that carries a circuit may move, as with a
+/// removal (#172). Equipment that stays on its site only changes rack and position, which the graph does not hold.
+/// </summary>
+public static class ObjectMove
+{
+    /// <summary>The ports (equipment that changes site) or the conductor ends on the moved side of a cable, as nodes.</summary>
+    public static List<int> Nodes(Cmdb.Graph.Graph g, JsonElement p)
+    {
+        var nodes = new List<int>();
+        if (p.GetProperty("type").GetString() == "equipment")
+        {
+            if (p.GetProperty("site").GetInt64() != p.GetProperty("fromSite").GetInt64() && g.TryGetEquipment(p.GetProperty("id").GetInt64(), out var e))
+            {
+                nodes.AddRange(g.PortsOf(e).ToArray());
+            }
+            return nodes;
+        }
+        foreach (var terminal in p.GetProperty("terminals").EnumerateArray())
+        {
+            if (g.TryGetNode(terminal.GetInt64(), out var node))
+            {
+                nodes.Add(node);
+            }
+        }
+        return nodes;
     }
 }
