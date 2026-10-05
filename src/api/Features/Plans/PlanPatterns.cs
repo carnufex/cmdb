@@ -314,7 +314,7 @@ public sealed class PlanPatterns(RequestDb db, PlanWrites writes, PlanViews view
         return odfs;
     }
 
-    private async Task RemoveAsync(long planId, long[] operations, CancellationToken ct)
+    internal async Task RemoveAsync(long planId, long[] operations, CancellationToken ct)
     {
         if (operations.Length == 0)
         {

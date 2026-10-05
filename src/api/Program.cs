@@ -51,6 +51,7 @@ builder.Services.AddSingleton<Cmdb.Api.Features.Plans.PlanViews>();
 builder.Services.AddScoped<Cmdb.Api.Features.Plans.PlanWrites>();
 builder.Services.AddScoped<Cmdb.Api.Features.Plans.PlanPatterns>();
 builder.Services.AddScoped<Cmdb.Api.Features.Plans.PlanImport>();
+builder.Services.AddScoped<Cmdb.Api.Features.Plans.RoutePlanner>();
 builder.Services.AddScoped<Cmdb.Api.Features.Classifications.ClassificationDerivation>();
 builder.Services.AddScoped<Cmdb.Api.Features.Classifications.ClassificationRules>();
 builder.Services.AddScoped<Cmdb.Api.Features.Classifications.PlanClassification>();

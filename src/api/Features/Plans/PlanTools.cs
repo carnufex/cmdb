@@ -102,7 +102,7 @@ public sealed class AgentPlanOperation
 /// </summary>
 [McpServerToolType]
 public sealed class PlanTools(RequestDb db, PlanWrites writes, PlanViews views, GraphHolder holder, ScopeMasks masks, AgentLinks links,
-    PlanPatterns patterns, PlanImport import, IHttpContextAccessor http)
+    PlanPatterns patterns, PlanImport import, RoutePlanner routes, IHttpContextAccessor http)
 {
     private const int MaxOperations = 100;
 
@@ -265,6 +265,42 @@ public sealed class PlanTools(RequestDb db, PlanWrites writes, PlanViews views, 
             new ImportRequest { Id = planId, Format = format, Content = content, DryRun = dryRun }, ct);
         return result.Value ?? throw new McpException(result.Error!);
     }
+
+    [McpServerTool(Name = "suggest_route", Title = "Föreslå väg", ReadOnly = true, Idempotent = true, OpenWorld = false)]
+    [Description("Suggests how to connect two sites over existing cables that still have free fibres: up to three alternatives, " +
+        "shortest first, each with the sites and cables it runs over and where fibres are spliced through. When there is no way " +
+        "it suggests a new cable between the closest sites of the two sides. Calculated on cables and sites, not ducts. " +
+        "Nothing is written; add_route_to_plan puts an alternative in a plan.")]
+    public async Task<RouteSuggestion> SuggestRoute(
+        [Description("The start site: its code (e.g. \"HUB-001\") or \"site:12\".")] string from,
+        [Description("The goal site.")] string to,
+        [Description("How many fibres the connection needs, 1–96. Default 1.")] int fibres = 1,
+        [Description("A plan, \"plan:12\": count what that plan already uses as taken.")] string? plan = null,
+        CancellationToken ct = default)
+    {
+        var result = await routes.SuggestAsync(Http.Scope(),
+            new RouteRequest { From = SiteKey(from), To = SiteKey(to), Fibres = fibres, Plan = plan is null ? null : ParseRef(plan, "plan") }, ct);
+        return result.Value ?? throw new McpException(result.Error ?? "Hittade inte siterna.");
+    }
+
+    [McpServerTool(Name = "add_route_to_plan", Title = "Lägg väg i plan", Destructive = false, OpenWorld = false)]
+    [Description("Adds one of the alternatives from suggest_route to a draft plan: a new cable if it needs one, and splices of free " +
+        "fibres through each site on the way, all or nothing. The ends are left for terminate_cable or connect_ports.")]
+    public async Task<AgentPlanAdded> AddRouteToPlan(
+        [Description("The plan, \"plan:12\".")] string plan,
+        [Description("The start site: its code or \"site:12\".")] string from,
+        [Description("The goal site.")] string to,
+        [Description("How many fibres, 1–96. Default 1.")] int fibres = 1,
+        [Description("Which alternative from suggest_route, from 0. Default 0.")] int alternative = 0,
+        CancellationToken ct = default)
+    {
+        RequireWriter();
+        var planId = ParseRef(plan, "plan");
+        return await AddedAsync(planId, await routes.AddAsync(Http.User, Http.Scope(),
+            new AddRouteRequest { Id = planId, From = SiteKey(from), To = SiteKey(to), Fibres = fibres, Alternative = alternative }, ct));
+    }
+
+    private static string SiteKey(string site) => site.StartsWith("site:", StringComparison.Ordinal) ? site["site:".Length..] : site;
 
     [McpServerTool(Name = "splice_ports_to_cable", Title = "Mönsterpatchning", Destructive = false, OpenWorld = false)]
     [Description("Pattern patching: ports from a start port (every portStep-th) to fibres from a start fibre (every conductorStep-th) " +

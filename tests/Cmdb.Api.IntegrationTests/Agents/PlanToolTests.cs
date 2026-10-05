@@ -247,6 +247,64 @@ public sealed class PlanToolTests(ApiFactory factory)
     }
 
     [Fact]
+    public async Task An_agent_gets_routes_over_cables_with_free_fibres_or_a_new_cable_and_puts_one_in_a_plan()
+    {
+        var (db, api) = await NetworkAsync(35);
+        await using var dbScope = db;
+        await using var apiScope = api;
+        await using var agent = await ConnectAsync(api, AgentToken());
+        // Two sites with a site between them, over cables that still have fibres nothing is spliced to.
+        await using var cmd = db.CreateCommand("""
+            WITH fr AS (SELECT k.cable_id FROM conductor k WHERE NOT EXISTS (
+                            SELECT 1 FROM conductor_end ce JOIN connection x ON x.valid_to IS NULL AND (x.a_terminal_id = ce.terminal_id OR x.b_terminal_id = ce.terminal_id)
+                            WHERE ce.conductor_id = k.id) GROUP BY k.cable_id),
+                 e AS (SELECT c.a_site_id s, c.b_site_id t FROM cable c JOIN fr ON fr.cable_id = c.id WHERE c.lifecycle = 'in_service'
+                       UNION ALL SELECT c.b_site_id, c.a_site_id FROM cable c JOIN fr ON fr.cable_id = c.id WHERE c.lifecycle = 'in_service')
+            SELECT e1.s, e2.t FROM e e1 JOIN e e2 ON e1.t = e2.s WHERE e1.s <> e2.t
+            ORDER BY e1.s, e2.t LIMIT 1
+            """);
+        await using var reader = await cmd.ExecuteReaderAsync(Ct);
+        (await reader.ReadAsync(Ct)).ShouldBeTrue();
+        var (from, to) = (reader.GetInt64(0), reader.GetInt64(1));
+        await reader.CloseAsync();
+
+        var suggestion = Json(await agent.CallToolAsync("suggest_route",
+            new Dictionary<string, object?> { ["from"] = $"site:{from}", ["to"] = $"site:{to}" }, cancellationToken: Ct));
+        var alternatives = suggestion.GetProperty("alternatives");
+        alternatives.GetArrayLength().ShouldBeGreaterThan(0);
+        var best = alternatives[0];
+        best.GetProperty("sites")[0].GetProperty("id").GetInt64().ShouldBe(from);
+        best.GetProperty("sites").EnumerateArray().Last().GetProperty("id").GetInt64().ShouldBe(to);
+        best.GetProperty("splices").GetInt32().ShouldBe(best.GetProperty("cables").GetArrayLength() - 1);
+        best.GetProperty("cables").EnumerateArray().ShouldAllBe(c => c.GetProperty("free").GetInt32() >= 1);
+        suggestion.GetProperty("elapsedMs").GetDouble().ShouldBeLessThan(2000);
+
+        // Into a plan: one splice per site on the way and fibre.
+        var plan = Json(await agent.CallToolAsync("create_plan", new Dictionary<string, object?> { ["name"] = "Ny förbindelse" }, cancellationToken: Ct))
+            .GetProperty("ref").GetString()!;
+        var added = Json(await agent.CallToolAsync("add_route_to_plan",
+            new Dictionary<string, object?> { ["plan"] = plan, ["from"] = $"site:{from}", ["to"] = $"site:{to}" }, cancellationToken: Ct));
+        added.GetProperty("added").GetArrayLength().ShouldBe(best.GetProperty("splices").GetInt32());
+        added.GetProperty("added").EnumerateArray().ShouldAllBe(a => a.GetProperty("kind").GetString() == "connect");
+
+        // What the plan now uses counts as taken, so the same route is no longer the best one.
+        var again = Json(await agent.CallToolAsync("suggest_route",
+            new Dictionary<string, object?> { ["from"] = $"site:{from}", ["to"] = $"site:{to}", ["plan"] = plan }, cancellationToken: Ct));
+        again.GetProperty("alternatives").GetArrayLength().ShouldBeGreaterThan(0);
+
+        // More fibres than any cable has free: a new cable between the closest sites of the two sides, with its splices.
+        var wide = Json(await agent.CallToolAsync("suggest_route",
+            new Dictionary<string, object?> { ["from"] = $"site:{from}", ["to"] = $"site:{to}", ["fibres"] = 96 }, cancellationToken: Ct));
+        var newCable = wide.GetProperty("alternatives")[0].GetProperty("newCable");
+        newCable.GetProperty("typeKey").GetString().ShouldBe("fiber-96");
+        wide.GetProperty("note").GetString()!.ShouldContain("ny kabel");
+
+        // The tool refuses what it cannot do.
+        (await agent.CallToolAsync("suggest_route", new Dictionary<string, object?> { ["from"] = $"site:{from}", ["to"] = $"site:{from}" },
+            cancellationToken: Ct)).IsError.ShouldBe(true);
+    }
+
+    [Fact]
     public async Task An_agent_classifies_new_equipment_in_a_plan_and_checks_what_that_does_to_the_site()
     {
         var (db, api) = await NetworkAsync(32);
