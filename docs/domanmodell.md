@@ -155,6 +155,14 @@ När en plan läggs in ska det synas vad den gör med nivåerna. Lägger du en n
 - **Det som planen själv bryter:** bara krav som var uppfyllda i produktion, eller inte gällde, och inte är det i planens vy räknas mot planen. Ett krav som redan saknades är inte planens fel.
 - **Införande:** en plan som gör krav ouppfyllda förs bara in med ett undantag och en motivering (`POST /api/plans/{id}/apply?exception=…`, högst 500 tecken), som sparas på planen och visas. Annars svarar servern 409 med kraven. Webben frågar efter motiveringen.
 
+#### Klassning i kartan (#180)
+
+Kartans teckenförklaring har en väljare *Klassning* (av, eller från nivå 1–5). Då ritas siter och kablar från den nivån ovanpå ett nedtonat nät: nivån som siffra, rött från schemats kritiska nivå och bärnsten under den. Status är fortfarande prick och text i panelerna. Ett klick öppnar siten eller kabeln.
+
+- **Underlag:** `GET /api/classifications/map?schema=&min=` ger siter (id, kod, namn, position, nivå) och kablar (id, kod, nivå, förenklad sträckning). Nivån är den härledda från #177, men räknad i bulk: varje klassad tjänst märker siterna och kablarna dess kretsar går genom, ner genom kretsarna de ligger på, och klassad utrustning märker sin site.
+- **Behörighet:** bara siter, kablar och tjänster inom anroparens omfång. Ett omfång som döljer positioner får en tom karta.
+- **Gräns:** högst 4 000 siter och 2 500 kablar, de högsta nivåerna först; `truncated` säger när det fanns fler.
+
 ### Rack och positioner (#173)
 
 Utrustning i ett rack har en position, dess lägsta rackenhet (`equipment.rack_position`), och modellens höjd (`rackUnits` i katalogen) säger hur många enheter den tar. Ett rack är 42 U om inget annat anges.

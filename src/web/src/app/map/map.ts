@@ -1,3 +1,4 @@
+import { httpResource } from '@angular/common/http';
 import {
   afterNextRender,
   ChangeDetectionStrategy,
@@ -47,6 +48,14 @@ import { createBasemap, esriTileUrl, parseBasemap } from './map-basemap';
 import { createStyler, Palette, readPalette } from './map-style';
 import { MapView, Operations, PlannedObjects, Route } from './map-view';
 
+/** GET /api/classifications/map (#180) */
+interface ClassificationLayer {
+  criticalFrom: number;
+  truncated: boolean;
+  sites: { id: number; code: string; name: string; x: number; y: number; level: number }[];
+  cables: { id: number; code: string; level: number; coordinates: number[][] }[];
+}
+
 interface Hover {
   x: number;
   y: number;
@@ -87,9 +96,17 @@ export class MapComponent {
   private planned?: VectorLayer<VectorSource<Feature<Geometry>>>;
   private operations?: VectorLayer<VectorSource<Feature<Geometry>>>;
   private placedLayer?: VectorLayer<VectorSource<Feature<Geometry>>>;
+  private classification?: VectorLayer<VectorSource<Feature<Geometry>>>;
   private liveKey = '';
   private lassoDraw?: Draw;
   protected readonly operationsShown = signal(false);
+
+  /** The classification layer (#180): the lowest level shown, 0 for off. */
+  protected readonly classMin = signal(0);
+  protected readonly classLevels = [1, 2, 3, 4, 5];
+  protected readonly classLayer = httpResource<ClassificationLayer>(() =>
+    this.classMin() > 0 ? `/api/classifications/map?min=${this.classMin()}` : undefined,
+  );
   private palette?: Palette;
 
   constructor() {
@@ -157,6 +174,13 @@ export class MapComponent {
         this.showOperations(operations);
       }
     });
+    // The classification layer (#180): sites and cables at or above the chosen level, red from the critical one.
+    effect(() => {
+      const layer = this.classMin() > 0 ? this.classLayer.value() : undefined;
+      if (this.classification && this.map) {
+        this.showClassification(layer ?? null);
+      }
+    });
     // A point placed for a new site (#167): marked until the form takes it.
     effect(() => {
       const placed = this.mapView.placed();
@@ -201,6 +225,7 @@ export class MapComponent {
       this.route?.changed();
       this.planned?.changed();
       this.operations?.changed();
+      this.classification?.changed();
     };
 
     this.network = new VectorTileLayer({
@@ -237,6 +262,11 @@ export class MapComponent {
       style: (f) => this.operationsStyle(f),
       zIndex: 18,
     });
+    this.classification = new VectorLayer({
+      source: new VectorSource<Feature<Geometry>>(),
+      style: (f) => this.classificationStyle(f),
+      zIndex: 16,
+    });
     this.placedLayer = new VectorLayer({
       source: new VectorSource<Feature<Geometry>>(),
       style: () => this.placedStyle(),
@@ -247,6 +277,7 @@ export class MapComponent {
       this.network,
       this.marks,
       this.planned,
+      this.classification,
       this.operations,
       this.route,
     ];
@@ -319,6 +350,12 @@ export class MapComponent {
         if (feature && (feature.get('planned') === 'site' || feature.get('layer') === 'sites')) {
           this.mapView.pick(String(feature.get('code')));
         }
+        return;
+      }
+      if (feature?.get('cls')) {
+        // The classification layer (#180): a site or a cable opens its panel.
+        const type = feature.get('cls') === 'site' ? 'site' : 'cable';
+        this.panels.open({ type, id: String(feature.getId()) }, { replace: true });
         return;
       }
       if (feature?.get('ops')) {
@@ -502,6 +539,79 @@ export class MapComponent {
         return f;
       }),
     ]);
+  }
+
+  private classificationStyleCache?: { key: string; red: Style[]; amber: Style[] };
+
+  /** Level is the number, colour says critical (red) or not (amber), and the layer draws over a dimmed network. */
+  private classificationStyle(feature: FeatureLike): Style | Style[] {
+    const palette = (this.palette ??= readPalette(this.host.nativeElement));
+    const key = `${palette.conflict}|${palette.decommissioning}|${palette.bg}`;
+    if (this.classificationStyleCache?.key !== key) {
+      this.classificationStyleCache = { key, red: [], amber: [] };
+    }
+    const critical = feature.get('critical') === true;
+    const colour = critical ? palette.conflict : palette.decommissioning;
+    const level = String(feature.get('level'));
+    const cache = critical
+      ? this.classificationStyleCache.red
+      : this.classificationStyleCache.amber;
+    const slot = Number(level);
+    if (!cache[slot]) {
+      const text = new Text({
+        text: level,
+        font: '700 11px Inter Variable, system-ui, sans-serif',
+        fill: new Fill({ color: palette.bg }),
+      });
+      cache[slot] =
+        feature.get('cls') === 'site'
+          ? new Style({
+              image: new Circle({
+                radius: 9,
+                fill: new Fill({ color: colour }),
+                stroke: new Stroke({ color: palette.bg, width: 2 }),
+              }),
+              text,
+              zIndex: 6 + slot,
+            })
+          : new Style({
+              stroke: new Stroke({ color: colour, width: 2 + slot * 0.6 }),
+              zIndex: slot,
+            });
+    }
+    return cache[slot];
+  }
+
+  /** Draws the classification layer; dims the network while it is on, unless a search or a trace already does. */
+  private showClassification(layer: ClassificationLayer | null): void {
+    const source = this.classification!.getSource()!;
+    source.clear(true);
+    if (layer) {
+      source.addFeatures([
+        ...layer.cables.map((c) => {
+          const f = new Feature<Geometry>(new LineString(c.coordinates.map((p) => [p[0], p[1]])));
+          f.setId(c.id);
+          f.set('cls', 'cable');
+          f.set('code', c.code);
+          f.set('level', c.level);
+          f.set('critical', c.level >= layer.criticalFrom);
+          return f;
+        }),
+        ...layer.sites.map((s) => {
+          const f = new Feature<Geometry>(new OlPoint([s.x, s.y]));
+          f.setId(s.id);
+          f.set('cls', 'site');
+          f.set('code', s.code);
+          f.set('name', `${s.name}, nivå ${s.level}`);
+          f.set('level', s.level);
+          f.set('critical', s.level >= layer.criticalFrom);
+          return f;
+        }),
+      ]);
+    }
+    const dim =
+      layer !== null || this.mapView.highlight() !== null || this.mapView.route() !== null;
+    this.network?.setOpacity(dim ? 0.35 : 1);
   }
 
   private placedStyleCache?: { key: string; style: Style };

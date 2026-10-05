@@ -337,6 +337,64 @@ public sealed class ClassificationTests(ApiFactory factory)
         finding.Alternatives.Select(a => a.DistanceM).ShouldBe(finding.Alternatives.Select(a => a.DistanceM).Order());
     }
 
+    [Fact]
+    public async Task The_map_layer_lists_sites_and_cables_from_a_level_with_what_they_contain_and_carry_and_a_narrow_reader_sees_less()
+    {
+        var db = await factory.NewDatabaseAsync();
+        await Loader.LoadAsync(db, NetworkBuilder.Build(54, Scale.Small, TypeCatalog.Embedded), reset: false, TextWriter.Null, ct: Ct);
+        var connectionString = new NpgsqlConnectionStringBuilder(factory.ConnectionString)
+        {
+            Database = new NpgsqlConnectionStringBuilder(db.ConnectionString).Database,
+        }.ConnectionString;
+        await using var api = factory.WithWebHostBuilder(b => b.UseSetting("ConnectionStrings:Cmdb", connectionString));
+        await api.Services.GetRequiredService<Cmdb.Graph.GraphHolder>().Ready.WaitAsync(TimeSpan.FromSeconds(60), Ct);
+        await api.Services.GetRequiredService<Cmdb.Api.Auth.ScopeRefreshService>().Ready.WaitAsync(TimeSpan.FromSeconds(60), Ct);
+        using var client = NetworkFixture.Client(api);
+
+        (await client.GetFromJsonAsync<JsonElement>("/api/classifications/map?min=1", Ct)).GetProperty("sites").GetArrayLength().ShouldBe(0);
+
+        long service = 0, cable = 0;
+        foreach (var id in await Ids(db, "SELECT id FROM cable ORDER BY id LIMIT 400"))
+        {
+            var impact = await client.GetFromJsonAsync<JsonElement>($"/api/cables/{id}/impact", Ct);
+            if (impact.GetProperty("services").GetArrayLength() > 0)
+            {
+                (cable, service) = (id, impact.GetProperty("services")[0].GetProperty("service").GetProperty("id").GetInt64());
+                break;
+            }
+        }
+        cable.ShouldNotBe(0);
+        var equipment = await Scalar(db, "SELECT id FROM equipment ORDER BY id LIMIT 1");
+        var equipmentSite = await Scalar(db, $"SELECT site_id FROM equipment WHERE id = {equipment}");
+        (await client.PutAsJsonAsync("/api/classifications", new { type = "service", id = service, schema = "criticality", level = 4 }, Ct)).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        (await client.PutAsJsonAsync("/api/classifications", new { type = "equipment", id = equipment, schema = "criticality", level = 5 }, Ct)).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+
+        var map = await client.GetFromJsonAsync<JsonElement>("/api/classifications/map?min=1", Ct);
+        map.GetProperty("criticalFrom").GetInt32().ShouldBe(5);
+        map.GetProperty("classifiedServices").GetInt32().ShouldBe(1);
+        var cables = map.GetProperty("cables").EnumerateArray().ToList();
+        cables.ShouldContain(c => c.GetProperty("id").GetInt64() == cable && c.GetProperty("level").GetInt32() == 4);
+        cables.ShouldAllBe(c => c.GetProperty("coordinates").GetArrayLength() >= 2);
+        var sites = map.GetProperty("sites").EnumerateArray().ToList();
+        sites.Count.ShouldBeGreaterThan(1);
+        sites.First(s => s.GetProperty("id").GetInt64() == equipmentSite).GetProperty("level").GetInt32().ShouldBe(5);
+        sites[0].GetProperty("level").GetInt32().ShouldBe(5);
+
+        // From a level up only what reaches it is listed.
+        var critical = await client.GetFromJsonAsync<JsonElement>("/api/classifications/map?min=5", Ct);
+        critical.GetProperty("cables").GetArrayLength().ShouldBe(0);
+        critical.GetProperty("sites").EnumerateArray().ShouldAllBe(s => s.GetProperty("level").GetInt32() == 5);
+        (await client.GetAsync("/api/classifications/map?schema=nope", Ct)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+
+        // A regional reader sees no more than that: whatever it lists is also in the full map, and a site outside the region is not.
+        using var regional = NetworkFixture.Client(api, "cmdb-demo-region", ["cmdb-region-nord"]);
+        var seen = await regional.GetFromJsonAsync<JsonElement>("/api/classifications/map?min=1", Ct);
+        var all = sites.Select(s => s.GetProperty("id").GetInt64()).ToHashSet();
+        var narrow = seen.GetProperty("sites").EnumerateArray().Select(s => s.GetProperty("id").GetInt64()).ToList();
+        narrow.ShouldAllBe(id => all.Contains(id));
+        narrow.Count.ShouldBeLessThanOrEqualTo(all.Count);
+    }
+
     private static async Task<List<long>> Ids(NpgsqlDataSource db, string sql)
     {
         await using var cmd = db.CreateCommand(sql);
