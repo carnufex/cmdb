@@ -22,6 +22,8 @@ export interface PlanSummary {
   /** api (web and REST) or mcp: proposed by an agent (#64), to be reviewed and applied by a person. */
   createdVia: 'api' | 'mcp';
   client: string | null;
+  /** Why the plan was applied although it made requirements of a classification level unmet (#179). */
+  exception?: string | null;
 }
 
 /** One operation in words, with what it touches and, when it no longer fits production, why. */

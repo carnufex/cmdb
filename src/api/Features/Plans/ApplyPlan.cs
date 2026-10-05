@@ -15,7 +15,7 @@ public sealed record ApplyResult(PlanSummary Plan, IReadOnlyList<PlanSummary> Fl
 /// operations no longer fit are flagged. Every dependency must be in production first, and every operation must fit.
 /// </summary>
 public sealed partial class ApplyPlanEndpoint(RequestDb db, GraphHolder holder, PlanViews views, TrustedApplications trust,
-    ILogger<ApplyPlanEndpoint> logger)
+    Classifications.PlanClassification classification, ILogger<ApplyPlanEndpoint> logger)
     : Endpoint<PlanIdRequest, ApplyResult>
 {
     public override void Configure()
@@ -65,6 +65,25 @@ public sealed partial class ApplyPlanEndpoint(RequestDb db, GraphHolder holder, 
             return;
         }
 
+        // A plan that makes requirements of a classification level unmet (a new level-5 switch on a site without the cables or reserve
+        // power) is applied only with an explicit exception and a reason, which is kept (#179). Only what the plan itself breaks counts.
+        // Given as a query parameter, so that applying still takes no body (#179).
+        var given = Query<string?>("exception", isRequired: false);
+        var exception = string.IsNullOrWhiteSpace(given) ? null : given.Trim();
+        if (exception is { Length: > 500 })
+        {
+            await PlanSql.ConflictAsync(HttpContext, "Motiveringen får vara högst 500 tecken.", ct);
+            return;
+        }
+        if (await classification.ReportAsync(scope, plan.Id, ct) is { Introduced: > 0 } unmet && exception is null)
+        {
+            var what = string.Join("; ", unmet.Findings.Where(f => f.Introduced.Count > 0)
+                .Select(f => $"{f.Site.Code} (nivå {f.After}): {string.Join(", ", f.Unmet.Where(r => f.Introduced.Contains(r.Rule)).Select(r => r.Requirement))}"));
+            await PlanSql.ConflictAsync(HttpContext,
+                $"Planen gör {unmet.Introduced} krav ouppfyllda: {what}. Åtgärda dem, eller för in planen med ett undantag och en motivering.", ct);
+            return;
+        }
+
         var operations = view.Chain.Operations;
         PlanApply run;
         await using (var conn = await db.OpenConnectionAsync(ct))
@@ -94,12 +113,14 @@ public sealed partial class ApplyPlanEndpoint(RequestDb db, GraphHolder holder, 
                 }
             }
             await using (var cmd = new NpgsqlCommand("""
-                UPDATE plan SET status = 'applied', applied_by = $2, applied_at = now(), version = version + 1, updated_at = now(), flag = NULL
+                UPDATE plan SET status = 'applied', applied_by = $2, applied_at = now(), version = version + 1, updated_at = now(), flag = NULL,
+                    applied_exception = $3
                 WHERE id = $1
                 """, conn, tx))
             {
                 cmd.Parameters.Add(new() { Value = plan.Id });
                 cmd.Parameters.Add(new() { Value = PlanSql.Actor(User) });
+                cmd.Parameters.Add(new() { Value = (object?)exception ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text });
                 await cmd.ExecuteNonQueryAsync(ct);
             }
             // In production the resources are taken by the connections themselves (#25).

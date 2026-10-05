@@ -204,6 +204,15 @@ export interface ImportResult {
               maxlength="100"
           /></label>
           <label
+            >Kritikalitet
+            <select name="criticality" [(ngModel)]="criticality">
+              <option value="">Ingen</option>
+              @for (l of criticalityLevels(); track l.level) {
+                <option [value]="l.level">{{ l.level }} · {{ l.name }}</option>
+              }
+            </select>
+          </label>
+          <label
             >Position (U)
             <input
               name="position"
@@ -529,6 +538,13 @@ export class PlanCreateComponent implements OnDestroy {
   protected rack = '';
   protected room = '';
   protected rackUnit: number | null = null;
+  protected criticality = '';
+  protected readonly criticalityLevels = computed(
+    () => this.schemas.value()?.find((s) => s.key === 'criticality')?.levels ?? [],
+  );
+  private readonly schemas = httpResource<
+    { key: string; levels: { level: number; name: string }[] }[]
+  >(() => '/api/classifications/schemas');
   protected typeKey = '';
   protected siteA = '';
   protected siteB = '';
@@ -656,7 +672,7 @@ export class PlanCreateComponent implements OnDestroy {
   protected async createEquipment(): Promise<void> {
     await this.run(async () => {
       const siteId = await this.siteId(this.site);
-      await this.active.add({
+      const equipment = await this.active.add({
         kind: 'create_equipment',
         siteId,
         typeKey: this.typeKey,
@@ -666,7 +682,18 @@ export class PlanCreateComponent implements OnDestroy {
         ...(this.room.trim() ? { room: this.room.trim() } : {}),
         ...(this.rackUnit ? { position: Number(this.rackUnit) } : {}),
       });
+      // The level of what is new (#179): the plan then shows what it does to the site's requirements.
+      if (this.criticality) {
+        await this.active.add({
+          kind: 'set_classification',
+          type: 'equipment',
+          objectId: equipment.target!.id,
+          schema: 'criticality',
+          level: Number(this.criticality),
+        });
+      }
       this.rackUnit = null;
+      this.criticality = '';
       this.name = '';
     });
   }

@@ -11,7 +11,9 @@ namespace Cmdb.Api.Features.Plans;
 
 public sealed record PlanSummary(long Id, string Name, string Description, string Status, string? Flag, string CreatedBy,
     DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, string? AppliedBy, DateTimeOffset? AppliedAt, IReadOnlyList<long> DependsOn,
-    int Operations, int Conflicts = 0, string CreatedVia = "api", string? Client = null);
+    int Operations, int Conflicts = 0, string CreatedVia = "api", string? Client = null, string? Exception = null);
+
+
 
 /// <summary>An operation in words, with the objects it touches and, when it no longer fits, why.</summary>
 /// <param name="Conflicts">Claims on the same resources by others (#25): a reservation (blocking) or another plan.</param>
@@ -160,7 +162,7 @@ public sealed class AddOperationValidator : Validator<AddOperationRequest>
         When(r => r.Kind == "set_classification", () =>
         {
             RuleFor(r => r.Type).Must(t => t is "site" or "equipment" or "cable" or "service").WithMessage("type is site, equipment, cable or service.");
-            RuleFor(r => r.ObjectId).NotNull().GreaterThan(0);
+            RuleFor(r => r.ObjectId).NotNull().NotEqual(0).WithMessage("objectId is an object, or a site or equipment the plan creates (negative id).");
             RuleFor(r => r.Schema).NotEmpty().MaximumLength(50);
         });
         When(r => r.Kind == "remove", () =>

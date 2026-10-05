@@ -91,7 +91,12 @@ public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views
         else if (req.Kind == "set_classification")
         {
             // The same checks as setting it directly: the object is in the caller's scopes, the schema and level exist and fit (#176).
-            if (!await PlanSql.ObjectVisibleAsync(db, req.Type!, req.ObjectId!.Value, scope, ct))
+            // A negative id is a site or equipment this plan (or one under it) creates (#179).
+            var target = req.ObjectId!.Value;
+            var exists = target < 0
+                ? req.Type is "site" or "equipment" && view.Chain.Operations.Any(o => o.Kind == $"create_{req.Type}" && Planned.ObjectId(o.Id) == target)
+                : await PlanSql.ObjectVisibleAsync(db, req.Type!, target, scope, ct);
+            if (!exists)
             {
                 return PlanWrite.Fail<PlanOperationView>(PlanWriteFailure.Invalid, $"{req.Type} {req.ObjectId} finns inte.");
             }

@@ -26,7 +26,9 @@ public sealed class ClassificationRules(RequestDb db, ClassificationDerivation d
 {
     private sealed record SiteCable(ObjectRef Cable, long OtherSite, string OtherCode);
 
-    public async Task<RuleReport?> EvaluateAsync(UserScope scope, string type, long id, string schemaKey, long? planId, CancellationToken ct)
+    /// <param name="assumeLevel">Check the requirements of this level instead of the object's derived one: "would this site meet level 5?" (#179).</param>
+    public async Task<RuleReport?> EvaluateAsync(UserScope scope, string type, long id, string schemaKey, long? planId, CancellationToken ct,
+        int? assumeLevel = null)
     {
         var started = System.Diagnostics.Stopwatch.GetTimestamp();
         if (ClassificationCatalog.Embedded.Find(schemaKey) is not { } schema
@@ -35,7 +37,8 @@ public sealed class ClassificationRules(RequestDb db, ClassificationDerivation d
             return null;
         }
         var results = new List<RuleResult>();
-        var applicable = schema.RuleList.Where(r => r.AppliesTo.Contains(type) && derived.Level >= r.FromLevel).ToList();
+        var level = assumeLevel ?? derived.Level;
+        var applicable = schema.RuleList.Where(r => r.AppliesTo.Contains(type) && level >= r.FromLevel).ToList();
         if (applicable.Count > 0)
         {
             var chain = planId is { } plan && holder.Current is { } production && await views.GetAsync(production, plan, scope, ct) is { } view
@@ -47,7 +50,7 @@ public sealed class ClassificationRules(RequestDb db, ClassificationDerivation d
                 if (rule.Type == "cables")
                 {
                     cables ??= await CablesAtAsync(id, chain, scope, ct);
-                    results.Add(await CablesAsync(rule, cables, derived.Level, scope, schemaKey, planId, ct));
+                    results.Add(await CablesAsync(rule, cables, level, scope, schemaKey, planId, ct));
                 }
                 else
                 {
@@ -58,7 +61,7 @@ public sealed class ClassificationRules(RequestDb db, ClassificationDerivation d
                 }
             }
         }
-        return new RuleReport(schemaKey, derived.Level, derived.Name, results, results.Count(r => !r.Met),
+        return new RuleReport(schemaKey, level, schema.Level(level)?.Name ?? derived.Name, results, results.Count(r => !r.Met),
             Math.Round(System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds, 1));
     }
 

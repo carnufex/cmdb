@@ -142,6 +142,83 @@ describe('PlanPanelComponent', () => {
     );
   });
 
+  it('shows what the plan does to classifications and asks for a reason when applying would break requirements (#179)', async () => {
+    const fixture = await open('/?plan=7');
+    const plan = summary(7, 'Etapp 2');
+    flushActive(plan, summary(5, 'Etapp 1'), [operation(11, 7, 'Koppla C till D (patch)')]);
+    await settle(fixture);
+    http.expectOne('/api/plans/7/classification').flush({
+      plan: 7,
+      introduced: 1,
+      elapsedMs: 3,
+      findings: [
+        {
+          site: { type: 'site', id: 12, code: 'AGG-0012', name: 'Lingonåsen' },
+          before: 0,
+          after: 5,
+          afterName: 'Kritisk',
+          raised: true,
+          because: [{ kind: 'contains', subject: { code: 'SW-NY' }, level: 5 }],
+          unmet: [
+            {
+              rule: 'backup-power',
+              requirement: 'Reservkraft i minst 4 timmar',
+              actual: null,
+              required: 4,
+              hint: 'Sätt attributet backupHours på siten till minst 4.',
+            },
+          ],
+          introduced: ['backup-power'],
+          suggestions: [
+            {
+              title: 'Planera reservkraft på AGG-0012: backupHours 4',
+              operation: {
+                kind: 'set_attributes',
+                type: 'site',
+                objectId: 12,
+                attributes: { backupHours: 4 },
+              },
+            },
+          ],
+          alternatives: [
+            {
+              site: { type: 'site', id: 30, code: 'AGG-0030', name: 'Granåsen' },
+              distanceM: 12400,
+              freeRackUnits: 24,
+              cables: 5,
+            },
+          ],
+        },
+      ],
+    });
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.textContent).toContain('höjs från 0 till 5');
+    expect(root.textContent).toContain('innehåller SW-NY (5)');
+    expect(root.textContent).toContain('Reservkraft i minst 4 timmar');
+    expect(root.textContent).toContain('Granåsen');
+    expect(root.textContent).toMatch(/12[.,]4 km/);
+    expect(root.textContent).toContain('Planen gör 1 krav ouppfyllda');
+
+    // Applying is refused with the requirements named; a reason is asked for and sent as the exception.
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const ask = vi.spyOn(window, 'prompt').mockReturnValue('Byggs i nästa etapp.');
+    [...root.querySelectorAll('button')]
+      .find((b) => b.textContent!.includes('För in i produktion'))!
+      .click();
+    http.expectOne('/api/plans/7/apply').flush(
+      {
+        detail: 'Planen gör 1 krav ouppfyllda. För in planen med ett undantag och en motivering.',
+      },
+      { status: 409, statusText: 'Conflict' },
+    );
+    await settle(fixture);
+    expect(ask).toHaveBeenCalled();
+    http
+      .expectOne('/api/plans/7/apply?exception=Byggs%20i%20n%C3%A4sta%20etapp.')
+      .flush({ plan: summary(7, 'Etapp 2', { status: 'applied' }), flagged: [] });
+  });
+
   it('creates a plan on top of the chosen ones and switches to it', async () => {
     const fixture = await open('/');
     http

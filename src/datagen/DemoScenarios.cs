@@ -57,6 +57,14 @@ public static class DemoScenarios
         }
         var (stationId, stationCode) = ((long)station[0], (string)station[1]);
         var alias = stationCode.Replace("AGG-", "", StringComparison.Ordinal).TrimStart('0');
+        // Reserve power on the sites that would have it (#179): hubs a day, aggregation nodes eight hours, and the station only two,
+        // which is what makes it fall short of the requirements of the critical level.
+        await ExecAsync(conn, $$"""
+            UPDATE site SET attributes = attributes || jsonb_build_object('backupHours', CASE site_type WHEN 'hub' THEN 24 ELSE 8 END)
+            WHERE site_type IN ('hub', 'aggregation');
+            UPDATE site SET attributes = attributes || '{"backupHours": 2}'::jsonb WHERE id = {{stationId}};
+            """, ct);
+
         await ExecAsync(conn, $$"""
             UPDATE site SET name = '{{Station}}',
                 attributes = attributes || '{"aliases": ["Lingonåsen station", "Lingonåsens nod", "LGÅ", "Lingon", "aggregering {{alias}}"]}'::jsonb

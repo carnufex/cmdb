@@ -51,6 +51,7 @@ public sealed record PlanOp(long Id, long PlanId, int Seq, string Kind, JsonElem
         "create_equipment" => new[] { Payload.GetProperty("site").GetInt64() }.Where(id => id < 0),
         "create_cable" => new[] { Payload.GetProperty("a").GetInt64(), Payload.GetProperty("b").GetInt64() }.Where(id => id < 0),
         "split_cable" => new[] { Payload.GetProperty("site").GetInt64() }.Where(id => id < 0),
+        "set_classification" => new[] { Payload.GetProperty("id").GetInt64() }.Where(id => id < 0),
         _ => [],
     };
 }
