@@ -208,6 +208,45 @@ public sealed class PlanToolTests(ApiFactory factory)
     }
 
     [Fact]
+    public async Task An_agent_imports_sites_and_cables_into_a_plan_all_or_nothing_and_cannot_apply_them()
+    {
+        var (db, api) = await NetworkAsync(34);
+        await using var dbScope = db;
+        await using var apiScope = api;
+        await using var agent = await ConnectAsync(api, AgentToken());
+        var plan = Json(await agent.CallToolAsync("create_plan", new Dictionary<string, object?> { ["name"] = "Utrullning" }, cancellationToken: Ct))
+            .GetProperty("ref").GetString()!;
+        const string csv = """
+            kind;code;name;template;siteType;lat;lon;a;b;cableType
+            site;AGT-RAD-1;Agentens radiosite;radiosite-standard;;63.8250;20.2630;;;
+            site;AGT-SKP-1;Agentens skåp;;cabinet;63.8330;20.2840;;;
+            cable;;;;;;;AGT-RAD-1;AGT-SKP-1;fiber-12
+            """;
+
+        // A dry run counts and writes nothing.
+        var dry = Json(await agent.CallToolAsync("import_to_plan",
+            new Dictionary<string, object?> { ["plan"] = plan, ["content"] = csv, ["dryRun"] = true }, cancellationToken: Ct));
+        (dry.GetProperty("sites").GetInt32(), dry.GetProperty("cables").GetInt32(), dry.GetProperty("errors").GetArrayLength()).ShouldBe((2, 1, 0));
+
+        var done = Json(await agent.CallToolAsync("import_to_plan",
+            new Dictionary<string, object?> { ["plan"] = plan, ["content"] = csv }, cancellationToken: Ct));
+        (done.GetProperty("sites").GetInt32(), done.GetProperty("cables").GetInt32()).ShouldBe((2, 1));
+
+        // A bad row is reported with its row number and nothing from the file goes in.
+        var bad = Json(await agent.CallToolAsync("import_to_plan", new Dictionary<string, object?>
+        {
+            ["plan"] = plan,
+            ["content"] = csv.Replace("AGT-RAD-1", "AGT-RAD-2").Replace("radiosite-standard", "finns-inte"),
+        }, cancellationToken: Ct));
+        bad.GetProperty("errors").GetArrayLength().ShouldBeGreaterThan(0);
+        bad.GetProperty("sites").GetInt32().ShouldBe(0);
+
+        // An agent proposes and a person applies.
+        using var http = NetworkFixture.Client(api, "cmdb-agent-demo", ["cmdb-agents"]);
+        (await http.PostAsync($"/api/plans/{plan["plan:".Length..]}/apply", null, Ct)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
     public async Task An_agent_classifies_new_equipment_in_a_plan_and_checks_what_that_does_to_the_site()
     {
         var (db, api) = await NetworkAsync(32);

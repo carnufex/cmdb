@@ -102,7 +102,7 @@ public sealed class AgentPlanOperation
 /// </summary>
 [McpServerToolType]
 public sealed class PlanTools(RequestDb db, PlanWrites writes, PlanViews views, GraphHolder holder, ScopeMasks masks, AgentLinks links,
-    PlanPatterns patterns, IHttpContextAccessor http)
+    PlanPatterns patterns, PlanImport import, IHttpContextAccessor http)
 {
     private const int MaxOperations = 100;
 
@@ -244,6 +244,26 @@ public sealed class PlanTools(RequestDb db, PlanWrites writes, PlanViews views, 
         var result = await patterns.TemplateAsync(Http.User, Http.Scope(),
             new TemplateRequest { Id = planId, TemplateKey = template, Code = code, Name = name, X = x, Y = y }, ct);
         return await AddedAsync(planId, result);
+    }
+
+    [McpServerTool(Name = "import_to_plan", Title = "Importera till plan", Destructive = false, OpenWorld = false)]
+    [Description("Adds many sites and cables to a draft plan from CSV or GeoJSON text, e.g. a rollout of a hundred radio sites. " +
+        "CSV: a header row with kind (site or cable), code, name, template (a key from list_site_templates) or siteType, x/y in " +
+        "SWEREF 99 TM or lat/lon in WGS 84, and for cables a, b (site codes) and cableType. GeoJSON: points are sites and line " +
+        "strings cables, with the same names as properties. Everything is checked first and either all of it goes in or none; " +
+        "problems come back per row. Use dryRun to check without writing. Up to 20 000 rows.")]
+    public async Task<ImportResult> ImportToPlan(
+        [Description("The plan, \"plan:12\".")] string plan,
+        [Description("The file's text.")] string content,
+        [Description("csv or geojson. Default csv.")] string format = "csv",
+        [Description("Only check and count; write nothing.")] bool dryRun = false,
+        CancellationToken ct = default)
+    {
+        RequireWriter();
+        var planId = ParseRef(plan, "plan");
+        var result = await import.ImportAsync(Http.User, Http.Scope(),
+            new ImportRequest { Id = planId, Format = format, Content = content, DryRun = dryRun }, ct);
+        return result.Value ?? throw new McpException(result.Error!);
     }
 
     [McpServerTool(Name = "splice_ports_to_cable", Title = "Mönsterpatchning", Destructive = false, OpenWorld = false)]
