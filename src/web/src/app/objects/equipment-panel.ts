@@ -1,4 +1,5 @@
 import { PlanRemoveComponent } from '../plans/plan-remove';
+import { ClassificationComponent } from './classification';
 import { HttpClient, httpResource } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import {
@@ -28,6 +29,7 @@ type Port = EquipmentDetail['ports'][number];
 @Component({
   selector: 'cmdb-equipment-panel',
   imports: [
+    ClassificationComponent,
     PlanRemoveComponent,
     ClaimsComponent,
     ObjectLinkComponent,
@@ -55,6 +57,7 @@ type Port = EquipmentDetail['ports'][number];
           }
         </div>
       </header>
+      <cmdb-classification type="equipment" [objectId]="e.id" />
       <cmdb-plan-remove type="equipment" [objectId]="e.id" />
 
       @if (e.ports.length) {

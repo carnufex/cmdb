@@ -102,7 +102,8 @@ public sealed class LoaderTests(ApiFactory factory)
         await using var cmd = db.CreateCommand($$"""
             SELECT (SELECT count(*) FROM site WHERE name = '{{DemoScenarios.Station}}'),
                    (SELECT count(*) FROM circuit WHERE code LIKE '%{{DemoScenarios.BackupSuffix}}'),
-                   (SELECT count(*) FROM service WHERE name LIKE 'Mobilnät {{DemoScenarios.Station}}%' AND attributes->>'criticality' = 'critical')
+                   (SELECT count(*) FROM service s JOIN classification c ON c.object_type = 'service' AND c.object_id = s.id AND c.schema_key = 'criticality' AND c.level >= 5
+                    WHERE s.name LIKE 'Mobilnät {{DemoScenarios.Station}}%')
             """);
         await using var reader = await cmd.ExecuteReaderAsync(Ct);
         await reader.ReadAsync(Ct);

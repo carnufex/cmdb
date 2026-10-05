@@ -83,10 +83,15 @@ public static class FaultAnalysis
         var ids = visible.Select(g.ServiceId).ToArray();
         var rows = new Dictionary<long, (string Code, string Name, string Type, bool Critical)>();
         await using (var cmd = db.CreateCommand("""
-            SELECT id, code, name, service_type, attributes->>'criticality' = 'critical' IS TRUE FROM service WHERE id = ANY($1)
+            SELECT s.id, s.code, s.name, s.service_type,
+                   EXISTS (SELECT 1 FROM classification c
+                           WHERE c.object_type = 'service' AND c.object_id = s.id AND c.schema_key = 'criticality' AND c.level >= $2)
+            FROM service s WHERE s.id = ANY($1)
             """))
         {
             cmd.Parameters.Add(new() { Value = ids });
+            // The level that counts as critical is the schema's to say (#176).
+            cmd.Parameters.Add(new() { Value = Cmdb.Catalog.ClassificationCatalog.Embedded.Find("criticality")!.CriticalFrom });
             await using var reader = await cmd.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct))
             {

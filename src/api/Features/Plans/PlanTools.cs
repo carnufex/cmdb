@@ -26,7 +26,8 @@ public sealed record AgentPlanAdded(AgentPlan Plan, IReadOnlyList<AgentPlanChang
 public sealed class AgentPlanOperation
 {
     [Description("connect, disconnect, set_lifecycle, rename, create_site, create_equipment, create_cable, split_cable (insert a site into a cable) " +
-        "or remove (a site, equipment or cable that carries no circuits; a site takes its equipment and cables along).")]
+        "remove (a site, equipment or cable that carries no circuits; a site takes its equipment and cables along) " +
+        "or set_classification (a classification level on a site, equipment, cable or service).")]
     public string Kind { get; set; } = "";
 
     [Description("connect/disconnect: the first terminal id (ports and conductor ends have terminal ids in get_object).")]
@@ -38,7 +39,7 @@ public sealed class AgentPlanOperation
     [Description("connect: patch, splice, termination or internal. Default patch.")]
     public string? ConnectionKind { get; set; }
 
-    [Description("set_lifecycle/rename/remove: a reference \"site:12\", \"equipment:34\" or \"cable:56\" (rename: site or equipment).")]
+    [Description("set_lifecycle/rename/remove/set_classification: a reference \"site:12\", \"equipment:34\" or \"cable:56\" (rename: site or equipment; set_classification also \"service:78\").")]
     public string? Target { get; set; }
 
     [Description("set_lifecycle: planned, under_construction, in_service, decommissioning or removed.")]
@@ -79,6 +80,13 @@ public sealed class AgentPlanOperation
 
     [Description("create_equipment: its lowest rack unit; checked against the rack's height and what sits there. Left out, it goes on top.")]
     public int? Position { get; set; }
+
+    [Description("set_classification: the schema (see describe_classifications), e.g. \"criticality\"; target is the object, \"site:12\", " +
+        "\"equipment:34\", \"cable:56\" or \"service:78\".")]
+    public string? Schema { get; set; }
+
+    [Description("set_classification: the level; leave out to clear the classification.")]
+    public int? Level { get; set; }
 
     [Description("split_cable: the cable to insert the site (Site) into, \"cable:56\". Its conductors are spliced through in the site, " +
         "connections move to the new cables' ends and circuits keep running.")]
@@ -170,6 +178,8 @@ public sealed class PlanTools(RequestDb db, PlanWrites writes, PlanViews views, 
                 ASiteId = op.ASite is null ? null : ParseRef(op.ASite, "site", planned: true),
                 BSiteId = op.BSite is null ? null : ParseRef(op.BSite, "site", planned: true),
                 CableId = op.Cable is null ? null : ParseRef(op.Cable, "cable", planned: false),
+                Schema = op.Schema,
+                Level = op.Level,
                 Rack = op.Rack,
                 Room = op.Room,
                 Position = op.Position,
@@ -448,8 +458,8 @@ public sealed class PlanTools(RequestDb db, PlanWrites writes, PlanViews views, 
     {
         var colon = reference.IndexOf(':', StringComparison.Ordinal);
         var type = colon > 0 ? reference[..colon] : "";
-        return type is "site" or "equipment" or "cable"
+        return type is "site" or "equipment" or "cable" or "service"
             ? (type, ParseRef(reference, type))
-            : throw new McpException($"\"{reference}\" is not a reference like \"site:12\", \"equipment:34\" or \"cable:56\".");
+            : throw new McpException($"\"{reference}\" is not a reference like \"site:12\", \"equipment:34\", \"cable:56\" or \"service:78\".");
     }
 }

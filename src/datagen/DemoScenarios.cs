@@ -104,8 +104,9 @@ public static class DemoScenarios
         await BackupAsync(conn, (long)trueBackup[0], (string)trueBackup[2], (long)elsewhere[0], ct);
 
         await ExecAsync(conn, $$"""
-            UPDATE service SET attributes = attributes - 'criticality';
-            UPDATE service SET attributes = attributes || '{"criticality": "critical"}'::jsonb
+            DELETE FROM classification WHERE object_type = 'service' AND schema_key = 'criticality';
+            INSERT INTO classification (object_type, object_id, schema_key, level, source, set_by)
+            SELECT 'service', id, 'criticality', 5, 'imported', 'demo' FROM service
             WHERE service_type = 'core-link' OR id IN ({{falseBackup[0]}}, {{trueBackup[0]}});
             UPDATE service SET name = 'Mobilnät {{Station}} norr' WHERE id = {{falseBackup[0]}};
             UPDATE service SET name = 'Mobilnät {{Station}} syd' WHERE id = {{trueBackup[0]}};
@@ -119,8 +120,8 @@ public static class DemoScenarios
         await ExecAsync(conn, $"DELETE FROM planned_work WHERE contractor = '{Contractor}'", ct);
         await ExecAsync(conn, $$"""
             WITH RECURSIVE down(service_id, circuit_id) AS (
-                SELECT sc.service_id, sc.circuit_id FROM service_circuit sc JOIN service s ON s.id = sc.service_id
-                WHERE s.attributes->>'criticality' = 'critical'
+                SELECT sc.service_id, sc.circuit_id FROM service_circuit sc
+                JOIN classification cl ON cl.object_type = 'service' AND cl.object_id = sc.service_id AND cl.schema_key = 'criticality' AND cl.level >= 5
                 UNION
                 SELECT d.service_id, cd.carrier_id FROM down d JOIN circuit_dependency cd ON cd.circuit_id = d.circuit_id
             ), busiest AS (

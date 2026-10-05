@@ -9,7 +9,7 @@ namespace Cmdb.Api.Features.Plans;
 /// Runs a plan's operations against production (#24, #107), in one transaction. Objects the plan creates get real ids;
 /// later operations that refer to them are rewritten on the way, and so are the draft plans that build on this one.
 /// </summary>
-internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx)
+internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx, string actor = "plan")
 {
     /// <summary>Planned id → production id, for objects, conductors and terminals.</summary>
     public Dictionary<long, long> Ids { get; } = [];
@@ -41,6 +41,20 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx)
 
             case "remove":
                 return await RemoveAsync(p, ct);
+
+            case "set_classification":
+                {
+                    // Classifications are not in the graph yet (#177): the row is all there is to change.
+                    var type = p.GetProperty("type").GetString()!;
+                    var id = p.GetProperty("id").GetInt64();
+                    if (await ScalarAsync<long?>($"SELECT id FROM {(type == "service" ? "service" : Table(p))} WHERE id = $1", ct, id) is null)
+                    {
+                        return false;
+                    }
+                    await Classifications.ClassificationStore.SetAsync(conn, tx, type, id, p.GetProperty("schema").GetString()!,
+                        p.TryGetProperty("level", out var level) && level.ValueKind == JsonValueKind.Number ? level.GetInt32() : null, actor, ct);
+                    return true;
+                }
 
             case "connect":
                 return await ExecuteAsync("""
@@ -428,6 +442,7 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx)
         "site" => "site",
         "equipment" => "equipment",
         "cable" => "cable",
+        "service" => "service",
         var t => throw new InvalidOperationException($"Unknown object type {t}."),
     };
 

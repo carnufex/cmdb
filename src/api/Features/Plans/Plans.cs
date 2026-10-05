@@ -117,6 +117,10 @@ public sealed class AddOperationRequest
     public long? ASiteId { get; set; }
     public long? BSiteId { get; set; }
 
+    /// <summary>set_classification (#176): the schema (e.g. criticality) and the level; a null level clears it.</summary>
+    public string? Schema { get; set; }
+    public int? Level { get; set; }
+
     /// <summary>split_cable (#168): the cable the site (<see cref="SiteId"/>, existing or planned) is inserted into.</summary>
     public long? CableId { get; set; }
 
@@ -152,6 +156,12 @@ public sealed class AddOperationValidator : Validator<AddOperationRequest>
             RuleFor(r => r.Type).Must(t => t is "site" or "equipment" or "cable").WithMessage("type is site, equipment or cable.");
             RuleFor(r => r.ObjectId).NotNull();
             RuleFor(r => r.Lifecycle).Must(l => Lifecycles.Contains(l)).WithMessage("Unknown lifecycle.");
+        });
+        When(r => r.Kind == "set_classification", () =>
+        {
+            RuleFor(r => r.Type).Must(t => t is "site" or "equipment" or "cable" or "service").WithMessage("type is site, equipment, cable or service.");
+            RuleFor(r => r.ObjectId).NotNull().GreaterThan(0);
+            RuleFor(r => r.Schema).NotEmpty().MaximumLength(50);
         });
         When(r => r.Kind == "remove", () =>
         {

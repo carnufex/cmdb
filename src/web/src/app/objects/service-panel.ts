@@ -3,12 +3,13 @@ import { ChangeDetectionStrategy, Component, computed, effect, inject, input } f
 import { PanelStack } from '../shell/panels';
 import { StatusComponent } from '../shell/status';
 import { apiPath, ServiceDetail } from './models';
+import { ClassificationComponent } from './classification';
 import { ObjectLinkComponent } from './object-link';
 import { traceId } from './trace-model';
 
 @Component({
   selector: 'cmdb-service-panel',
-  imports: [ObjectLinkComponent, StatusComponent],
+  imports: [ClassificationComponent, ObjectLinkComponent, StatusComponent],
   template: `
     @if (service.value(); as s) {
       <header class="header">
@@ -20,6 +21,7 @@ import { traceId } from './trace-model';
           <button type="button" class="action" (click)="trace(s.id)">Spåra ände till ände</button>
         </div>
       </header>
+      <cmdb-classification type="service" [objectId]="s.id" />
       <section>
         <h3>Bärs av</h3>
         @for (c of s.circuits; track c.circuit.id) {

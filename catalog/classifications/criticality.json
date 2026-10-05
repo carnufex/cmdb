@@ -1,0 +1,15 @@
+{
+  "key": "criticality",
+  "name": "Kritikalitet",
+  "description": "Hur allvarligt det är om objektet slutar fungera. Nivå 5 är kritisk: tjänster på nivå 5 prioriteras som P1 när de förlorar sin väg.",
+  "appliesTo": ["site", "equipment", "cable", "service"],
+  "levels": [
+    { "level": 1, "name": "Låg", "description": "Påverkar få och kan vänta." },
+    { "level": 2, "name": "Normal", "description": "Vanlig tjänst eller utrustning." },
+    { "level": 3, "name": "Viktig", "description": "Ska åtgärdas samma dag." },
+    { "level": 4, "name": "Mycket viktig", "description": "Ska åtgärdas direkt, med reservväg." },
+    { "level": 5, "name": "Kritisk", "description": "Får inte falla: oberoende reservväg och reservkraft krävs." }
+  ],
+  "criticalFrom": 5,
+  "inheritance": { "containment": "max", "dependency": "max" }
+}
