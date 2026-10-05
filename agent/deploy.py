@@ -198,11 +198,13 @@ def transfers(*targets: tuple[str, str]) -> dict:
 
 
 END_CALL = system_tool("end_call", "Avsluta samtalet när uppringaren säger att hen är klar.")
-LANGUAGE = system_tool("language_detection", "Byt språk när uppringaren talar engelska (eller svenska igen).")
+# The switch must be silent (#194): without this the agent announced "I need to switch to English".
+LANGUAGE = system_tool("language_detection", "Switch the conversation language to the one the caller speaks, silently: say nothing "
+                       "before or after, never mention the switch, and answer the caller's last message in the new language.")
 
 # The service desk switchboard and IT self-service (ADR-0016): short prompts, only the built-in guardrails.
-DESK_FIRST = ("Hej, det här är Saga på service desk, hur kan jag hjälpa dig? "
-              "Hi, this is Saga at the service desk, how can I help you?")
+DESK_FIRST = "Hej, det här är Saga på service desk, hur kan jag hjälpa dig?"
+DESK_FIRST_EN = "Hi, this is Saga at the service desk, how can I help you?"  # only if a call starts in English
 IT_FIRST = "Hej, det är Elin på IT-självhjälpen. Vad kan jag hjälpa dig med?"
 IT_FIRST_EN = "Hi, this is Elin at IT self-service. How can I help you?"
 DESK_KEYWORDS = ["service desk", "passertagg", "passerkort", "lösenord", "NOC", "anställningsnummer", "Lingonåsen", "fiber"]
@@ -332,7 +334,7 @@ def main() -> None:
     it_id = upsert(it, light_agent("CMDB IT-självhjälp", "it", "it.md", IT_FIRST, IT_FIRST_EN, it_voice,
                                    it["mcp_server_id"], {"transfer_to_agent": None}, []))
     upsert(desk, light_agent(
-        "CMDB Service desk", "servicedesk", "servicedesk.md", DESK_FIRST, DESK_FIRST, state["voice_id"], desk["mcp_server_id"],
+        "CMDB Service desk", "servicedesk", "servicedesk.md", DESK_FIRST, DESK_FIRST_EN, state["voice_id"], desk["mcp_server_id"],
         {"transfer_to_agent": transfers(
             (it_id, "IT: lösenord, konto, inloggning, dator, telefon, programvara eller beställa utrustning."),
             (noc_id, "Nätet: CMDB, fiber, kablar, stationer, siter, länkar, larm, strömavbrott, grävning eller felanmälan på nätet."))},

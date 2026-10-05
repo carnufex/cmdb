@@ -5,7 +5,7 @@
     {
       "role": "agent",
       "time_in_call_secs": 0,
-      "message": "Hej, det här är Saga på service desk, hur kan jag hjälpa dig? Hi, this is Saga at the service desk, how can I help you?"
+      "message": "Hej, det här är Saga på service desk, hur kan jag hjälpa dig?"
     },
     {
       "role": "user",
