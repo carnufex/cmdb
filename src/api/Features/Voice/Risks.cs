@@ -23,13 +23,72 @@ public static class RiskDetection
 {
     public const int BatteryLifetimeYears = 8;
 
-    public static async Task<IReadOnlyList<Risk>> RunAsync(Cmdb.Graph.Graph g, GraphMask mask, NpgsqlDataSource db, UserScope scope, CancellationToken ct)
+    public static async Task<IReadOnlyList<Risk>> RunAsync(Cmdb.Graph.Graph g, GraphMask mask, NpgsqlDataSource db, UserScope scope, CancellationToken ct,
+        Classifications.ClassificationRules? rules = null)
     {
         var (defaultId, defaultName) = await ResponsibleAsync(db, ct);
         var risks = new List<Risk>();
         risks.AddRange(await DiggingAsync(g, mask, db, scope, ct));
         risks.AddRange(await FalseRedundancyAsync(g, mask, db, defaultId, defaultName, ct));
         risks.AddRange(await BatteriesAsync(g, mask, db, scope, defaultId, defaultName, ct));
+        if (rules is not null)
+        {
+            risks.AddRange(await UnmetRulesAsync(g, mask, db, scope, rules, defaultId, defaultName, ct));
+        }
+        return risks;
+    }
+
+    /// <summary>The most sites checked for unmet classification requirements per run.</summary>
+    private const int MaxClassifiedSites = 50;
+
+    /// <summary>
+    /// Sites someone has classified (the site itself, or equipment in it) whose level brings requirements that are not met
+    /// (#178): the classification rules of the catalog, as risks. Sites that are only critical because services run through them
+    /// are left to the fault analysis; listing every one would bury the rest.
+    /// </summary>
+    private static async Task<List<Risk>> UnmetRulesAsync(Cmdb.Graph.Graph g, GraphMask mask, NpgsqlDataSource db, UserScope scope,
+        Classifications.ClassificationRules rules, string responsible, string name, CancellationToken ct)
+    {
+        const string schemaKey = "criticality";
+        var from = Cmdb.Catalog.ClassificationCatalog.Embedded.Find(schemaKey)?.RuleList.Where(r => r.AppliesTo.Contains("site")).Select(r => r.FromLevel).DefaultIfEmpty(0).Min() ?? 0;
+        if (from == 0)
+        {
+            return [];
+        }
+        var sites = new List<long>();
+        await using (var cmd = db.CreateCommand($"""
+            SELECT s.id FROM site s
+            WHERE {ScopeSql.Site("s.id", 1)} AND s.lifecycle <> 'removed' AND s.id IN (
+                SELECT object_id FROM classification WHERE object_type = 'site' AND schema_key = $2 AND level >= $3
+                UNION SELECT e.site_id FROM classification c JOIN equipment e ON e.id = c.object_id
+                      WHERE c.object_type = 'equipment' AND c.schema_key = $2 AND c.level >= $3)
+            ORDER BY s.id LIMIT {MaxClassifiedSites}
+            """))
+        {
+            cmd.Parameters.Add(scope.Parameter());
+            cmd.Parameters.Add(new() { Value = schemaKey });
+            cmd.Parameters.Add(new() { Value = from });
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                sites.Add(reader.GetInt64(0));
+            }
+        }
+        var risks = new List<Risk>();
+        foreach (var site in sites)
+        {
+            if (await rules.EvaluateAsync(scope, "site", site, schemaKey, null, ct) is not { Unmet: > 0 } report
+                || await FaultAnalysis.RunAsync(g, mask, db, "site", site, ct) is not { } fault)
+            {
+                continue;
+            }
+            var unmet = report.Results.Where(r => !r.Met).ToList();
+            risks.Add(new Risk($"classification-{site}", "classification", $"Nivå {report.Level} utan kraven: {fault.SiteName}",
+                $"{fault.SiteName} har kritikalitet {report.Level} ({report.Name}) men uppfyller inte {unmet.Count} av {report.Results.Count} krav: " +
+                string.Join("; ", unmet.Select(r => $"{r.Requirement} ({(r.Actual is null ? "saknas" : r.Actual.Value.ToString("0.##", CultureInfo.InvariantCulture))} av {r.Required})")) + ".",
+                $"site:{site}", site, fault.SiteCode, fault.SiteName, fault.Affected, fault.Services.Count(x => x.Critical), Top(fault), responsible, name,
+                string.Join(" ", unmet.Select(r => r.Hint).Where(h => h.Length > 0))));
+        }
         return risks;
     }
 
@@ -220,7 +279,7 @@ public static class RiskDetection
 }
 
 /// <summary>Risks within the caller's scopes (#137), for the web app's agent panel.</summary>
-public sealed class ListRisksEndpoint(RequestDb db, GraphHolder holder, ScopeMasks masks) : EndpointWithoutRequest<IReadOnlyList<Risk>>
+public sealed class ListRisksEndpoint(RequestDb db, GraphHolder holder, ScopeMasks masks, Classifications.ClassificationRules rules) : EndpointWithoutRequest<IReadOnlyList<Risk>>
 {
     public override void Configure() => Get("/risks");
 
@@ -232,6 +291,6 @@ public sealed class ListRisksEndpoint(RequestDb db, GraphHolder holder, ScopeMas
             return;
         }
         var scope = HttpContext.Scope();
-        await Send.OkAsync(await RiskDetection.RunAsync(graph, await masks.GetAsync(graph, scope, ct), db.Source, scope, ct), ct);
+        await Send.OkAsync(await RiskDetection.RunAsync(graph, await masks.GetAsync(graph, scope, ct), db.Source, scope, ct, rules), ct);
     }
 }

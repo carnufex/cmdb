@@ -87,7 +87,7 @@ public static class ClassificationStore
 }
 
 /// <param name="Derived">The criticality once contents and carried services are counted (#177); null when it cannot be worked out.</param>
-public sealed record ObjectClassificationAnswer(IReadOnlyList<ObjectClassification> Direct, DerivedClassification? Derived);
+public sealed record ObjectClassificationAnswer(IReadOnlyList<ObjectClassification> Direct, DerivedClassification? Derived, RuleReport? Rules);
 
 /// <summary>The classification schemas of the catalog.</summary>
 public sealed class ListClassificationSchemasEndpoint : EndpointWithoutRequest<IReadOnlyList<ClassificationSchemaView>>
@@ -168,7 +168,7 @@ public sealed class SetClassificationEndpoint(RequestDb db, TrustedApplications 
 
 /// <summary>Classification for agents (#176): what schemas exist and what an object has. Setting one goes through a plan.</summary>
 [McpServerToolType]
-public sealed class ClassificationTools(RequestDb db, IHttpContextAccessor http, ClassificationDerivation derivation)
+public sealed class ClassificationTools(RequestDb db, IHttpContextAccessor http, ClassificationDerivation derivation, ClassificationRules rules)
 {
     [McpServerTool(Name = "describe_classifications", Title = "Klassningar", ReadOnly = true, Idempotent = true, OpenWorld = false)]
     [Description("The classification schemas (for example criticality 1–5): their levels, which object types they apply to, and the level " +
@@ -179,7 +179,8 @@ public sealed class ClassificationTools(RequestDb db, IHttpContextAccessor http,
     [McpServerTool(Name = "get_classification", Title = "Hämta klassning", ReadOnly = true, Idempotent = true, OpenWorld = false)]
     [Description("The classifications an object has, with level names and who set them (direct), and the criticality it gets from " +
         "what it contains and carries (derived: the highest of its own level, its equipment's and the services that run through it, " +
-        "with the objects that cause it). Within your access scopes.")]
+        "with the objects that cause it), and the requirements that level brings (rules): which are met and which are not, with a hint. " +
+        "Within your access scopes.")]
     public async Task<ObjectClassificationAnswer> Get(
         [Description("A reference \"type:id\" (site, equipment, cable or service), e.g. \"site:1268\".")] string reference,
         [Description("A plan, \"plan:12\": the derived level in that plan's view, with its classification changes counted.")] string? plan = null,
@@ -200,6 +201,7 @@ public sealed class ClassificationTools(RequestDb db, IHttpContextAccessor http,
         }
         var type = reference[..colon];
         return new ObjectClassificationAnswer(await ClassificationStore.OfAsync(db.Source, type, id, ct),
-            await derivation.DeriveAsync(http.HttpContext!.Scope(), type, id, "criticality", planId, ct));
+            await derivation.DeriveAsync(http.HttpContext!.Scope(), type, id, "criticality", planId, ct),
+            await rules.EvaluateAsync(http.HttpContext!.Scope(), type, id, "criticality", planId, ct));
     }
 }

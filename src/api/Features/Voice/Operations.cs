@@ -181,7 +181,7 @@ public static class OperationsImpact
 /// The map's operations layer, slow part (#156): planned and ongoing work areas that cross a cable in the caller's
 /// scope, and the risks the proactive agent has found. Polled every half minute: the risks cost an impact analysis each.
 /// </summary>
-public sealed class OperationsWorksEndpoint(GraphHolder holder, RequestDb db, ScopeMasks masks) : EndpointWithoutRequest<OperationsWorks>
+public sealed class OperationsWorksEndpoint(GraphHolder holder, RequestDb db, ScopeMasks masks, Classifications.ClassificationRules rules) : EndpointWithoutRequest<OperationsWorks>
 {
     public override void Configure() => Get("/operations/works");
 
@@ -214,7 +214,7 @@ public sealed class OperationsWorksEndpoint(GraphHolder holder, RequestDb db, Sc
                     [.. Enumerable.Range(0, coordinates.GetLength(0)).Select(i => new[] { coordinates[i, 0], coordinates[i, 1] })]));
             }
         }
-        var risks = await RiskDetection.RunAsync(graph, await masks.GetAsync(graph, scope, ct), db.Source, scope, ct);
+        var risks = await RiskDetection.RunAsync(graph, await masks.GetAsync(graph, scope, ct), db.Source, scope, ct, rules);
         var sites = new Dictionary<long, MapPoint>();
         await using (var cmd = db.Source.CreateCommand("SELECT id, code, name, ST_X(ST_PointOnSurface(geom)), ST_Y(ST_PointOnSurface(geom)) FROM site WHERE id = ANY($1)"))
         {

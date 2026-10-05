@@ -11,13 +11,27 @@ public sealed record ClassificationLevel(int Level, string Name, string Descript
 /// <param name="CriticalFrom">The lowest level that counts as critical (priority rules, fault analysis).</param>
 /// <param name="Inheritance">How a derived level is worked out (#177): through containment (equipment, rack, room, building,
 /// site) and through dependency (what carries a classified service). Only <c>max</c> for now.</param>
+/// <param name="Rules">Requirements that come with a level (#178); none by default.</param>
 public sealed record ClassificationSchema(string Key, string Name, string Description, IReadOnlyList<string> AppliesTo,
-    IReadOnlyList<ClassificationLevel> Levels, int CriticalFrom, ClassificationInheritance Inheritance)
+    IReadOnlyList<ClassificationLevel> Levels, int CriticalFrom, ClassificationInheritance Inheritance,
+    IReadOnlyList<ClassificationRule>? Rules = null)
 {
+    public IReadOnlyList<ClassificationRule> RuleList => Rules ?? [];
+
     public ClassificationLevel? Level(int level) => Levels.FirstOrDefault(l => l.Level == level);
 }
 
 public sealed record ClassificationInheritance(string Containment, string Dependency);
+
+/// <summary>
+/// A requirement an object must meet once its level (derived, #177) reaches <paramref name="FromLevel"/> (#178). There are two kinds:
+/// <c>cables</c> counts the in-service cables at a site against <paramref name="Min"/> (<paramref name="Supporting"/>: only cables that
+/// themselves carry at least the site's level; <paramref name="Independent"/>: count distinct sites at their other ends, so two
+/// cables to one neighbour count once), and <c>attribute</c> needs a numeric attribute of the object itself to be at least
+/// <paramref name="Min"/>. Nothing else: rules are data, not code.
+/// </summary>
+public sealed record ClassificationRule(string Id, int FromLevel, IReadOnlyList<string> AppliesTo, string Type, string Requirement, int Min,
+    bool Supporting = false, bool Independent = false, string? Attribute = null);
 
 /// <summary>
 /// The classification schemas (#176, ADR-0017), loaded and checked from the embedded catalog files. A schema says which
@@ -96,6 +110,26 @@ public sealed class ClassificationCatalog
         if (schema.Inheritance.Containment != "max" || schema.Inheritance.Dependency != "max")
         {
             Error("inheritance is max for containment and dependency (the only rule so far).");
+        }
+        foreach (var rule in schema.RuleList)
+        {
+            if (schema.Levels.All(l => l.Level != rule.FromLevel))
+            {
+                Error($"rule {rule.Id}: fromLevel must be one of the levels.");
+            }
+            if (rule.AppliesTo.Count == 0 || rule.AppliesTo.Any(t => !schema.AppliesTo.Contains(t) || t != "site"))
+            {
+                Error($"rule {rule.Id}: appliesTo is site, and a type the schema applies to (sites are the only kind rules check so far).");
+            }
+            if (rule.Type is not ("cables" or "attribute") || rule.Min < 1 || rule.Requirement.Length == 0
+                || (rule.Type == "attribute" && string.IsNullOrEmpty(rule.Attribute)))
+            {
+                Error($"rule {rule.Id}: type is cables or attribute (with attribute), min at least 1, and a requirement in words.");
+            }
+        }
+        if (schema.RuleList.GroupBy(r => r.Id).Any(g => g.Count() > 1))
+        {
+            Error("rule ids are unique.");
         }
     }
 }

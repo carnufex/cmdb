@@ -37,7 +37,7 @@ public sealed record IncidentCreated(string Priority, string Station, string Sum
 /// </summary>
 [McpServerToolType]
 public sealed class VoiceTools(SystemDb system, RequestDb db, GraphHolder holder, ScopeMasks masks, IHttpContextAccessor http,
-    ILogger<VoiceTools> logger)
+    ILogger<VoiceTools> logger, Classifications.ClassificationRules rules)
 {
     public static readonly IReadOnlySet<string> Names = new HashSet<string>(StringComparer.Ordinal)
     {
@@ -244,7 +244,7 @@ public sealed class VoiceTools(SystemDb system, RequestDb db, GraphHolder holder
             {
                 throw new McpException("Nätgrafen laddas, försök igen om några sekunder.");
             }
-            var risks = await RiskDetection.RunAsync(graph, await masks.GetAsync(graph, Scope, ct), db.Source, Scope, ct);
+            var risks = await RiskDetection.RunAsync(graph, await masks.GetAsync(graph, Scope, ct), db.Source, Scope, ct, rules);
             return risks.FirstOrDefault(r => r.Id == riskId.Trim())
                 ?? throw new McpException("Risken finns inte längre, eller ligger utanför uppringarens behörighet.");
         }, r => r.Kind, reference: r => r.Reference);

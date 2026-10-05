@@ -52,6 +52,7 @@ builder.Services.AddScoped<Cmdb.Api.Features.Plans.PlanWrites>();
 builder.Services.AddScoped<Cmdb.Api.Features.Plans.PlanPatterns>();
 builder.Services.AddScoped<Cmdb.Api.Features.Plans.PlanImport>();
 builder.Services.AddScoped<Cmdb.Api.Features.Classifications.ClassificationDerivation>();
+builder.Services.AddScoped<Cmdb.Api.Features.Classifications.ClassificationRules>();
 builder.Services.AddSingleton<Cmdb.Api.Auth.ScopeRefreshService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<Cmdb.Api.Auth.ScopeRefreshService>());
 builder.Services.AddScoped(sp => sp.GetRequiredService<IHttpContextAccessor>().HttpContext?.User is { Identity.IsAuthenticated: true } user

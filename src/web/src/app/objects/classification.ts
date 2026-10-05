@@ -29,6 +29,23 @@ export interface DerivedClassification {
   locationLevels: { id: number; level: number; because: string }[];
 }
 
+/** GET /api/classifications/rules (#178): the requirements of the derived level, met or not. */
+export interface RuleReport {
+  schema: string;
+  level: number;
+  name: string;
+  unmet: number;
+  results: {
+    rule: string;
+    requirement: string;
+    met: boolean;
+    actual: number | null;
+    required: number;
+    objects: { type: string; id: number; code: string }[];
+    hint: string;
+  }[];
+}
+
 /** GET /api/classifications?type=&id= */
 export interface ObjectClassification {
   schema: string;
@@ -85,6 +102,25 @@ export interface ObjectClassification {
         </p>
       }
     }
+    @if (rules.value(); as r) {
+      @if (r.results.length) {
+        <ul class="rules" aria-label="Krav för nivå {{ r.level }}">
+          @for (x of r.results; track x.rule) {
+            <li [attr.data-met]="x.met">
+              <span class="status"
+                ><span class="dot" aria-hidden="true"></span
+                >{{ x.met ? 'Uppfyllt' : 'Saknas' }}</span
+              >
+              {{ x.requirement }}
+              <span class="muted">({{ x.actual ?? 'saknas' }} av {{ x.required }})</span>
+              @if (!x.met && x.hint) {
+                <span class="hint">{{ x.hint }}</span>
+              }
+            </li>
+          }
+        </ul>
+      }
+    }
     @if (error(); as e) {
       <p class="error" role="alert">{{ e }}</p>
     }
@@ -100,6 +136,27 @@ export interface ObjectClassification {
     }
     .label {
       color: var(--text-muted);
+    }
+    .rules {
+      margin: var(--space-1) 0 0;
+      padding: 0;
+      list-style: none;
+      font-size: var(--text-sm);
+    }
+    .rules li {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-2);
+      align-items: baseline;
+      padding: 2px 0;
+    }
+    .rules [data-met='false'] .dot {
+      background: var(--status-conflict);
+    }
+    .hint {
+      flex-basis: 100%;
+      color: var(--text-muted);
+      font-size: var(--text-xs);
     }
     .derived {
       display: flex;
@@ -166,6 +223,18 @@ export class ClassificationComponent {
     this.revision();
     return this.plan.request(
       `/api/classifications/derived?type=${this.type()}&id=${this.objectId()}&schema=${schema.key}${this.plan.param()}`,
+    );
+  });
+
+  /** What the level asks of the object, and whether it is met (#178); only sites have requirements so far. */
+  protected readonly rules = httpResource<RuleReport>(() => {
+    const schema = this.schemas()[0];
+    if (!schema || this.type() !== 'site') {
+      return undefined;
+    }
+    this.revision();
+    return this.plan.request(
+      `/api/classifications/rules?type=site&id=${this.objectId()}&schema=${schema.key}${this.plan.param()}`,
     );
   });
 
