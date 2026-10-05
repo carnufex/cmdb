@@ -1,5 +1,5 @@
 import { PlanRemoveComponent } from '../plans/plan-remove';
-import { ClassificationComponent } from './classification';
+import { ClassificationComponent, DerivedClassification } from './classification';
 import { RackViewComponent } from './rack-view';
 import { httpResource } from '@angular/common/http';
 import { DecimalPipe } from '@angular/common';
@@ -62,7 +62,18 @@ const siteTypes: Record<string, string> = {
 
       @for (location of racks(); track location.id) {
         <section>
-          <h3>{{ location.path }}</h3>
+          <h3>
+            {{ location.path }}
+            @if (location.derivedLevel) {
+              <span
+                class="status"
+                [attr.data-critical]="location.derivedLevel >= 5"
+                [title]="'Härledd av ' + location.because"
+              >
+                <span class="dot" aria-hidden="true"></span>{{ location.derivedLevel }}
+              </span>
+            }
+          </h3>
           @if (location.rackUnits) {
             <cmdb-rack-view [units]="location.rackUnits" [equipment]="location.equipment" />
           }
@@ -144,6 +155,23 @@ const siteTypes: Record<string, string> = {
   `,
   styleUrl: './panel.scss',
   styles: `
+    h3 .status {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-1);
+      margin-left: var(--space-2);
+      font-size: var(--text-xs);
+      font-weight: 600;
+    }
+    h3 .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--status-in-service);
+    }
+    h3 [data-critical='true'] .dot {
+      background: var(--status-conflict);
+    }
     .linkish {
       padding: 0;
       border: 0;
@@ -188,7 +216,22 @@ export class SitePanelComponent {
       const l = id === null ? undefined : byId.get(id);
       return l ? (l.parentId ? `${path(l.parentId)} / ${l.name}` : l.name) : '';
     };
-    return s.locations.filter((l) => l.equipment.length).map((l) => ({ ...l, path: path(l.id) }));
+    // The level a rack gets from the equipment in it (#177), from the derived classification of the site.
+    const derived = new Map((this.derived.value()?.locationLevels ?? []).map((d) => [d.id, d]));
+    return s.locations
+      .filter((l) => l.equipment.length)
+      .map((l) => ({
+        ...l,
+        path: path(l.id),
+        derivedLevel: derived.get(l.id)?.level ?? null,
+        because: derived.get(l.id)?.because ?? '',
+      }));
+  });
+
+  private readonly derived = httpResource<DerivedClassification>(() => {
+    return this.plan.request(
+      `/api/classifications/derived?type=site&id=${this.id()}${this.plan.param()}`,
+    );
   });
 
   constructor() {

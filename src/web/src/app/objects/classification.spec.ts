@@ -102,4 +102,31 @@ describe('classification of an object (#176)', () => {
     });
     fixture.destroy();
   });
+
+  it('says what a derived level comes from (#177)', async () => {
+    const { http, fixture, settle } = await setup('/');
+    http.expectOne('/api/classifications/schemas').flush([schema]);
+    http.expectOne((r) => r.url === '/api/classifications' && r.method === 'GET').flush([]);
+    await settle();
+    http
+      .expectOne((r) => r.url.startsWith('/api/classifications/derived'))
+      .flush({
+        schema: 'criticality',
+        level: 5,
+        name: 'Kritisk',
+        critical: true,
+        inherited: true,
+        reasons: [
+          { kind: 'contains', subject: { type: 'equipment', id: 3, code: 'SW-1 AX-48' }, level: 5 },
+        ],
+        services: 4,
+        locationLevels: [],
+      });
+    await settle();
+    const text = (fixture.nativeElement as HTMLElement).textContent!;
+    expect(text).toContain('Härledd');
+    expect(text).toContain('5 · Kritisk');
+    expect(text).toContain('innehåller SW-1 AX-48 (5)');
+    fixture.destroy();
+  });
 });

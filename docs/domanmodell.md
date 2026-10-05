@@ -120,6 +120,15 @@ En klassning är en nivå i ett schema, till exempel kritikalitet 1–5, på en 
 - **Läsa:** `GET /api/classifications` och MCP-verktygen `describe_classifications` och `get_classification`.
 - **Kritisk tjänst:** felanalysen, prioritetsreglerna och driftagenten läser nivån i stället för tjänstens fria attribut. En tjänst är kritisk från schemats `criticalFrom` (kritikalitet 5). Attributet `criticality` flyttades in i schemat av migreringen.
 
+#### Härledd klassning (#177)
+
+Ett objekt har också en härledd nivå: den högsta av dess egen nivå, nivåerna på utrustningen i det och nivåerna på tjänsterna som går genom det.
+
+- **Inneslutning:** en switch på nivå 5 gör racket, rummet, byggnaden och siten till nivå 5.
+- **Beroende:** det som bär en klassad tjänst måste klara tjänstens nivå. En kabel eller site tar därför den högsta nivån bland de tjänster som skulle drabbas om den föll (påverkansanalysen i grafen).
+- **Förklaring:** varje härledd nivå säger vad den kommer från ("innehåller SW-1 (5)", "bär tjänst TJ-… (4)").
+- **Beräkning:** på begäran ur grafens vy, `GET /api/classifications/derived?type=&id=&plan=`. Den följer därför deltan och planvyer av sig själv, och en plans egna `set_classification` räknas i dess vy. Tjänster utanför användarens omfång räknas inte. Panelerna visar den härledda raden, och sitepanelen nivån per rack. MCP-verktyget `get_classification` ger både satt och härledd nivå.
+
 ### Rack och positioner (#173)
 
 Utrustning i ett rack har en position, dess lägsta rackenhet (`equipment.rack_position`), och modellens höjd (`rackUnits` i katalogen) säger hur många enheter den tar. Ett rack är 42 U om inget annat anges.

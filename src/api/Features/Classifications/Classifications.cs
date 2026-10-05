@@ -86,6 +86,9 @@ public static class ClassificationStore
     }
 }
 
+/// <param name="Derived">The criticality once contents and carried services are counted (#177); null when it cannot be worked out.</param>
+public sealed record ObjectClassificationAnswer(IReadOnlyList<ObjectClassification> Direct, DerivedClassification? Derived);
+
 /// <summary>The classification schemas of the catalog.</summary>
 public sealed class ListClassificationSchemasEndpoint : EndpointWithoutRequest<IReadOnlyList<ClassificationSchemaView>>
 {
@@ -165,7 +168,7 @@ public sealed class SetClassificationEndpoint(RequestDb db, TrustedApplications 
 
 /// <summary>Classification for agents (#176): what schemas exist and what an object has. Setting one goes through a plan.</summary>
 [McpServerToolType]
-public sealed class ClassificationTools(RequestDb db, IHttpContextAccessor http)
+public sealed class ClassificationTools(RequestDb db, IHttpContextAccessor http, ClassificationDerivation derivation)
 {
     [McpServerTool(Name = "describe_classifications", Title = "Klassningar", ReadOnly = true, Idempotent = true, OpenWorld = false)]
     [Description("The classification schemas (for example criticality 1–5): their levels, which object types they apply to, and the level " +
@@ -174,9 +177,12 @@ public sealed class ClassificationTools(RequestDb db, IHttpContextAccessor http)
         [.. ClassificationCatalog.Embedded.Schemas.OrderBy(s => s.Key, StringComparer.Ordinal).Select(ClassificationStore.View)];
 
     [McpServerTool(Name = "get_classification", Title = "Hämta klassning", ReadOnly = true, Idempotent = true, OpenWorld = false)]
-    [Description("The classifications an object has, with level names and who set them. Within your access scopes.")]
-    public async Task<IReadOnlyList<ObjectClassification>> Get(
+    [Description("The classifications an object has, with level names and who set them (direct), and the criticality it gets from " +
+        "what it contains and carries (derived: the highest of its own level, its equipment's and the services that run through it, " +
+        "with the objects that cause it). Within your access scopes.")]
+    public async Task<ObjectClassificationAnswer> Get(
         [Description("A reference \"type:id\" (site, equipment, cable or service), e.g. \"site:1268\".")] string reference,
+        [Description("A plan, \"plan:12\": the derived level in that plan's view, with its classification changes counted.")] string? plan = null,
         CancellationToken ct = default)
     {
         var colon = reference.IndexOf(':', StringComparison.Ordinal);
@@ -186,6 +192,14 @@ public sealed class ClassificationTools(RequestDb db, IHttpContextAccessor http)
         {
             throw new McpException($"{reference} finns inte, eller ligger utanför ditt omfång.");
         }
-        return await ClassificationStore.OfAsync(db.Source, reference[..colon], id, ct);
+        long? planId = null;
+        if (plan is not null)
+        {
+            planId = long.TryParse(plan.StartsWith("plan:", StringComparison.Ordinal) ? plan[5..] : plan, System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture, out var p) ? p : throw new McpException($"\"{plan}\" is not a plan reference like \"plan:12\".");
+        }
+        var type = reference[..colon];
+        return new ObjectClassificationAnswer(await ClassificationStore.OfAsync(db.Source, type, id, ct),
+            await derivation.DeriveAsync(http.HttpContext!.Scope(), type, id, "criticality", planId, ct));
     }
 }
