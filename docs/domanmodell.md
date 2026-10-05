@@ -171,6 +171,17 @@ Utrustning i ett rack har en position, dess lägsta rackenhet (`equipment.rack_p
 - **Befintlig utrustning** staplas i sina rack från botten i id-ordning, av migreringen och av datageneratorn.
 - **Siten** visar varje rack som en frontvy med utrustningen på sina enheter och antalet lediga.
 
+### Förslag på väg för en ny förbindelse (#171)
+
+För en förbindelse mellan två siter föreslår systemet vägar över befintliga kablar som fortfarande har lediga fibrer, eller en ny kabel där det inte finns någon väg.
+
+- **Lediga fibrer:** en ledare är ledig när inget är skarvat, patchat eller terminerat i någon av dess ändar, i produktion eller i planens vy. Kablar i drift med minst så många lediga fibrer som förbindelsen behöver (1–96) är kanter i ett sitenät.
+- **Väg:** kortaste väg (Dijkstra) viktad på kabellängd, ett tillägg per skarv (300 m) och en andel av kabelns lediga fibrer som tas. Upp till tre alternativ: det bästa, sedan det bästa utan den längsta kabeln i det förra.
+- **Ny kabel:** finns ingen väg föreslås en ny fiberkabel (minsta typen i katalogen med tillräckligt många fibrer) mellan de siter på startsidan och målsidan som ligger närmast varandra, högst 100 km i fågelvägen, med de befintliga delarna före och efter. Sträckan räknas på kablar och siter; exakta trasévägar kommer med kanalisationen (#92).
+- **API:** `GET /api/routes/suggest?from=&to=&fibres=&plan=` (sitekod eller id; `plan` räknar planens förbrukning som tagen) och `POST /api/plans/{id}/route` med `alternative`. MCP: `suggest_route` och `add_route_to_plan`.
+- **I planen:** den nya kabeln (om någon) och en skarvoperation per fibre och site på vägen, de lägsta lediga ledarna på båda kablarna. Allt eller inget. Ändarna lämnas för terminering (`terminate_cable`).
+- **Behörighet:** bara siter och kablar inom anroparens omfång räknas med. Agenter får föreslå och lägga i planer, inte föra in.
+
 ### Import till en plan (#170)
 
 Siter och kablar kan importeras i bulk till en plan, från CSV eller GeoJSON. Exempel finns i [`docs/exempel/`](exempel/): GeoJSON-filen bygger på CSV-filen, och de importeras i den ordningen till samma plan.

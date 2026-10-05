@@ -5,6 +5,7 @@ import { firstValueFrom } from 'rxjs';
 import { ReservationView } from '../objects/claims';
 import { ObjectLinkComponent } from '../objects/object-link';
 import { PlanClassificationComponent } from './plan-classification';
+import { PlanRouteComponent } from './plan-route';
 import { PlanCreateComponent } from './plan-create';
 import { StatusComponent } from '../shell/status';
 import { Tools } from '../shell/tools';
@@ -32,6 +33,7 @@ import {
     ObjectLinkComponent,
     PlanCreateComponent,
     PlanClassificationComponent,
+    PlanRouteComponent,
   ],
   template: `
     <header class="head">
@@ -170,6 +172,7 @@ import {
             }
 
             @if (d.plan.status === 'draft') {
+              <cmdb-plan-route [planId]="d.plan.id" />
               <cmdb-plan-classification [planId]="d.plan.id" />
             }
             @if (d.plan.exception) {
