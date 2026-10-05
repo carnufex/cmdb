@@ -121,6 +121,15 @@ export type NewOperation =
   | { kind: 'split_cable'; cableId: number; siteId: number; terminate: number[] }
   | { kind: 'remove'; type: 'site' | 'equipment' | 'cable'; objectId: number }
   | {
+      kind: 'move';
+      type: 'equipment';
+      objectId: number;
+      siteId: number;
+      rack?: string;
+      position?: number;
+    }
+  | { kind: 'move'; type: 'cable'; objectId: number; siteId: number; end: 'A' | 'B' }
+  | {
       kind: 'set_classification';
       type: 'site' | 'equipment' | 'cable' | 'service';
       objectId: number;

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Security.Claims;
 using Cmdb.Api.Auth;
 using Cmdb.Api.Features.Objects;
@@ -171,7 +172,7 @@ internal static class PlanSql
         var conflicts = (await ClaimsSql.ConflictsAsync(db, [.. operations.Select(o => o.PlanId).Distinct()], ct)).ToLookup(c => c.OperationId);
         var names = await TraceNames.LoadAsync(db, [.. terminals.Where(t => t > 0)], [], [], ct);
         names.AddPlanned(planned.Terminals);
-        var objects = await ObjectsAsync(db, [.. operations.Where(o => o.Kind is "set_lifecycle" or "rename" or "set_attributes" or "remove" or "set_classification").Select(o => (o.ObjectType!, o.ObjectId)).Distinct()],
+        var objects = await ObjectsAsync(db, [.. operations.Where(o => o.Kind is "set_lifecycle" or "rename" or "set_attributes" or "remove" or "set_classification" or "move").Select(o => (o.ObjectType!, o.ObjectId)).Distinct()],
             scope, ct);
 
         TraceHop Hop(long terminal) =>
@@ -228,6 +229,7 @@ internal static class PlanSql
                 "remove" when op.ObjectType == "site" => $"Ta bort site {target.Code} {target.Name}".TrimEnd() +
                     $" med {ObjectRemoval.Objects(op.Payload).Equipment.Length} utrustningar och {ObjectRemoval.Objects(op.Payload).Cables.Length} kablar",
                 "remove" => $"Ta bort {(op.ObjectType == "cable" ? "kabel" : "utrustning")} {target.Code}",
+                "move" => MoveText(op.Payload),
                 _ => $"Byt namn på {target.Code} till {name}",
             };
             if (problem is null && !found)
@@ -251,6 +253,22 @@ internal static class PlanSql
             list.Add(new PlanSite(reader.GetInt64(0), reader.GetDouble(1), reader.GetDouble(2)));
         }
         return list;
+    }
+
+    /// <summary>What a move does (#187), in words: the object, where from and where to.</summary>
+    private static string MoveText(JsonElement p)
+    {
+        string Text(string name) => p.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()! : "";
+        var (code, from, to) = (Text("code"), Text("fromCode"), Text("siteCode"));
+        if (p.GetProperty("type").GetString() == "cable")
+        {
+            return $"Flytta ände {Text("end")} av kabel {code} från {from} till {to}";
+        }
+        var where = Text("rack") is { Length: > 0 } rack ? $", rack {rack}" : "";
+        var unit = p.TryGetProperty("position", out var at) && at.ValueKind == JsonValueKind.Number ? $", enhet {at.GetInt32()}" : "";
+        return from == to
+            ? $"Flytta utrustning {code} inom {to}{where}{unit}"
+            : $"Flytta utrustning {code} från {from} till {to}{where}{unit}";
     }
 
     private static async Task<Dictionary<(string, long), (ObjectRef Ref, bool Visible)>> ObjectsAsync(NpgsqlDataSource db,
