@@ -13,6 +13,22 @@ export interface ClassificationSchema {
   criticalFrom: number;
 }
 
+/** GET /api/classifications/derived (#177): the level once contents and carried services are counted. */
+export interface DerivedClassification {
+  schema: string;
+  level: number;
+  name: string;
+  critical: boolean;
+  inherited: boolean;
+  reasons: {
+    kind: 'direct' | 'contains' | 'carries';
+    subject: { type: string; id: number; code: string; name?: string | null };
+    level: number;
+  }[];
+  services: number;
+  locationLevels: { id: number; level: number; because: string }[];
+}
+
 /** GET /api/classifications?type=&id= */
 export interface ObjectClassification {
   schema: string;
@@ -58,6 +74,17 @@ export interface ObjectClassification {
         </select>
       </p>
     }
+    @if (derived.value(); as d) {
+      @if (d.inherited) {
+        <p class="derived" role="status">
+          <span class="label">Härledd</span>
+          <span class="status" [attr.data-critical]="d.critical">
+            <span class="dot" aria-hidden="true"></span>{{ d.level }} · {{ d.name }}
+          </span>
+          <span class="muted">{{ because(d) }}</span>
+        </p>
+      }
+    }
     @if (error(); as e) {
       <p class="error" role="alert">{{ e }}</p>
     }
@@ -73,6 +100,14 @@ export interface ObjectClassification {
     }
     .label {
       color: var(--text-muted);
+    }
+    .derived {
+      display: flex;
+      align-items: baseline;
+      flex-wrap: wrap;
+      gap: var(--space-2);
+      margin: var(--space-1) 0 0;
+      font-size: var(--text-sm);
     }
     .status {
       display: inline-flex;
@@ -121,6 +156,26 @@ export class ClassificationComponent {
     url: '/api/classifications',
     params: { type: this.type(), id: this.objectId(), r: this.revision() },
   }));
+
+  /** The level once contents and carried services count, in the active plan's view when there is one (#177). */
+  protected readonly derived = httpResource<DerivedClassification>(() => {
+    const schema = this.schemas()[0];
+    if (!schema) {
+      return undefined;
+    }
+    this.revision();
+    return this.plan.request(
+      `/api/classifications/derived?type=${this.type()}&id=${this.objectId()}&schema=${schema.key}${this.plan.param()}`,
+    );
+  });
+
+  protected because(d: DerivedClassification): string {
+    const words = { direct: 'satt här', contains: 'innehåller', carries: 'bär tjänst' } as const;
+    return d.reasons
+      .filter((r) => r.kind !== 'direct')
+      .map((r) => `${words[r.kind]} ${r.subject.code} (${r.level})`)
+      .join(', ');
+  }
 
   private readonly revision = signal(0);
   protected readonly busy = signal(false);
