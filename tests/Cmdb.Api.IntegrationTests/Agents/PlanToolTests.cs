@@ -207,6 +207,53 @@ public sealed class PlanToolTests(ApiFactory factory)
         return (db, api);
     }
 
+    [Fact]
+    public async Task An_agent_classifies_new_equipment_in_a_plan_and_checks_what_that_does_to_the_site()
+    {
+        var (db, api) = await NetworkAsync(32);
+        await using var dbScope = db;
+        await using var apiScope = api;
+        await using var agent = await ConnectAsync(api, AgentToken());
+        await using var cmd = db.CreateCommand("""
+            SELECT s.id FROM site s
+            WHERE s.lifecycle = 'in_service' AND EXISTS (SELECT 1 FROM location l WHERE l.site_id = s.id AND l.kind = 'rack')
+              AND (SELECT count(*) FROM cable c WHERE (c.a_site_id = s.id OR c.b_site_id = s.id) AND c.lifecycle = 'in_service') = 1
+            ORDER BY s.id LIMIT 1
+            """);
+        var site = (long)(await cmd.ExecuteScalarAsync(Ct))!;
+
+        var plan = Json(await agent.CallToolAsync("create_plan", new Dictionary<string, object?> { ["name"] = "Ny kritisk switch" }, cancellationToken: Ct))
+            .GetProperty("ref").GetString()!;
+        var created = Json(await agent.CallToolAsync("add_to_plan", new Dictionary<string, object?>
+        {
+            ["plan"] = plan,
+            ["operations"] = new[] { new Dictionary<string, object?> { ["kind"] = "create_equipment", ["site"] = $"site:{site}", ["typeKey"] = "acme-ax-24", ["name"] = "AGENT-SW-1" } },
+        }, cancellationToken: Ct));
+        var reference = created.GetProperty("added")[0].GetProperty("target").GetString()!;
+        reference.ShouldStartWith("equipment:-");
+
+        // A planned object is named by its negative reference, like a planned site in create_equipment.
+        var classified = Json(await agent.CallToolAsync("add_to_plan", new Dictionary<string, object?>
+        {
+            ["plan"] = plan,
+            ["operations"] = new[]
+            {
+                new Dictionary<string, object?> { ["kind"] = "set_classification", ["target"] = reference, ["schema"] = "criticality", ["level"] = 5 },
+            },
+        }, cancellationToken: Ct));
+        classified.GetProperty("added")[0].GetProperty("summary").GetString()!.ShouldContain("AGENT-SW-1");
+
+        var report = Json(await agent.CallToolAsync("check_plan_classification", new Dictionary<string, object?> { ["plan"] = plan }, cancellationToken: Ct));
+        var finding = report.GetProperty("findings")[0];
+        finding.GetProperty("after").GetInt32().ShouldBe(5);
+        finding.GetProperty("unmet").GetArrayLength().ShouldBe(2);
+        report.GetProperty("introduced").GetInt32().ShouldBe(2);
+
+        // An agent cannot apply it, whatever the requirements say.
+        using var http = NetworkFixture.Client(api, "cmdb-agent-demo", ["cmdb-agents"]);
+        (await http.PostAsync($"/api/plans/{plan["plan:".Length..]}/apply", null, Ct)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+    }
+
     private static async Task<McpClient> ConnectAsync(WebApplicationFactory<Program> api, string token)
     {
         var http = api.CreateClient();

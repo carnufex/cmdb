@@ -459,7 +459,8 @@ public sealed class PlanTools(RequestDb db, PlanWrites writes, PlanViews views, 
         var colon = reference.IndexOf(':', StringComparison.Ordinal);
         var type = colon > 0 ? reference[..colon] : "";
         return type is "site" or "equipment" or "cable" or "service"
-            ? (type, ParseRef(reference, type))
+            // A negative id is a site or equipment the plan creates (#179); the write checks that it exists in the plan.
+            ? (type, ParseRef(reference, type, planned: true))
             : throw new McpException($"\"{reference}\" is not a reference like \"site:12\", \"equipment:34\", \"cable:56\" or \"service:78\".");
     }
 }
