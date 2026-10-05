@@ -260,6 +260,8 @@ internal static class Loader
         log.WriteLine($"  scopes  {sw.Elapsed.TotalSeconds,6:0.0} s");
         await DemoPlans.SeedAsync(conn, log, ct);
         sw.Restart();
+        // Rack positions (#173): the generator places equipment in racks; stacking them gives each its units.
+        await Exec(conn, Cmdb.Database.RackStacking.Backfill, ct);
         await Exec(conn, "ANALYZE", ct);
         log.WriteLine($"  analyze {sw.Elapsed.TotalSeconds,6:0.0} s");
     }

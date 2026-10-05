@@ -108,6 +108,14 @@ Regler:
 4. När en plan avbryts markeras alla planer som beror på den.
 5. Konflikter detekteras på **resursnivå** (terminal, ledare, slot, kanal) via reservationer, inte bara på fältnivå. En plans kopplingar är anspråk på sina terminaler och ledare. En reservation håller resursen åt en plan eller tjänst, och en terminal tar en koppling av varje slag (#25).
 
+### Rack och positioner (#173)
+
+Utrustning i ett rack har en position, dess lägsta rackenhet (`equipment.rack_position`), och modellens höjd (`rackUnits` i katalogen) säger hur många enheter den tar. Ett rack är 42 U om inget annat anges.
+
+- **I planer** kan ny utrustning få `rack`, `room` (rummet racket står i, skapas vid behov) och `position`. Servern kontrollerar att den ryms i racket och inte krockar med det som redan sitter där, i produktion eller i planen. Utrustning som planen tar bort frigör sina enheter. Utan position hamnar den överst.
+- **Befintlig utrustning** staplas i sina rack från botten i id-ordning, av migreringen och av datageneratorn.
+- **Siten** visar varje rack som en frontvy med utrustningen på sina enheter och antalet lediga.
+
 ### Import till en plan (#170)
 
 Siter och kablar kan importeras i bulk till en plan, från CSV eller GeoJSON. Exempel finns i [`docs/exempel/`](exempel/): GeoJSON-filen bygger på CSV-filen, och de importeras i den ordningen till samma plan.

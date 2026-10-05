@@ -209,15 +209,26 @@ public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views
                     }), null);
                 }
             case "create_equipment":
-                return await SiteProblem(req.SiteId!.Value) is { } equipmentSite
-                    ? (null, equipmentSite)
-                    : (System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    if (await SiteProblem(req.SiteId!.Value) is { } equipmentSite)
+                    {
+                        return (null, equipmentSite);
+                    }
+                    var rack = string.IsNullOrWhiteSpace(req.Rack) ? null : req.Rack.Trim();
+                    if (req.Position is { } position && await RackProblemAsync(view, req.SiteId!.Value, rack, req.TypeKey!, position, ct) is { } rackProblem)
+                    {
+                        return (null, rackProblem);
+                    }
+                    return (System.Text.Json.JsonSerializer.Serialize(new
                     {
                         site = req.SiteId,
                         typeKey = req.TypeKey,
                         name = req.Name!.Trim(),
-                        rack = string.IsNullOrWhiteSpace(req.Rack) ? null : req.Rack.Trim(),
+                        rack,
+                        room = string.IsNullOrWhiteSpace(req.Room) ? null : req.Room.Trim(),
+                        position = req.Position,
                     }), null);
+                }
             default:
                 foreach (var site in new[] { req.ASiteId!.Value, req.BSiteId!.Value })
                 {
@@ -400,6 +411,67 @@ public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views
         return (System.Text.Json.JsonSerializer.Serialize(type == "site"
             ? (object)new { type, id, equipment, cables }
             : new { type, id }), null);
+    }
+
+    /// <summary>
+    /// Whether equipment of the type fits the rack at the position (#173): inside the rack's height, and clear of what
+    /// production and the plan's view put there (equipment the plan removes frees its units). The rack is the named one,
+    /// or the site's first, as the apply picks it.
+    /// </summary>
+    private async Task<string?> RackProblemAsync(PlanView view, long site, string? rack, string typeKey, int position, CancellationToken ct)
+    {
+        if (Cmdb.Catalog.TypeCatalog.Embedded.Find(typeKey)?.RackUnits is not { } units)
+        {
+            return "Modellen monteras inte i rack, så den har ingen position.";
+        }
+        var height = Cmdb.Database.RackStacking.DefaultRackUnits;
+        var taken = new List<(int From, int To, string Name)>();
+        string? rackName = rack;
+        if (site > 0)
+        {
+            await using var cmd = db.CreateCommand("""
+                WITH r AS (SELECT id, name, coalesce(rack_units, 42) AS h FROM location
+                           WHERE site_id = $1 AND kind = 'rack' AND ($2::text IS NULL OR name = $2) ORDER BY id LIMIT 1)
+                SELECT r.name, r.h, e.id, e.name, e.rack_position, t.rack_units
+                FROM r LEFT JOIN equipment e ON e.location_id = r.id AND e.rack_position IS NOT NULL AND e.lifecycle <> 'removed'
+                LEFT JOIN equipment_type t ON t.id = e.equipment_type_id
+                """);
+            cmd.Parameters.Add(new() { Value = site });
+            cmd.Parameters.Add(new() { Value = (object?)rack ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text });
+            var removed = view.Chain.Operations.Where(o => o.Kind == "remove").SelectMany(o => ObjectRemoval.Objects(o.Payload).Equipment).ToHashSet();
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                (rackName, height) = (reader.GetString(0), reader.GetInt32(1));
+                if (!reader.IsDBNull(2) && !removed.Contains(reader.GetInt64(2)))
+                {
+                    var from = reader.GetInt16(4);
+                    taken.Add((from, from + (reader.IsDBNull(5) ? 1 : reader.GetInt16(5)) - 1, reader.GetString(3)));
+                }
+            }
+        }
+        // What the plan already puts in the same rack at a position.
+        foreach (var o in view.Chain.Operations.Where(o => o.Kind == "create_equipment" && o.Payload.GetProperty("site").GetInt64() == site))
+        {
+            var p = o.Payload;
+            var otherRack = p.TryGetProperty("rack", out var r) && r.ValueKind == System.Text.Json.JsonValueKind.String ? r.GetString() : null;
+            if ((otherRack ?? rackName) != (rack ?? rackName) || !p.TryGetProperty("position", out var at) || at.ValueKind != System.Text.Json.JsonValueKind.Number)
+            {
+                continue;
+            }
+            var otherUnits = Cmdb.Catalog.TypeCatalog.Embedded.Find(p.GetProperty("typeKey").GetString()!)?.RackUnits ?? 1;
+            taken.Add((at.GetInt32(), at.GetInt32() + otherUnits - 1, p.GetProperty("name").GetString()!));
+        }
+        var (low, high) = (position, position + units - 1);
+        if (low < 1 || high > height)
+        {
+            return $"Racket har {height} U; en utrustning på {units} U ryms på position 1–{height - units + 1}.";
+        }
+        if (taken.FirstOrDefault(t => t.From <= high && low <= t.To) is { Name: not null } clash)
+        {
+            return $"U {low}–{high} krockar med {clash.Name} på U {clash.From}–{clash.To}.";
+        }
+        return null;
     }
 
     /// <summary>How far from the cable a site inserted into it may lie (#168).</summary>

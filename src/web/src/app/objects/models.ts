@@ -34,6 +34,8 @@ export interface SiteDetail {
     parentId: number | null;
     kind: string;
     name: string;
+    /** A rack's height in units (#173). */
+    rackUnits?: number | null;
     equipment: {
       id: number;
       name: string;
@@ -42,6 +44,9 @@ export interface SiteDetail {
       lifecycle: Lifecycle;
       ports: number;
       cards: number;
+      /** Its lowest rack unit and how many it takes (#173). */
+      position?: number | null;
+      units?: number | null;
     }[];
   }[];
   cables: {

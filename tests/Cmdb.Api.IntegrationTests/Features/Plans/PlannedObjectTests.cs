@@ -358,6 +358,49 @@ public sealed class PlannedObjectTests(ApiFactory factory)
         TestContext.Current.SendDiagnosticMessage($"Import of 2000 templated sites: {big.ElapsedMs} ms");
     }
 
+    [Fact]
+    public async Task Equipment_goes_into_a_rack_position_that_fits_and_is_free()
+    {
+        var (db, api) = await NetworkAsync(46);
+        await using var dbScope = db;
+        await using var apiScope = api;
+        using var client = NetworkFixture.Client(api);
+
+        // Loaded equipment is stacked in its racks (#173).
+        var rack = await Scalar(db, """
+            SELECT l.id FROM location l JOIN equipment e ON e.location_id = l.id
+            WHERE l.kind = 'rack' AND e.rack_position IS NOT NULL GROUP BY l.id ORDER BY count(*) DESC, l.id LIMIT 1
+            """);
+        var site = await Scalar(db, $"SELECT site_id FROM location WHERE id = {rack}");
+        var rackName = await Text(db, $"SELECT name FROM location WHERE id = {rack}");
+        var taken = await Scalar(db, $"SELECT min(rack_position) FROM equipment WHERE location_id = {rack}");
+        var top = await Scalar(db, $"""
+            SELECT max(e.rack_position + t.rack_units) FROM equipment e JOIN equipment_type t ON t.id = e.equipment_type_id WHERE e.location_id = {rack}
+            """);
+        var detail = (await client.GetFromJsonAsync<Cmdb.Api.Features.Sites.SiteDetail>($"/api/sites/{site}", Ct))!;
+        var location = detail.Locations.Single(l => l.Id == rack);
+        location.RackUnits.ShouldBe(42);
+        location.Equipment.ShouldContain(e => e.Position == taken && e.Units == 1);
+
+        var plan = await CreateAsync(client, "Ny switch i racket");
+        async Task<HttpResponseMessage> Add(int? position) => await client.PostAsJsonAsync($"/api/plans/{plan.Id}/operations",
+            new { kind = "create_equipment", siteId = site, typeKey = "acme-ax-24", name = $"SW-RACK-{position}", rack = rackName, position }, Ct);
+        var clash = await Add((int)taken);
+        clash.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await clash.Content.ReadAsStringAsync(Ct)).ShouldContain("krockar med");
+        var tooHigh = await Add(42 + 1);
+        (await tooHigh.Content.ReadAsStringAsync(Ct)).ShouldContain("Racket har 42 U");
+        (await Add(40)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        // The plan's own equipment takes its units too.
+        (await Add(40)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await Add(null)).StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        (await client.PostAsync($"/api/plans/{plan.Id}/apply", null, Ct)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await Scalar(db, $"SELECT rack_position FROM equipment WHERE name = 'SW-RACK-40'")).ShouldBe(40);
+        // Without a position it goes on top of what the rack held, under the one placed at 40.
+        (await Scalar(db, $"SELECT rack_position FROM equipment WHERE name = 'SW-RACK-'")).ShouldBe(System.Math.Max(top, 41));
+    }
+
     private async Task<(NpgsqlDataSource Db, WebApplicationFactory<Program> Api)> NetworkAsync(int seed)
     {
         var db = await factory.NewDatabaseAsync();

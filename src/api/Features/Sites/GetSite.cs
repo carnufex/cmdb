@@ -8,9 +8,12 @@ namespace Cmdb.Api.Features.Sites;
 
 public sealed record SiteRequest(long Id);
 
-public sealed record SiteEquipment(long Id, string Name, string Model, string Category, string Lifecycle, int Ports, int Cards);
+/// <param name="Position">The lowest rack unit it takes (#173), and <paramref name="Units"/> how many; null when not rack-mounted.</param>
+public sealed record SiteEquipment(long Id, string Name, string Model, string Category, string Lifecycle, int Ports, int Cards,
+    int? Position = null, int? Units = null);
 
-public sealed record SiteLocation(long Id, long? ParentId, string Kind, string Name, IReadOnlyList<SiteEquipment> Equipment);
+/// <param name="RackUnits">A rack's height in units (#173).</param>
+public sealed record SiteLocation(long Id, long? ParentId, string Kind, string Name, IReadOnlyList<SiteEquipment> Equipment, int? RackUnits = null);
 
 public sealed record SiteCable(long Id, string Code, string TypeName, string Medium, int Conductors, double LengthM, string Lifecycle, ObjectRef OtherEnd);
 
@@ -56,11 +59,15 @@ public sealed class GetSiteEndpoint(RequestDb db) : Endpoint<SiteRequest, SiteDe
                     SELECT id, code, name, site_type, lifecycle::text, ST_X(ST_PointOnSurface(geom)), ST_Y(ST_PointOnSurface(geom)), attributes::text
                     FROM site WHERE id = $1 AND {ScopeSql.Site("site.id", 2)}
                     """) { Parameters = { new() { Value = id }, scope.Parameter() } },
-                new("SELECT id, parent_id, kind, name FROM location WHERE site_id = $1 ORDER BY parent_id NULLS FIRST, name") { Parameters = { new() { Value = id } } },
+                new("""
+                    SELECT id, parent_id, kind, name, CASE WHEN kind = 'rack' THEN coalesce(rack_units, 42) END
+                    FROM location WHERE site_id = $1 ORDER BY parent_id NULLS FIRST, name
+                    """) { Parameters = { new() { Value = id } } },
                 new("""
                     SELECT e.id, e.location_id, e.name, et.model, et.category, e.lifecycle::text,
                            (SELECT count(*) FROM port p WHERE p.equipment_id = e.id)::int,
-                           (SELECT count(*) FROM equipment c WHERE c.parent_id = e.id)::int
+                           (SELECT count(*) FROM equipment c WHERE c.parent_id = e.id)::int,
+                           e.rack_position, et.rack_units
                     FROM equipment e JOIN equipment_type et ON et.id = e.equipment_type_id
                     WHERE e.site_id = $1 AND e.parent_id IS NULL
                     ORDER BY et.category, e.name
@@ -87,10 +94,11 @@ public sealed class GetSiteEndpoint(RequestDb db) : Endpoint<SiteRequest, SiteDe
             scope.HidesCoordinates ? (double?)null : reader.GetDouble(6), reader.GetString(7));
 
         await reader.NextResultAsync(ct);
-        var locations = new List<(long Id, long? Parent, string Kind, string Name)>();
+        var locations = new List<(long Id, long? Parent, string Kind, string Name, int? Units)>();
         while (await reader.ReadAsync(ct))
         {
-            locations.Add((reader.GetInt64(0), reader.IsDBNull(1) ? null : reader.GetInt64(1), reader.GetString(2), reader.GetString(3)));
+            locations.Add((reader.GetInt64(0), reader.IsDBNull(1) ? null : reader.GetInt64(1), reader.GetString(2), reader.GetString(3),
+                reader.IsDBNull(4) ? null : reader.GetInt32(4)));
         }
 
         await reader.NextResultAsync(ct);
@@ -103,7 +111,8 @@ public sealed class GetSiteEndpoint(RequestDb db) : Endpoint<SiteRequest, SiteDe
                 equipment[location] = list = [];
             }
             list.Add(new SiteEquipment(reader.GetInt64(0), reader.GetString(2), reader.GetString(3), reader.GetString(4),
-                reader.GetString(5), reader.GetInt32(6), reader.GetInt32(7)));
+                reader.GetString(5), reader.GetInt32(6), reader.GetInt32(7),
+                reader.IsDBNull(8) ? null : reader.GetInt16(8), reader.IsDBNull(9) ? null : reader.GetInt16(9)));
         }
 
         await reader.NextResultAsync(ct);
@@ -118,7 +127,7 @@ public sealed class GetSiteEndpoint(RequestDb db) : Endpoint<SiteRequest, SiteDe
         }
 
         return new SiteDetail(siteId, code, name, type, lifecycle, x, y, Terminals.Json(scope.MaskAttributes(attributes)),
-            [.. locations.Select(l => new SiteLocation(l.Id, l.Parent, l.Kind, l.Name, equipment.GetValueOrDefault(l.Id) ?? []))],
+            [.. locations.Select(l => new SiteLocation(l.Id, l.Parent, l.Kind, l.Name, equipment.GetValueOrDefault(l.Id) ?? [], l.Units))],
             cables);
     }
 }

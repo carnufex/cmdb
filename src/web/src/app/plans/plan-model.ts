@@ -106,7 +106,15 @@ export type NewOperation =
     }
   | { kind: 'rename'; type: 'site' | 'equipment'; objectId: number; name: string }
   | { kind: 'create_site'; code: string; name: string; siteType: string; x: number; y: number }
-  | { kind: 'create_equipment'; siteId: number; typeKey: string; name: string }
+  | {
+      kind: 'create_equipment';
+      siteId: number;
+      typeKey: string;
+      name: string;
+      rack?: string;
+      room?: string;
+      position?: number;
+    }
   | { kind: 'create_cable'; aSiteId: number; bSiteId: number; typeKey: string }
   | { kind: 'split_cable'; cableId: number; siteId: number; terminate: number[] }
   | { kind: 'remove'; type: 'site' | 'equipment' | 'cable'; objectId: number }
