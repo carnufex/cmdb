@@ -19,8 +19,8 @@ public sealed class McpTests(ApiFactory factory)
         var resources = await client.ListResourcesAsync(cancellationToken: Ct);
         var prompts = await client.ListPromptsAsync(cancellationToken: Ct);
 
-        tools.Select(t => t.Name).Order().ShouldBe(["add_to_plan", "connect_ports", "create_plan", "create_site_from_template", "describe_catalog",
-            "describe_classifications", "find_sites", "get_classification", "get_object", "impact", "list_plans", "list_site_templates", "neighbourhood", "preview_plan", "search",
+        tools.Select(t => t.Name).Order().ShouldBe(["add_to_plan", "check_plan_classification", "connect_ports", "create_plan", "create_site_from_template",
+            "describe_catalog", "describe_classifications", "find_sites", "get_classification", "get_object", "impact", "list_plans", "list_site_templates", "neighbourhood", "preview_plan", "search",
             "splice_ports_to_cable", "terminate_cable", "trace"]);
         // Writing tools only write plans (#64): none is destructive, and none applies a plan.
         tools.Where(t => t.ProtocolTool.Annotations!.ReadOnlyHint != true).Select(t => t.Name).Order()

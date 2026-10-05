@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { ReservationView } from '../objects/claims';
 import { ObjectLinkComponent } from '../objects/object-link';
+import { PlanClassificationComponent } from './plan-classification';
 import { PlanCreateComponent } from './plan-create';
 import { StatusComponent } from '../shell/status';
 import { Tools } from '../shell/tools';
@@ -25,7 +26,13 @@ import {
  */
 @Component({
   selector: 'cmdb-plan-panel',
-  imports: [FormsModule, StatusComponent, ObjectLinkComponent, PlanCreateComponent],
+  imports: [
+    FormsModule,
+    StatusComponent,
+    ObjectLinkComponent,
+    PlanCreateComponent,
+    PlanClassificationComponent,
+  ],
   template: `
     <header class="head">
       <h2>Planer</h2>
@@ -160,6 +167,13 @@ import {
                 }
               </ul>
               <p class="muted">Vyn laddades på {{ v.elapsedMs }} ms.</p>
+            }
+
+            @if (d.plan.status === 'draft') {
+              <cmdb-plan-classification [planId]="d.plan.id" />
+            }
+            @if (d.plan.exception) {
+              <p class="muted">Infört med undantag: {{ d.plan.exception }}</p>
             }
 
             <div class="buttons">
@@ -528,9 +542,30 @@ export class PlanPanelComponent {
       return;
     }
     await this.run(async () => {
-      const result = await firstValueFrom(
-        this.http.post<ApplyResult>(`/api/plans/${plan.id}/apply`, null),
-      );
+      const post = (exception?: string) =>
+        firstValueFrom(
+          this.http.post<ApplyResult>(
+            `/api/plans/${plan.id}/apply${exception ? `?exception=${encodeURIComponent(exception)}` : ''}`,
+            null,
+          ),
+        );
+      let result: ApplyResult;
+      try {
+        result = await post();
+      } catch (e: unknown) {
+        // The plan makes requirements of a classification level unmet (#179): applying it takes a reason, which is kept.
+        const detail = (e as { status?: number; error?: { detail?: string } }).error?.detail;
+        if ((e as { status?: number }).status !== 409 || !detail?.includes('undantag')) {
+          throw e;
+        }
+        const reason = prompt(`${detail}
+
+Motivering för undantaget:`)?.trim();
+        if (!reason) {
+          return;
+        }
+        result = await post(reason);
+      }
       this.report(result, 'behöver ses över efter införandet');
     });
   }

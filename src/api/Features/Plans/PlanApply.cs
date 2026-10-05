@@ -142,6 +142,7 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx, str
         {
             "connect" or "disconnect" or "create_cable" => ["a", "b"],
             "create_equipment" or "split_cable" => ["site"],
+            "set_classification" => ["id"],
             _ => [],
         };
         if (!fields.Any(f => op.Payload.GetProperty(f).GetInt64() is < 0 and var id && Ids.ContainsKey(id)))

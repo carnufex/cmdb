@@ -94,7 +94,9 @@ public sealed class ClassificationTests(ApiFactory factory)
         // Nothing is written until a person applies the plan.
         (await Scalar(db, "SELECT count(*) FROM classification")).ShouldBe(0);
 
-        (await client.PostAsync($"/api/plans/{plan.Id}/apply", null, Ct)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        // Level 4 on equipment raises its site to a level with requirements the site does not meet, so it takes an exception (#179).
+        (await client.PostAsync($"/api/plans/{plan.Id}/apply", null, Ct)).StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        (await client.PostAsync($"/api/plans/{plan.Id}/apply?exception=test", null, Ct)).StatusCode.ShouldBe(HttpStatusCode.OK);
         (await Scalar(db, $"SELECT level FROM classification WHERE object_type = 'service' AND object_id = {service}")).ShouldBe(5);
         (await Scalar(db, $"SELECT level FROM classification WHERE object_type = 'equipment' AND object_id = {equipment}")).ShouldBe(4);
 
@@ -227,6 +229,112 @@ public sealed class ClassificationTests(ApiFactory factory)
         var plannedCables = planned.Results.Single(r => r.Rule == "two-independent-cables");
         plannedCables.Met.ShouldBeFalse();
         plannedCables.Hint.ShouldContain("bär inte nivån");
+    }
+
+    [Fact]
+    public async Task A_new_level_five_switch_raises_its_site_and_the_plan_says_what_is_missing_and_is_applied_only_with_an_exception()
+    {
+        var db = await factory.NewDatabaseAsync();
+        await Loader.LoadAsync(db, NetworkBuilder.Build(55, Scale.Small, TypeCatalog.Embedded), reset: false, TextWriter.Null, ct: Ct);
+        var connectionString = new NpgsqlConnectionStringBuilder(factory.ConnectionString)
+        {
+            Database = new NpgsqlConnectionStringBuilder(db.ConnectionString).Database,
+        }.ConnectionString;
+        await using var api = factory.WithWebHostBuilder(b => b.UseSetting("ConnectionStrings:Cmdb", connectionString));
+        await api.Services.GetRequiredService<Cmdb.Graph.GraphHolder>().Ready.WaitAsync(TimeSpan.FromSeconds(60), Ct);
+        await api.Services.GetRequiredService<Cmdb.Api.Auth.ScopeRefreshService>().Ready.WaitAsync(TimeSpan.FromSeconds(60), Ct);
+        using var client = NetworkFixture.Client(api);
+
+        // A site with a rack and a single cable to a single neighbour: it cannot meet two independent cables.
+        var site = await Scalar(db, """
+            SELECT s.id FROM site s
+            WHERE s.lifecycle = 'in_service' AND EXISTS (SELECT 1 FROM location l WHERE l.site_id = s.id AND l.kind = 'rack')
+              AND (SELECT count(*) FROM cable c WHERE (c.a_site_id = s.id OR c.b_site_id = s.id) AND c.lifecycle = 'in_service') = 1
+            ORDER BY s.id LIMIT 1
+            """);
+        var plan = (await (await client.PostAsJsonAsync("/api/plans", new { name = "Ny kritisk switch" }, Ct)).Content.ReadFromJsonAsync<PlanSummary>(Ct))!;
+        async Task<JsonElement> Add(object operation)
+        {
+            var response = await client.PostAsJsonAsync($"/api/plans/{plan.Id}/operations", operation, Ct);
+            response.StatusCode.ShouldBe(HttpStatusCode.OK, await response.Content.ReadAsStringAsync(Ct));
+            return await response.Content.ReadFromJsonAsync<JsonElement>(Ct);
+        }
+        var created = await Add(new { kind = "create_equipment", siteId = site, typeKey = "acme-ax-24", name = "KRITISK-SW-1" });
+        var switchId = created.GetProperty("target").GetProperty("id").GetInt64();
+        switchId.ShouldBeLessThan(0);
+        // The planned switch can be classified before it exists (a negative id is what the plan creates).
+        (await Add(new { kind = "set_classification", type = "equipment", objectId = switchId, schema = "criticality", level = 5 }))
+            .GetProperty("summary").GetString()!.ShouldContain("KRITISK-SW-1");
+
+        var report = (await client.GetFromJsonAsync<PlanClassificationReport>($"/api/plans/{plan.Id}/classification", Ct))!;
+        var finding = report.Findings.Single();
+        (finding.Site.Id, finding.Before, finding.After, finding.Raised).ShouldBe((site, 0, 5, true));
+        finding.Because.ShouldContain(r => r.Kind == "contains" && r.Subject.Code == "KRITISK-SW-1");
+        finding.Unmet.Select(r => r.Rule).Order().ShouldBe(["backup-power", "two-independent-cables"]);
+        report.Introduced.ShouldBe(2);
+        finding.Suggestions.Count.ShouldBeGreaterThanOrEqualTo(2);
+        finding.Suggestions.ShouldContain(s => s.Title.Contains("reservkraft", StringComparison.Ordinal));
+        finding.Suggestions.ShouldContain(s => s.Title.Contains("Dra en kabel", StringComparison.Ordinal));
+
+        // Without a reason the plan is not applied; with one it is, and the reason is kept.
+        var refused = await client.PostAsync($"/api/plans/{plan.Id}/apply", null, Ct);
+        refused.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        (await refused.Content.ReadAsStringAsync(Ct)).ShouldContain("krav ouppfyllda");
+        (await client.PostAsync($"/api/plans/{plan.Id}/apply?exception=%20%20", null, Ct)).StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        var applied = await client.PostAsync($"/api/plans/{plan.Id}/apply?exception={Uri.EscapeDataString("Reservkraft och kabel byggs i nasta etapp.")}", null, Ct);
+        applied.StatusCode.ShouldBe(HttpStatusCode.OK, await applied.Content.ReadAsStringAsync(Ct));
+        (await applied.Content.ReadFromJsonAsync<ApplyResult>(Ct))!.Plan.Exception.ShouldBe("Reservkraft och kabel byggs i nasta etapp.");
+        var equipment = await Scalar(db, "SELECT id FROM equipment WHERE name = 'KRITISK-SW-1'");
+        (await Scalar(db, $"SELECT level FROM classification WHERE object_type = 'equipment' AND object_id = {equipment}")).ShouldBe(5);
+
+        // In production the site now derives level 5 from the switch.
+        (await client.GetFromJsonAsync<DerivedClassification>($"/api/classifications/derived?type=site&id={site}", Ct))!.Level.ShouldBe(5);
+    }
+
+    [Fact]
+    public async Task A_new_critical_site_gets_nearby_sites_that_already_meet_the_requirements_as_alternatives()
+    {
+        var db = await factory.NewDatabaseAsync();
+        await Loader.LoadAsync(db, NetworkBuilder.Build(56, Scale.Small, TypeCatalog.Embedded), reset: false, TextWriter.Null, ct: Ct);
+        // Every service critical, and reserve power everywhere: the existing sites meet level 5 in production.
+        await using (var cmd = db.CreateCommand("""
+            INSERT INTO classification (object_type, object_id, schema_key, level, source, set_by) SELECT 'service', id, 'criticality', 5, 'imported', 'test' FROM service;
+            UPDATE site SET attributes = attributes || '{"backupHours": 8}'::jsonb;
+            """))
+        {
+            await cmd.ExecuteNonQueryAsync(Ct);
+        }
+        var connectionString = new NpgsqlConnectionStringBuilder(factory.ConnectionString)
+        {
+            Database = new NpgsqlConnectionStringBuilder(db.ConnectionString).Database,
+        }.ConnectionString;
+        await using var api = factory.WithWebHostBuilder(b => b.UseSetting("ConnectionStrings:Cmdb", connectionString));
+        await api.Services.GetRequiredService<Cmdb.Graph.GraphHolder>().Ready.WaitAsync(TimeSpan.FromSeconds(60), Ct);
+        await api.Services.GetRequiredService<Cmdb.Api.Auth.ScopeRefreshService>().Ready.WaitAsync(TimeSpan.FromSeconds(60), Ct);
+        using var client = NetworkFixture.Client(api);
+        var x = await Scalar(db, "SELECT round(ST_X(ST_PointOnSurface(geom)))::bigint FROM site WHERE site_type = 'aggregation' ORDER BY id LIMIT 1");
+        var y = await Scalar(db, "SELECT round(ST_Y(ST_PointOnSurface(geom)))::bigint FROM site WHERE site_type = 'aggregation' ORDER BY id LIMIT 1");
+
+        var plan = (await (await client.PostAsJsonAsync("/api/plans", new { name = "Ny kritisk site" }, Ct)).Content.ReadFromJsonAsync<PlanSummary>(Ct))!;
+        async Task<JsonElement> Add(object operation)
+        {
+            var response = await client.PostAsJsonAsync($"/api/plans/{plan.Id}/operations", operation, Ct);
+            response.StatusCode.ShouldBe(HttpStatusCode.OK, await response.Content.ReadAsStringAsync(Ct));
+            return await response.Content.ReadFromJsonAsync<JsonElement>(Ct);
+        }
+        var site = (await Add(new { kind = "create_site", code = "KRITISK-1", name = "Ny kritisk site", siteType = "radio", x = (double)x + 200, y = (double)y + 200 }))
+            .GetProperty("target").GetProperty("id").GetInt64();
+        var sw = (await Add(new { kind = "create_equipment", siteId = site, typeKey = "acme-ax-24", name = "KRITISK-SW-2" })).GetProperty("target").GetProperty("id").GetInt64();
+        await Add(new { kind = "set_classification", type = "equipment", objectId = sw, schema = "criticality", level = 5 });
+
+        var finding = (await client.GetFromJsonAsync<PlanClassificationReport>($"/api/plans/{plan.Id}/classification", Ct))!.Findings.Single();
+        finding.Site.Code.ShouldBe("KRITISK-1");
+        finding.Unmet.Select(r => r.Rule).ShouldContain("two-independent-cables");
+        // Nearby sites that already meet the level and have room are offered instead, nearest first.
+        finding.Alternatives.ShouldNotBeEmpty();
+        finding.Alternatives.Count.ShouldBeLessThanOrEqualTo(3);
+        finding.Alternatives.ShouldAllBe(a => a.FreeRackUnits >= 1 && a.DistanceM < 30_000);
+        finding.Alternatives.Select(a => a.DistanceM).ShouldBe(finding.Alternatives.Select(a => a.DistanceM).Order());
     }
 
     private static async Task<List<long>> Ids(NpgsqlDataSource db, string sql)

@@ -20,7 +20,7 @@ internal static class PlanSql
     public static async Task<List<PlanSummary>> SummariesAsync(NpgsqlDataSource db, long[]? ids, CancellationToken ct)
     {
         await using var cmd = db.CreateCommand($"""
-            SELECT {PlanViews.Columns}, (SELECT count(*) FROM plan_operation o WHERE o.plan_id = p.id)::int
+            SELECT {PlanViews.Columns}, (SELECT count(*) FROM plan_operation o WHERE o.plan_id = p.id)::int, p.applied_exception
             FROM plan p WHERE $1::bigint[] IS NULL OR p.id = ANY($1)
             """);
         cmd.Parameters.Add(new() { Value = (object?)ids ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Array | NpgsqlTypes.NpgsqlDbType.Bigint });
@@ -31,7 +31,8 @@ internal static class PlanSql
             {
                 var p = PlanViews.ReadPlan(reader);
                 list.Add(new PlanSummary(p.Id, p.Name, p.Description, p.Status, p.Flag, p.CreatedBy, p.CreatedAt, p.UpdatedAt,
-                    p.AppliedBy, p.AppliedAt, p.DependsOn, reader.GetInt32(14), CreatedVia: p.CreatedVia, Client: p.Client));
+                    p.AppliedBy, p.AppliedAt, p.DependsOn, reader.GetInt32(14), CreatedVia: p.CreatedVia, Client: p.Client,
+                    Exception: reader.IsDBNull(15) ? null : reader.GetString(15)));
             }
         }
         // Operations in conflict with others' claims (#25), per plan.
@@ -210,7 +211,11 @@ internal static class PlanSql
                     op.CreatedBy, op.CreatedAt, [], false));
                 continue;
             }
-            var found = objects.TryGetValue((op.ObjectType!, op.ObjectId), out var o);
+            var found = objects.TryGetValue((op.ObjectType!, op.ObjectId), out var o) || (op.ObjectId < 0 && planned.Objects.ContainsKey((op.ObjectType!, op.ObjectId)));
+            if (op.ObjectId < 0 && planned.Objects.TryGetValue((op.ObjectType!, op.ObjectId), out var plannedObject))
+            {
+                (o.Ref, o.Visible) = (plannedObject, true);
+            }
             var target = !found ? new ObjectRef(op.ObjectType!, op.ObjectId, $"#{op.ObjectId}")
                 : o.Visible ? o.Ref : ObjectRef.Hidden(op.ObjectType!);
             var lifecycle = op.Payload.TryGetProperty("lifecycle", out var l) ? l.GetString() : null;

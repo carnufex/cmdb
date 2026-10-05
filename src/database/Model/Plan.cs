@@ -22,6 +22,9 @@ public class Plan
     /// </summary>
     public string? Flag { get; set; }
 
+    /// <summary>Why the plan was applied although it made requirements of a classification level unmet (#179).</summary>
+    public string? AppliedException { get; set; }
+
     /// <summary>Bumped on every change to the plan, its operations or its dependencies; plan views are cached on it.</summary>
     public int Version { get; set; } = 1;
 

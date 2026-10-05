@@ -142,6 +142,19 @@ Kritikalitet 4 och uppåt kräver två kablar till olika siter som bär nivån, 
 - **Risker:** siter som någon klassat (själva siten, eller utrustning i den) vars krav inte är uppfyllda blir risken *Klassningskrav* i driftläget och i driftagentens risklista, med åtgärdsförslag. Siter som bara är kritiska för att tjänster går genom dem lämnas åt felanalysen, annars drunknar resten. Högst 50 siter kontrolleras per körning.
 - **MCP:** `get_classification` ger kraven tillsammans med satt och härledd nivå.
 
+#### Klassning och krav i planer (#179)
+
+När en plan läggs in ska det synas vad den gör med nivåerna. Lägger du en ny switch på kritikalitet 5 på en site som inte klarar det, säger planen det.
+
+- **Planerade objekt kan klassas:** `set_classification` tar också en ny site eller ny utrustning i planen (negativt id). Formuläret för ny utrustning har en kritikalitetsväljare.
+- **Rapport per plan:** `GET /api/plans/{id}/classification` och MCP-verktyget `check_plan_classification` listar siterna planen berör. För varje site som planen höjer till en högre härledd nivå, eller där den gör ett krav ouppfyllt, visas:
+  - nivån före och efter, och vad som orsakar den (innehåller SW-NY, bär tjänst TJ-…),
+  - kraven som inte uppfylls, med vad som skulle uppfylla dem,
+  - åtgärdsutkast som operationer att lägga till i planen med ett klick (reservkraft på siten, kablar till närmaste nav och aggregeringsnoder),
+  - alternativ: upp till tre närliggande siter (inom 30 km) som redan klarar nivån och har rackutrymme för utrustningen.
+- **Det som planen själv bryter:** bara krav som var uppfyllda i produktion, eller inte gällde, och inte är det i planens vy räknas mot planen. Ett krav som redan saknades är inte planens fel.
+- **Införande:** en plan som gör krav ouppfyllda förs bara in med ett undantag och en motivering (`POST /api/plans/{id}/apply?exception=…`, högst 500 tecken), som sparas på planen och visas. Annars svarar servern 409 med kraven. Webben frågar efter motiveringen.
+
 ### Rack och positioner (#173)
 
 Utrustning i ett rack har en position, dess lägsta rackenhet (`equipment.rack_position`), och modellens höjd (`rackUnits` i katalogen) säger hur många enheter den tar. Ett rack är 42 U om inget annat anges.

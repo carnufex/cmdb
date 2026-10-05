@@ -38,6 +38,7 @@ public sealed class ClassificationDerivation(RequestDb db, GraphHolder holder, S
         }
         var graph = production;
         var overrides = new Dictionary<(string, long), int?>();
+        IReadOnlyList<PlanOp> chain = [];
         if (planId is { } plan)
         {
             if (await views.GetAsync(production, plan, scope, ct) is not { } view)
@@ -45,6 +46,7 @@ public sealed class ClassificationDerivation(RequestDb db, GraphHolder holder, S
                 return null;
             }
             graph = view.Graph;
+            chain = view.Chain.Operations;
             foreach (var op in view.Chain.Operations.Where(o => o.Kind == "set_classification" && o.Payload.GetProperty("schema").GetString() == schemaKey))
             {
                 overrides[(op.Payload.GetProperty("type").GetString()!, op.Payload.GetProperty("id").GetInt64())] =
@@ -61,6 +63,8 @@ public sealed class ClassificationDerivation(RequestDb db, GraphHolder holder, S
             case "site" when graph.TryGetSite(id, out var site) && mask.SiteVisible(site):
                 services = GraphImpact.OfSite(graph, site).Services;
                 inside = await EquipmentAtAsync(id, ct);
+                // Equipment the plan puts there counts too (#179).
+                inside.AddRange(chain.Where(o => o.Kind == "create_equipment" && o.Payload.GetProperty("site").GetInt64() == id).Select(o => Planned.ObjectId(o.Id)));
                 break;
             case "equipment" when graph.TryGetEquipment(id, out var equipment) && mask.SiteVisible(graph.SiteIndexOfEquipment(equipment)):
                 services = GraphImpact.OfEquipment(graph, equipment).Services;
@@ -102,7 +106,7 @@ public sealed class ClassificationDerivation(RequestDb db, GraphHolder holder, S
             }
         }
         var top = reasons.Where(r => r.Level == best).OrderBy(r => r.Kind == "direct" ? 0 : 1).ThenBy(r => r.Subject.Id).Take(MaxReasons).ToList();
-        var named = await NamesAsync(top, ct);
+        var named = await NamesAsync(top, chain, ct);
         var locations = type == "site" ? await LocationLevelsAsync(id, schemaKey, overrides, ct) : [];
         var inherited = best > 0 && !(levels.TryGetValue((type, id), out var direct) && direct == best);
         return new DerivedClassification(schemaKey, best, schema.Level(best)?.Name ?? (best == 0 ? "Ingen" : $"Nivå {best}"), best >= schema.CriticalFrom && best > 0,
@@ -159,11 +163,18 @@ public sealed class ClassificationDerivation(RequestDb db, GraphHolder holder, S
         return levels;
     }
 
-    private async Task<List<DerivedReason>> NamesAsync(List<DerivedReason> reasons, CancellationToken ct)
+    private async Task<List<DerivedReason>> NamesAsync(List<DerivedReason> reasons, IReadOnlyList<PlanOp> chain, CancellationToken ct)
     {
         if (reasons.Count == 0)
         {
             return reasons;
+        }
+        // What the plan creates has no row yet: named from its operations.
+        var plannedNames = new Dictionary<(string, long), string>();
+        foreach (var op in chain.Where(o => o.Kind is "create_site" or "create_equipment"))
+        {
+            plannedNames[(op.Kind == "create_site" ? "site" : "equipment", Planned.ObjectId(op.Id))] =
+                op.Kind == "create_site" ? op.Payload.GetProperty("code").GetString()! : op.Payload.GetProperty("name").GetString()!;
         }
         await using var cmd = db.Source.CreateCommand("""
             SELECT 'service', id, code, name FROM service WHERE id = ANY($1)
@@ -184,7 +195,9 @@ public sealed class ClassificationDerivation(RequestDb db, GraphHolder holder, S
             }
         }
         return [.. reasons.Select(r => names.TryGetValue((r.Subject.Type, r.Subject.Id), out var n)
-            ? r with { Subject = new ObjectRef(r.Subject.Type, r.Subject.Id, n.Code, n.Name) } : r)];
+            ? r with { Subject = new ObjectRef(r.Subject.Type, r.Subject.Id, n.Code, n.Name) }
+            : plannedNames.TryGetValue((r.Subject.Type, r.Subject.Id), out var planned)
+                ? r with { Subject = new ObjectRef(r.Subject.Type, r.Subject.Id, planned, null, "planned") } : r)];
     }
 
     /// <summary>The level each location of the site gets from the equipment inside it, rolled up through its parents.</summary>
