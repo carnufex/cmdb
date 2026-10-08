@@ -75,7 +75,7 @@ public sealed class PlannedObjectTests(ApiFactory factory)
         var realSite = await Scalar(db, "SELECT id FROM site WHERE code = 'RAD-PLAN-1'");
         (await Scalar(db, $"SELECT count(*) FROM equipment WHERE site_id = {realSite} AND name = 'RAD-PLAN-1 AX-24 1'")).ShouldBe(1);
         (await Scalar(db, $"SELECT count(*) FROM port p JOIN equipment e ON e.id = p.equipment_id WHERE e.site_id = {realSite}"))
-            .ShouldBe(PortExpansion.Expand(TypeCatalog.Embedded.Find("acme-ax-24")!).Count);
+            .ShouldBe(PortExpansion.Expand(TypeCatalog.Current.Find("acme-ax-24")!).Count);
         var realCable = await Scalar(db, $"SELECT id FROM cable WHERE a_site_id = {site} AND b_site_id = {realSite}");
         (await Scalar(db, $"SELECT count(*) FROM conductor WHERE cable_id = {realCable}")).ShouldBe(12);
         (await Scalar(db, $"SELECT count(*) FROM connection WHERE valid_to IS NULL AND {port} IN (a_terminal_id, b_terminal_id)")).ShouldBe(1);
@@ -316,7 +316,7 @@ public sealed class PlannedObjectTests(ApiFactory factory)
 
         var done = await Import("csv", csv);
         done.Problems.ShouldBe(0);
-        var template = SiteTemplates.Embedded.Find("radiosite-standard")!;
+        var template = SiteTemplates.Current.Find("radiosite-standard")!;
         (done.Sites, done.Equipment, done.Connections, done.Cables).ShouldBe((2, template.Equipment.Count, template.Connections.Count, 2));
         var view = (await client.GetFromJsonAsync<PlanDiff>($"/api/plans/{plan.Id}/view", Ct))!;
         view.Problems.ShouldBe(0);
@@ -478,7 +478,7 @@ public sealed class PlannedObjectTests(ApiFactory factory)
     private async Task<(NpgsqlDataSource Db, WebApplicationFactory<Program> Api)> NetworkAsync(int seed)
     {
         var db = await factory.NewDatabaseAsync();
-        await Loader.LoadAsync(db, NetworkBuilder.Build(seed, Scale.Small, TypeCatalog.Embedded), reset: false, TextWriter.Null, ct: Ct);
+        await Loader.LoadAsync(db, NetworkBuilder.Build(seed, Scale.Small, TypeCatalog.Current), reset: false, TextWriter.Null, ct: Ct);
         await using (var clear = db.CreateCommand("DELETE FROM reservation; DELETE FROM plan_operation; DELETE FROM plan_dependency; DELETE FROM plan"))
         {
             await clear.ExecuteNonQueryAsync(Ct);

@@ -67,7 +67,7 @@ public sealed class PlannedNames
                         names.Objects[("equipment", id)] = equipment;
                         var site = Site(p.GetProperty("site").GetInt64());
                         names._equipmentSites[id] = site;
-                        if (TypeCatalog.Embedded.Find(p.GetProperty("typeKey").GetString()!) is { } type)
+                        if (TypeCatalog.Current.Find(p.GetProperty("typeKey").GetString()!) is { } type)
                         {
                             foreach (var port in PortExpansion.Expand(type))
                             {
@@ -80,7 +80,7 @@ public sealed class PlannedNames
                 case "create_cable":
                     {
                         var typeKey = p.GetProperty("typeKey").GetString()!;
-                        var typeName = TypeCatalog.Embedded.CableTypes.FirstOrDefault(t => t.Key == typeKey)?.Name ?? typeKey;
+                        var typeName = TypeCatalog.Current.CableTypes.FirstOrDefault(t => t.Key == typeKey)?.Name ?? typeKey;
                         var cable = new ObjectRef("cable", id, $"NY-K{op.Id}", typeName, "planned");
                         names.Objects[("cable", id)] = cable;
                         var (a, b) = (Site(p.GetProperty("a").GetInt64()), Site(p.GetProperty("b").GetInt64()));
@@ -97,7 +97,7 @@ public sealed class PlannedNames
                 case "split_cable":
                     {
                         var typeKey = p.GetProperty("typeKey").GetString()!;
-                        var typeName = TypeCatalog.Embedded.CableTypes.FirstOrDefault(t => t.Key == typeKey)?.Name ?? typeKey;
+                        var typeName = TypeCatalog.Current.CableTypes.FirstOrDefault(t => t.Key == typeKey)?.Name ?? typeKey;
                         var code = p.GetProperty("code").GetString()!;
                         var partA = new ObjectRef("cable", id, $"{code}-A", typeName, "planned");
                         var partB = new ObjectRef("cable", CableSplit.SecondCable(op.Id), $"{code}-B", typeName, "planned");
@@ -139,7 +139,7 @@ public sealed class PlannedNames
             case "create_equipment":
                 {
                     var equipment = Objects[("equipment", id)];
-                    var model = TypeCatalog.Embedded.Find(p.GetProperty("typeKey").GetString()!)?.Model ?? p.GetProperty("typeKey").GetString();
+                    var model = TypeCatalog.Current.Find(p.GetProperty("typeKey").GetString()!)?.Model ?? p.GetProperty("typeKey").GetString();
                     var site = _equipmentSites.GetValueOrDefault(id);
                     return ($"Ny utrustning {equipment.Code} ({model}){(site is null ? "" : $" på {site.Code}")}", equipment);
                 }

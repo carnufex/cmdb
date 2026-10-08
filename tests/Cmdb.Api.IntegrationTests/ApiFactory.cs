@@ -41,7 +41,7 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         Db = CmdbDatabase.CreateDataSource(ConnectionString);
         await CmdbDatabase.MigrateAsync(Db);
         await using var context = CmdbDatabase.CreateContext(Db);
-        await CatalogSync.SyncAsync(context, TypeCatalog.Embedded);
+        await CatalogSync.SyncAsync(context, TypeCatalog.Current);
         await Cmdb.Database.Scopes.ScopeCatalog.SyncAsync(context);
         await Cmdb.Database.Voice.VoiceCallerCatalog.SyncAsync(context);
         // Starting the host loads the graph in the background; tests begin once it is in place.

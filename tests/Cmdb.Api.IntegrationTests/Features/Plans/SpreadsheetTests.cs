@@ -100,7 +100,7 @@ public sealed class SpreadsheetTests(ApiFactory factory)
     private async Task<(NpgsqlDataSource Db, WebApplicationFactory<Program> Api)> NetworkAsync(int seed)
     {
         var db = await factory.NewDatabaseAsync();
-        await Loader.LoadAsync(db, NetworkBuilder.Build(seed, Scale.Small, TypeCatalog.Embedded), reset: false, TextWriter.Null, ct: Ct);
+        await Loader.LoadAsync(db, NetworkBuilder.Build(seed, Scale.Small, TypeCatalog.Current), reset: false, TextWriter.Null, ct: Ct);
         var connectionString = new NpgsqlConnectionStringBuilder(factory.ConnectionString)
         {
             Database = new NpgsqlConnectionStringBuilder(db.ConnectionString).Database,

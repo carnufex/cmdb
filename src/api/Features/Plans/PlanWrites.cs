@@ -595,7 +595,7 @@ public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views
     private async Task<string?> RackProblemAsync(PlanView view, long site, string? rack, string typeKey, int position, CancellationToken ct,
         long? except = null)
     {
-        if (Cmdb.Catalog.TypeCatalog.Embedded.Find(typeKey)?.RackUnits is not { } units)
+        if (Cmdb.Catalog.TypeCatalog.Current.Find(typeKey)?.RackUnits is not { } units)
         {
             return "Modellen monteras inte i rack, så den har ingen position.";
         }
@@ -638,7 +638,7 @@ public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views
             {
                 continue;
             }
-            var otherUnits = Cmdb.Catalog.TypeCatalog.Embedded.Find(p.GetProperty("typeKey").GetString()!)?.RackUnits ?? 1;
+            var otherUnits = Cmdb.Catalog.TypeCatalog.Current.Find(p.GetProperty("typeKey").GetString()!)?.RackUnits ?? 1;
             taken.Add((at.GetInt32(), at.GetInt32() + otherUnits - 1, p.GetProperty("name").GetString()!));
         }
         var (low, high) = (position, position + units - 1);
@@ -681,7 +681,7 @@ public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views
             return $"equipment {id} finns inte.";
         }
         using var merged = System.Text.Json.JsonDocument.Parse(reader.GetString(1));
-        var errors = Cmdb.Catalog.TypeCatalog.Embedded.ValidateAttributes(reader.GetString(0), merged.RootElement);
+        var errors = Cmdb.Catalog.TypeCatalog.Current.ValidateAttributes(reader.GetString(0), merged.RootElement);
         return errors.Count == 0 ? null : $"Attributen passar inte modellens schema: {string.Join("; ", errors)}";
     }
 

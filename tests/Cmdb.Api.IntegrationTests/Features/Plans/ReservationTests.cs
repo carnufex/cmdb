@@ -142,7 +142,7 @@ public sealed class ReservationTests(ApiFactory factory)
     private async Task<(NpgsqlDataSource Db, WebApplicationFactory<Program> Api)> NetworkAsync(int seed)
     {
         var db = await factory.NewDatabaseAsync();
-        await Loader.LoadAsync(db, NetworkBuilder.Build(seed, Scale.Small, TypeCatalog.Embedded), reset: false, TextWriter.Null, ct: Ct);
+        await Loader.LoadAsync(db, NetworkBuilder.Build(seed, Scale.Small, TypeCatalog.Current), reset: false, TextWriter.Null, ct: Ct);
         // The generator's demo plans claim free ports too; these tests start without plans.
         await using (var clear = db.CreateCommand("DELETE FROM plan_operation; DELETE FROM plan_dependency; DELETE FROM plan"))
         {

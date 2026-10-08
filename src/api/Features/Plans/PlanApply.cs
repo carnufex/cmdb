@@ -191,7 +191,7 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx, str
     {
         var site = p.GetProperty("site").GetInt64();
         var typeKey = p.GetProperty("typeKey").GetString()!;
-        var type = TypeCatalog.Embedded.Find(typeKey) ?? throw new InvalidOperationException($"Unknown equipment type {typeKey}.");
+        var type = TypeCatalog.Current.Find(typeKey) ?? throw new InvalidOperationException($"Unknown equipment type {typeKey}.");
         // Equipment sits in a rack: the named one (#26), created in a building on the site when missing; without a name,
         // the site's first rack, or a new "Rack 1".
         var rack = p.TryGetProperty("rack", out var r) && r.ValueKind == JsonValueKind.String ? r.GetString()! : null;

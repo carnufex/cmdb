@@ -45,7 +45,7 @@ public static class NetworkFixture
     private static async Task<(NpgsqlDataSource, WebApplicationFactory<Program>)> CreateAsync(ApiFactory factory, bool scenarios = false)
     {
         var db = await factory.NewDatabaseAsync();
-        await Loader.LoadAsync(db, NetworkBuilder.Build(1, Scale.Small, TypeCatalog.Embedded), reset: false, TextWriter.Null, scenarios: scenarios);
+        await Loader.LoadAsync(db, NetworkBuilder.Build(1, Scale.Small, TypeCatalog.Current), reset: false, TextWriter.Null, scenarios: scenarios);
         // The data source hides the password, so rebuild from the container's connection string.
         var connectionString = new NpgsqlConnectionStringBuilder(factory.ConnectionString)
         {

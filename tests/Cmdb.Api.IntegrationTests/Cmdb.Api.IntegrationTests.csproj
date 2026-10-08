@@ -16,6 +16,10 @@
     <ProjectReference Include="..\..\src\graph\Cmdb.Graph.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <!-- A synthetic catalog outside the build, read from a folder like CMDB_CATALOG_PATH (#207). -->
+    <None Include="TestCatalog\**\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
     <Using Include="Xunit" />
     <Using Include="Shouldly" />
   </ItemGroup>

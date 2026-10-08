@@ -28,9 +28,9 @@ public static class ClassificationStore
     /// <summary>The problem with setting this level on this kind of object, or null when it is fine.</summary>
     public static string? Problem(string type, string schemaKey, int? level)
     {
-        if (ClassificationCatalog.Embedded.Find(schemaKey) is not { } schema)
+        if (ClassificationCatalog.Current.Find(schemaKey) is not { } schema)
         {
-            return $"Klassningen {schemaKey} finns inte: {string.Join(", ", ClassificationCatalog.Embedded.Schemas.Select(s => s.Key))}.";
+            return $"Klassningen {schemaKey} finns inte: {string.Join(", ", ClassificationCatalog.Current.Schemas.Select(s => s.Key))}.";
         }
         if (!schema.AppliesTo.Contains(type))
         {
@@ -52,7 +52,7 @@ public static class ClassificationStore
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
         {
-            if (ClassificationCatalog.Embedded.Find(reader.GetString(0)) is not { } schema)
+            if (ClassificationCatalog.Current.Find(reader.GetString(0)) is not { } schema)
             {
                 continue;
             }
@@ -95,7 +95,7 @@ public sealed class ListClassificationSchemasEndpoint : EndpointWithoutRequest<I
     public override void Configure() => Get("/classifications/schemas");
 
     public override async Task HandleAsync(CancellationToken ct) =>
-        await Send.OkAsync([.. ClassificationCatalog.Embedded.Schemas.OrderBy(s => s.Key, StringComparer.Ordinal).Select(ClassificationStore.View)], ct);
+        await Send.OkAsync([.. ClassificationCatalog.Current.Schemas.OrderBy(s => s.Key, StringComparer.Ordinal).Select(ClassificationStore.View)], ct);
 }
 
 public sealed class ObjectClassificationRequest
@@ -174,7 +174,7 @@ public sealed class ClassificationTools(RequestDb db, IHttpContextAccessor http,
     [Description("The classification schemas (for example criticality 1–5): their levels, which object types they apply to, and the level " +
         "that counts as critical. Set one with add_to_plan (kind set_classification).")]
     public IReadOnlyList<ClassificationSchemaView> Describe() =>
-        [.. ClassificationCatalog.Embedded.Schemas.OrderBy(s => s.Key, StringComparer.Ordinal).Select(ClassificationStore.View)];
+        [.. ClassificationCatalog.Current.Schemas.OrderBy(s => s.Key, StringComparer.Ordinal).Select(ClassificationStore.View)];
 
     [McpServerTool(Name = "get_classification", Title = "Hämta klassning", ReadOnly = true, Idempotent = true, OpenWorld = false)]
     [Description("The classifications an object has, with level names and who set them (direct), and the criticality it gets from " +

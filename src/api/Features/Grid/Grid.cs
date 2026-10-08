@@ -98,7 +98,7 @@ public sealed class GridEndpoint(RequestDb db) : Endpoint<GridRequest, GridResul
         var columns = new Dictionary<string, GridColumn>(StringComparer.Ordinal);
         foreach (var typeKey in rows.Where(r => r.TypeKey is not null).Select(r => r.TypeKey!).Distinct())
         {
-            if (TypeCatalog.Embedded.Find(typeKey) is not { } type)
+            if (TypeCatalog.Current.Find(typeKey) is not { } type)
             {
                 continue;
             }

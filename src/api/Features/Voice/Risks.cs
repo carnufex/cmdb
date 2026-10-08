@@ -50,7 +50,7 @@ public static class RiskDetection
         Classifications.ClassificationRules rules, string responsible, string name, CancellationToken ct)
     {
         const string schemaKey = "criticality";
-        var from = Cmdb.Catalog.ClassificationCatalog.Embedded.Find(schemaKey)?.RuleList.Where(r => r.AppliesTo.Contains("site")).Select(r => r.FromLevel).DefaultIfEmpty(0).Min() ?? 0;
+        var from = Cmdb.Catalog.ClassificationCatalog.Current.Find(schemaKey)?.RuleList.Where(r => r.AppliesTo.Contains("site")).Select(r => r.FromLevel).DefaultIfEmpty(0).Min() ?? 0;
         if (from == 0)
         {
             return [];

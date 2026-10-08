@@ -157,7 +157,7 @@ public sealed class GetEquipmentEndpoint(RequestDb db) : Endpoint<EquipmentReque
     /// <summary>Front-panel cell per port position, from the type's template.</summary>
     private static Dictionary<int, (int Row, int Column)> PanelCells(string typeKey, string? slot)
     {
-        var type = Cmdb.Catalog.TypeCatalog.Embedded.Find(typeKey);
+        var type = Cmdb.Catalog.TypeCatalog.Current.Find(typeKey);
         return type is null
             ? []
             : Cmdb.Catalog.PortExpansion.Expand(type, slot).ToDictionary(p => p.Position, p => (p.Row, p.Column));

@@ -61,7 +61,7 @@ public sealed class ListTemplatesEndpoint : EndpointWithoutRequest<List<Template
     public override void Configure() => Get("/templates");
 
     public override Task HandleAsync(CancellationToken ct) =>
-        Send.OkAsync([.. SiteTemplates.Embedded.All.OrderBy(t => t.Name, StringComparer.Ordinal)
+        Send.OkAsync([.. SiteTemplates.Current.All.OrderBy(t => t.Name, StringComparer.Ordinal)
             .Select(t => new TemplateSummary(t.Key, t.Name, t.SiteType, t.Description, t.Equipment.Count, t.Connections.Count))], ct);
 }
 

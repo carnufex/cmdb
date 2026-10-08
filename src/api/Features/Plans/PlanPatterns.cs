@@ -82,7 +82,7 @@ public sealed class PlanPatterns(RequestDb db, PlanWrites writes, PlanViews view
     /// <summary>A site from a template: the site, its equipment in racks, and the internal cabling, as one batch.</summary>
     public async Task<PlanWrite<List<PlanOperationView>>> TemplateAsync(ClaimsPrincipal user, UserScope scope, TemplateRequest req, CancellationToken ct)
     {
-        if (SiteTemplates.Embedded.Find(req.TemplateKey) is not { } template)
+        if (SiteTemplates.Current.Find(req.TemplateKey) is not { } template)
         {
             return PlanWrite.Fail<List<PlanOperationView>>(PlanWriteFailure.Invalid, $"Mallen {req.TemplateKey} finns inte.");
         }
@@ -107,7 +107,7 @@ public sealed class PlanPatterns(RequestDb db, PlanWrites writes, PlanViews view
             await RemoveAsync(req.Id, [site.Value[0].Id], ct);
             return equipment;
         }
-        var ops = template.Equipment.Select((e, i) => (e.Ref, Op: equipment.Value[i].Id, Type: TypeCatalog.Embedded.Find(e.TypeKey)!))
+        var ops = template.Equipment.Select((e, i) => (e.Ref, Op: equipment.Value[i].Id, Type: TypeCatalog.Current.Find(e.TypeKey)!))
             .ToDictionary(x => x.Ref);
         long Port(string equipmentRef, string port)
         {
@@ -212,7 +212,7 @@ public sealed class PlanPatterns(RequestDb db, PlanWrites writes, PlanViews view
         {
             var chain = await PlanViews.LoadChainAsync(db, planId, ct);
             var op = chain?.Operations.FirstOrDefault(o => o.Kind == "create_equipment" && Planned.ObjectId(o.Id) == equipmentId);
-            return op is null || TypeCatalog.Embedded.Find(op.Payload.GetProperty("typeKey").GetString()!) is not { } type ? []
+            return op is null || TypeCatalog.Current.Find(op.Payload.GetProperty("typeKey").GetString()!) is not { } type ? []
                 : [.. PortExpansion.Expand(type).Select(p => new PlanTerminal(Planned.Terminal(op.Id, p.Position), p.Name, p.Position))];
         }
         await using var cmd = db.CreateCommand($"""
@@ -294,7 +294,7 @@ public sealed class PlanPatterns(RequestDb db, PlanWrites writes, PlanViews view
     {
         var odfs = chain.Operations
             .Where(o => o.Kind == "create_equipment" && o.Payload.GetProperty("site").GetInt64() == siteId
-                && TypeCatalog.Embedded.Find(o.Payload.GetProperty("typeKey").GetString()!)?.Category == "odf")
+                && TypeCatalog.Current.Find(o.Payload.GetProperty("typeKey").GetString()!)?.Category == "odf")
             .Select(o => (Planned.ObjectId(o.Id), o.Payload.GetProperty("name").GetString()!))
             .ToList();
         if (siteId > 0)

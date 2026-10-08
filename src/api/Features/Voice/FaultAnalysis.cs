@@ -91,7 +91,7 @@ public static class FaultAnalysis
         {
             cmd.Parameters.Add(new() { Value = ids });
             // The level that counts as critical is the schema's to say (#176).
-            cmd.Parameters.Add(new() { Value = Cmdb.Catalog.ClassificationCatalog.Embedded.Find("criticality")!.CriticalFrom });
+            cmd.Parameters.Add(new() { Value = Cmdb.Catalog.ClassificationCatalog.Current.Find("criticality")!.CriticalFrom });
             await using var reader = await cmd.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct))
             {

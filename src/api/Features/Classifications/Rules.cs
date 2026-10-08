@@ -31,7 +31,7 @@ public sealed class ClassificationRules(RequestDb db, ClassificationDerivation d
         int? assumeLevel = null)
     {
         var started = System.Diagnostics.Stopwatch.GetTimestamp();
-        if (ClassificationCatalog.Embedded.Find(schemaKey) is not { } schema
+        if (ClassificationCatalog.Current.Find(schemaKey) is not { } schema
             || await derivation.DeriveAsync(scope, type, id, schemaKey, planId, ct) is not { } derived)
         {
             return null;

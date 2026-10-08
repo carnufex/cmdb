@@ -1,12 +1,11 @@
 using System.Collections.Frozen;
-using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Json.Schema;
 
 namespace Cmdb.Catalog;
 
-/// <summary>The type catalog (equipment and cable types), loaded and validated from the embedded catalog files.</summary>
+/// <summary>The type catalog (equipment and cable types), loaded and validated from the catalog files (<see cref="CatalogSource"/>).</summary>
 public sealed class TypeCatalog
 {
     public static readonly IReadOnlySet<string> Categories = new HashSet<string>(StringComparer.Ordinal)
@@ -26,7 +25,7 @@ public sealed class TypeCatalog
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false) },
     };
 
-    private static readonly Lazy<TypeCatalog> EmbeddedCatalog = new(() => Load(typeof(TypeCatalog).Assembly));
+    private static readonly Lazy<TypeCatalog> CurrentCatalog = new(() => Load(CatalogSource.Current));
 
     private readonly FrozenDictionary<string, EquipmentType> _types;
     private readonly FrozenDictionary<string, JsonSchema> _schemas;
@@ -39,8 +38,8 @@ public sealed class TypeCatalog
         _cableTypes = cableTypes.ToFrozenDictionary(t => t.Key, StringComparer.Ordinal);
     }
 
-    /// <summary>The catalog shipped with this build.</summary>
-    public static TypeCatalog Embedded => EmbeddedCatalog.Value;
+    /// <summary>The catalog this process uses (<see cref="CatalogSource.Current"/>).</summary>
+    public static TypeCatalog Current => CurrentCatalog.Value;
 
     public IReadOnlyCollection<EquipmentType> Types => _types.Values;
 
@@ -127,19 +126,17 @@ public sealed class TypeCatalog
         return new TypeCatalog(types, schemas, cableTypes);
     }
 
-    private static TypeCatalog Load(Assembly assembly)
+    /// <summary>Loads and validates the equipment and cable types from <paramref name="source"/>.</summary>
+    public static TypeCatalog Load(CatalogSource source)
     {
-        const string prefix = "equipment-types/";
-        string Read(string name)
+        try
         {
-            using var reader = new StreamReader(assembly.GetManifestResourceStream(name)!);
-            return reader.ReadToEnd();
+            return Parse(source.Files("equipment-types"),
+                source.Read("cable-types.json") ?? throw new InvalidOperationException("Invalid type catalog:" + Environment.NewLine + "cable-types.json: missing"));
         }
-        return Parse(
-            assembly.GetManifestResourceNames()
-                .Where(n => n.StartsWith(prefix, StringComparison.Ordinal))
-                .Order(StringComparer.Ordinal)
-                .Select(n => (n[prefix.Length..], Read(n))),
-            Read("cable-types.json"));
+        catch (InvalidOperationException ex)
+        {
+            throw new InvalidOperationException($"{ex.Message}{Environment.NewLine}(catalog: {source.Name})", ex);
+        }
     }
 }

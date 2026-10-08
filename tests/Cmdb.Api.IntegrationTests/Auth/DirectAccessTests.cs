@@ -88,7 +88,7 @@ public sealed class DirectAccessTests(ApiFactory factory)
     private async Task<NpgsqlDataSource> NetworkAsync()
     {
         var db = await factory.NewDatabaseAsync();
-        await Loader.LoadAsync(db, NetworkBuilder.Build(1, Scale.Small, TypeCatalog.Embedded), reset: false, TextWriter.Null, ct: Ct);
+        await Loader.LoadAsync(db, NetworkBuilder.Build(1, Scale.Small, TypeCatalog.Current), reset: false, TextWriter.Null, ct: Ct);
         return db;
     }
 

@@ -38,7 +38,7 @@ var dataSource = CmdbDatabase.CreateDataSource(connectionString);
 builder.Services.AddSingleton(_ => new Cmdb.Api.Auth.SystemDb(dataSource));
 builder.Services.AddSingleton(new Cmdb.Api.Auth.RequestDb(dataSource));
 builder.Services.AddDbContext<CmdbDbContext>((sp, o) => o.UseCmdb(sp.GetRequiredService<Cmdb.Api.Auth.RequestDb>().Source));
-builder.Services.AddSingleton(TypeCatalog.Embedded);
+builder.Services.AddSingleton(TypeCatalog.Current);
 builder.Services.AddCmdbAuthentication(builder.Configuration);
 builder.Services.AddFastEndpoints();
 builder.Services.AddCmdbMcp();
@@ -75,7 +75,7 @@ if (migrateOnly || app.Configuration.GetValue<bool>("Database:MigrateOnStartup")
     StartupLog.MigrationsApplied(app.Logger, applied.Count, applied);
     // The type catalog is versioned data and ships with the schema.
     await using var scope = app.Services.CreateAsyncScope();
-    var synced = await CatalogSync.SyncAsync(scope.ServiceProvider.GetRequiredService<CmdbDbContext>(), TypeCatalog.Embedded);
+    var synced = await CatalogSync.SyncAsync(scope.ServiceProvider.GetRequiredService<CmdbDbContext>(), TypeCatalog.Current);
     StartupLog.CatalogSynced(app.Logger, synced);
     // Access scopes (#22) are synthetic demo data too; what they show is materialised after the sync.
     await Cmdb.Database.Scopes.ScopeCatalog.SyncAsync(scope.ServiceProvider.GetRequiredService<CmdbDbContext>());

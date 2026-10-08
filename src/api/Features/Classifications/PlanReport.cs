@@ -177,7 +177,7 @@ public sealed class PlanClassification(RequestDb db, ClassificationDerivation de
         UserScope scope, CancellationToken ct)
     {
         var list = new List<SuggestedOperation>();
-        var schema = ClassificationCatalog.Embedded.Find(SchemaKey)!;
+        var schema = ClassificationCatalog.Current.Find(SchemaKey)!;
         foreach (var result in unmet)
         {
             var rule = schema.RuleList.First(r => r.Id == result.Rule);
@@ -213,7 +213,7 @@ public sealed class PlanClassification(RequestDb db, ClassificationDerivation de
             return [];
         }
         var units = chain.Where(o => o.Kind == "create_equipment" && o.Payload.GetProperty("site").GetInt64() == site)
-            .Sum(o => TypeCatalog.Embedded.Find(o.Payload.GetProperty("typeKey").GetString()!)?.RackUnits ?? 0);
+            .Sum(o => TypeCatalog.Current.Find(o.Payload.GetProperty("typeKey").GetString()!)?.RackUnits ?? 0);
         var found = new List<AlternativeSite>();
         foreach (var near in await NearAsync(site, at, Candidates, chain, scope, null, ct))
         {

@@ -27,7 +27,7 @@ internal static class Loader
         await CmdbDatabase.MigrateAsync(db, ct);
         await using (var context = CmdbDatabase.CreateContext(db))
         {
-            await CatalogSync.SyncAsync(context, TypeCatalog.Embedded, ct);
+            await CatalogSync.SyncAsync(context, TypeCatalog.Current, ct);
             await Cmdb.Database.Scopes.ScopeCatalog.SyncAsync(context, ct);
             await Cmdb.Database.Voice.VoiceCallerCatalog.SyncAsync(context, ct);
         }

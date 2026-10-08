@@ -90,7 +90,7 @@ internal static class ScaleReport
     /// <summary>The network's rows, and ports without connections to patch in the change batches.</summary>
     private static (GraphData Data, long[] Free) Generate(string scaleName)
     {
-        var network = NetworkBuilder.Build(1, Scale.Parse(scaleName), TypeCatalog.Embedded);
+        var network = NetworkBuilder.Build(1, Scale.Parse(scaleName), TypeCatalog.Current);
         var data = NetworkGraph.From(network);
         var connected = new HashSet<long>(data.ConnectionA);
         connected.UnionWith(data.ConnectionB);

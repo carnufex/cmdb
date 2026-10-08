@@ -46,6 +46,23 @@ En image från en branch kan byggas för att testa den (`scripts/deploy.sh --all
 
 - PostGIS körs med CloudNativePG (`cmdb-postgresql`, en instans, Longhorn). `postgis` och `pg_trgm` skapas när klustret initieras, eftersom postgis kräver superuser.
 - Migreringarna och synken av typkatalogen körs i init-containern `migrate` (`dotnet Cmdb.Api.dll --migrate`) innan API:t startar. De körs alltså vid varje utrullning.
+- **Egen katalog** (#207): montera en mapp med samma struktur som `catalog/` som volym och sätt `CMDB_CATALOG_PATH` på API:t, init-containern `migrate` och datageneratorn, alla till samma sökväg. Mappen behöver bara vara läsbar, så skrivskyddad montering och godtyckligt UID fungerar. Utan variabeln används den inbäddade syntetiska katalogen. Se [domanmodell.md](domanmodell.md#extern-katalog).
+
+  ```yaml
+  env:
+    - name: CMDB_CATALOG_PATH
+      value: /catalog
+  volumeMounts:
+    - name: catalog
+      mountPath: /catalog
+      readOnly: true
+  volumes:
+    - name: catalog
+      configMap:          # eller en PVC eller git-sync-sidecar när katalogen är stor
+        name: cmdb-catalog
+  ```
+
+  En ConfigMap kan inte ha undermappar; använd `items` med `path: equipment-types/<key>.json` per fil, eller en volym som har mappstrukturen.
 - **Migreringar måste tåla att den förra versionen fortfarande kör** under utrullningen och vid en rollback. Lägg till först och ta bort i en senare release (expand/contract). En destruktiv migrering kräver ett issue med `type:decision`.
 - Databasen säkerhetskopieras inte. All data är syntetisk och genereras om.
 
