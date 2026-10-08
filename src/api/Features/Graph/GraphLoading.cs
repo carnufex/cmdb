@@ -12,12 +12,12 @@ namespace Cmdb.Api.Features.Graph;
 /// </para>
 /// <para>
 /// Follow: woken by NOTIFY, or by the poll interval at the latest, each batch of changes is applied and swapped in
-/// atomically. Changes arriving meanwhile form the next batch. A batch that moves connections, touches objects without
-/// changing their structure, adds equipment and cables, or changes circuits becomes a delta on the graph (#81, #119,
-/// #121), in time proportional to the batch. A delta past <c>Graph:DeltaMaxNodes</c>, or older than the snapshot
-/// interval, is folded into the arrays. Any other batch (removed or moved objects) rebuilds: the base's rows with every
-/// batch since replaced, built once. A bulk load, another database, or rows that do not fit together give a full reload
-/// instead.
+/// atomically. Changes arriving meanwhile form the next batch. A batch that moves connections, adds, changes, moves or
+/// removes equipment and cables, or changes circuits becomes a delta on the graph (#81, #119, #121, #123), in time
+/// proportional to the batch. A delta past <c>Graph:DeltaMaxNodes</c>, or older than the snapshot interval, is folded
+/// into the arrays. A batch whose rows do not fit the delta (a removed terminal a circuit still passes, say) rebuilds:
+/// the base's rows with every batch since replaced, built once. A bulk load, another database, or rows that do not fit
+/// together give a full reload instead.
 /// </para>
 /// </summary>
 public sealed partial class GraphLoadingService(
@@ -145,11 +145,6 @@ public sealed partial class GraphLoadingService(
         else if (next.OverlayNodes > DeltaMaxNodes)
         {
             next = Flatten(next);
-            if (next is null)
-            {
-                await FullLoadAsync("reload", ct);
-                return;
-            }
         }
         holder.Apply(next, new GraphChangeInfo(batch.Changes, batch.Keys.Count, sw.Elapsed, DateTimeOffset.UtcNow, mode));
         // New cables, circuits or equipment may change what access scopes show (#22).
@@ -165,11 +160,6 @@ public sealed partial class GraphLoadingService(
         {
             sw.Restart();
             next = Flatten(next);
-            if (next is null)
-            {
-                await FullLoadAsync("reload", ct);
-                return;
-            }
             holder.Compacted(next, new GraphChangeInfo(0, 0, sw.Elapsed, DateTimeOffset.UtcNow, "compaction"));
             Compacted(logger, sw.Elapsed.TotalMilliseconds, next.Version);
         }
@@ -186,16 +176,10 @@ public sealed partial class GraphLoadingService(
         _pending.Clear();
     }
 
-    /// <summary>
-    /// The delta folded into the arrays, which become the base; rebuilt from rows when new ids do not follow the
-    /// arrays' own. Null when the rows do not fit together.
-    /// </summary>
-    private Cmdb.Graph.Graph? Flatten(Cmdb.Graph.Graph graph)
+    /// <summary>The delta folded into the arrays, which become the base.</summary>
+    private Cmdb.Graph.Graph Flatten(Cmdb.Graph.Graph graph)
     {
-        if (GraphChanges.Flatten(graph, _pending) is not { } flat)
-        {
-            return Compact();
-        }
+        var flat = GraphChanges.Flatten(graph, _pending);
         SetBase(flat);
         return flat;
     }

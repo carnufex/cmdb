@@ -144,7 +144,7 @@ public sealed class GraphDeltaTests
         compacted.IsOverlay.ShouldBeFalse();
         compacted.Version.ShouldBe("40");
         Adjacency(compacted).ShouldBe(Adjacency(graph));
-        var flat = GraphChanges.Flatten(graph, batches).ShouldNotBeNull();
+        var flat = GraphChanges.Flatten(graph, batches);
         flat.IsOverlay.ShouldBeFalse();
         Bytes(flat).ShouldBe(Bytes(compacted));
         // The delta shares the base's arrays and leaves production as it was.
@@ -177,7 +177,7 @@ public sealed class GraphDeltaTests
         var delta = GraphChanges.TryDelta(production, batch).ShouldNotBeNull();
         delta.OverlayNodes.ShouldBe(0);
 
-        var flat = GraphChanges.Flatten(delta, [batch]).ShouldNotBeNull();
+        var flat = GraphChanges.Flatten(delta, [batch]);
         Bytes(flat).ShouldBe(Bytes(GraphChanges.Compact(production, [batch])));
         Bytes(flat).ShouldNotBe(Bytes(production));
     }
@@ -212,7 +212,7 @@ public sealed class GraphDeltaTests
     }
 
     [Fact]
-    public void Objects_whose_structure_is_unchanged_stay_a_delta_and_moved_or_removed_ones_rebuild()
+    public void Objects_whose_structure_is_unchanged_stay_a_delta_and_rows_that_do_not_fit_rebuild()
     {
         List<(long, long, EdgeKind)> connections = [(1, 2, EdgeKind.Patch)];
         var data = Network(connections);
@@ -237,22 +237,7 @@ public sealed class GraphDeltaTests
         delta.Version.ShouldBe("2");
         delta.OverlayNodes.ShouldBe(0);
 
-        // Equipment moved to another site.
-        var moved = new GraphData();
-        moved.EquipmentIds.Add(100);
-        moved.EquipmentSites.Add(3);
-        moved.PortTerminals.AddRange(rows.PortTerminals);
-        moved.PortEquipment.AddRange(rows.PortEquipment);
-        var movedKeys = new GraphKeys();
-        movedKeys.Equipment.Add(100);
-        GraphChanges.TryDelta(production, new GraphChangeBatch("3", false, movedKeys, moved, 1)).ShouldBeNull();
-
-        // A removed cable is structure too; circuits are a delta (#121, GraphCircuitDeltaTests).
-        var removed = new GraphKeys();
-        removed.Cables.Add(501);
-        GraphChanges.TryDelta(production, new GraphChangeBatch("5", false, removed, new GraphData(), 1)).ShouldBeNull();
-
-        // A connection to a terminal that is neither in the graph nor new in the batch waits for the rebuild.
+        // Moved and removed objects are a delta too (#123, GraphStructureDeltaTests). A connection to a terminal that is neither in the graph nor new in the batch waits for the rebuild.
         connections.Add((3, 77777, EdgeKind.Patch));
         GraphChanges.TryDelta(production, Batch("7", [3, 77777], connections)).ShouldBeNull();
 
@@ -361,7 +346,7 @@ public sealed class GraphDeltaTests
         planned.ShouldBeGreaterThan(equipment);
         plan.EquipmentAt(plan.SiteIndexOfEquipment(planned)).ToArray().ShouldBe([equipment, planned]);
 
-        var flat = GraphChanges.Flatten(delta, [batch]).ShouldNotBeNull();
+        var flat = GraphChanges.Flatten(delta, [batch]);
         flat.IsOverlay.ShouldBeFalse();
         Bytes(flat).ShouldBe(Bytes(built));
         Bytes(GraphChanges.Compact(production, [batch])).ShouldBe(Bytes(built));
@@ -392,7 +377,7 @@ public sealed class GraphDeltaTests
     }
 
     [Fact]
-    public void New_ids_below_the_arrays_own_stay_a_delta_until_a_rebuild_from_rows()
+    public void New_ids_below_the_arrays_own_are_sorted_in_when_the_delta_is_folded_in()
     {
         List<(long, long, EdgeKind)> connections = [(1, 2, EdgeKind.Patch)];
         var production = GraphBuilder.Build(Network(connections), "1");
@@ -402,7 +387,9 @@ public sealed class GraphDeltaTests
         var delta = GraphChanges.TryDelta(production, batch).ShouldNotBeNull();
         delta.TryGetNode(5001, out _).ShouldBeTrue();
 
-        GraphChanges.Flatten(delta, [batch]).ShouldBeNull();
-        Bytes(GraphChanges.Compact(production, [batch])).ShouldBe(Bytes(GraphBuilder.Build(With(Network(connections), rows), "2")));
+        // #123: the arrays are renumbered rather than appended to.
+        var built = Bytes(GraphBuilder.Build(With(Network(connections), rows), "2"));
+        Bytes(GraphChanges.Flatten(delta, [batch])).ShouldBe(built);
+        Bytes(GraphChanges.Compact(production, [batch])).ShouldBe(built);
     }
 }
