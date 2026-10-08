@@ -32,6 +32,10 @@ spec:
   backoffLimit: 0
   ttlSecondsAfterFinished: 86400
   template:
+    metadata:
+      labels:
+        # Matched by the CiliumNetworkPolicy in the homelab that lets the job reach the database (#182).
+        app.kubernetes.io/name: cmdb-datagen
     spec:
       restartPolicy: Never
       serviceAccountName: cmdb-runtime
