@@ -12,6 +12,8 @@
     <!-- The catalog is versioned data in the repository root, embedded so every consumer sees the same version. -->
     <EmbeddedResource Include="..\..\catalog\equipment-types\*.json" LogicalName="equipment-types/%(Filename)%(Extension)" />
     <EmbeddedResource Include="..\..\catalog\cable-types.json" LogicalName="cable-types.json" />
+    <EmbeddedResource Include="..\..\catalog\site-types.json" LogicalName="site-types.json" />
+    <EmbeddedResource Include="..\..\catalog\equipment-categories.json" LogicalName="equipment-categories.json" />
     <EmbeddedResource Include="..\..\catalog\classifications\*.json" LogicalName="classifications/%(Filename)%(Extension)" />
     <EmbeddedResource Include="..\..\catalog\site-templates\*.json" LogicalName="site-templates/%(Filename)%(Extension)" />
   </ItemGroup>

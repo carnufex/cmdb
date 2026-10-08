@@ -68,26 +68,6 @@ export const opLabels: Record<Op, string> = {
 export const numericOps: Op[] = ['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'exists'];
 export const textOps: Op[] = ['eq', 'neq', 'prefix', 'contains', 'exists'];
 
-export const siteTypeLabels: Record<string, string> = {
-  hub: 'Nav',
-  aggregation: 'Aggregering',
-  radio: 'Radiosite',
-  cabinet: 'Skåp',
-  splice: 'Skarvpunkt',
-};
-
-export const categoryLabels: Record<string, string> = {
-  switch: 'Switch',
-  router: 'Router',
-  card: 'Kort',
-  radio: 'Radio',
-  antenna: 'Antenn',
-  transmission: 'Transmission',
-  odf: 'ODF',
-  patch: 'Patchpanel',
-  power: 'Kraft',
-};
-
 export const serviceTypeLabels: Record<string, string> = {
   'mobile-backhaul': 'Mobil backhaul',
   ethernet: 'Ethernet',
@@ -161,6 +141,25 @@ export const examples: { label: string; draft: QueryDraft }[] = [
     },
   },
 ];
+
+/**
+ * The examples that make sense for the loaded catalog: each site type, category, model and attribute they name must
+ * exist. Another organisation's catalog (#207, #208) then shows only the ones that apply instead of empty searches.
+ */
+export function examplesFor(fields: QueryFields | undefined): typeof examples {
+  if (!fields) {
+    return [];
+  }
+  const attributes = new Set(fields.categories.flatMap((c) => c.attributes.map((a) => a.key)));
+  const fits = (e: EquipmentDraft) =>
+    (!e.category || fields.categories.some((c) => c.key === e.category)) &&
+    (!e.typeKey || fields.types.some((t) => t.key === e.typeKey)) &&
+    (!e.key || attributes.has(e.key));
+  return examples.filter(
+    (x) =>
+      x.draft.siteTypes.every((t) => fields.siteTypes.includes(t)) && x.draft.equipment.every(fits),
+  );
+}
 
 /** Turns the form into the API request. Blank parts are left out; numbers are sent as numbers. */
 export function toRequest(draft: QueryDraft, fields: QueryFields | undefined, limit = 200) {

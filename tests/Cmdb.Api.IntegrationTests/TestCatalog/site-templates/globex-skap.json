@@ -1,7 +1,7 @@
 {
   "key": "globex-skap",
   "name": "Globex-skåp",
-  "siteType": "cabinet",
+  "siteType": "kundskap",
   "description": "Testmall i den externa katalogen.",
   "equipment": [
     { "ref": "odf", "typeKey": "globex-odf-8", "name": "{code} ODF 1", "rack": "Skåp" },

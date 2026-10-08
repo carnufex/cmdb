@@ -193,7 +193,8 @@ public sealed class AddOperationValidator : Validator<AddOperationRequest>
         {
             RuleFor(r => r.Code).NotEmpty().MaximumLength(50);
             RuleFor(r => r.Name).NotEmpty().MaximumLength(200);
-            RuleFor(r => r.SiteType).Must(t => PlanKinds.SiteTypes.Contains(t)).WithMessage("siteType is hub, aggregation, radio, cabinet or splice.");
+            RuleFor(r => r.SiteType).Must(t => t is not null && Cmdb.Catalog.TypeCatalog.Current.FindSiteType(t) is not null)
+                .WithMessage(_ => $"siteType is one of {string.Join(", ", Cmdb.Catalog.TypeCatalog.Current.SiteTypes.Select(t => t.Key))}.");
             RuleFor(r => r.X).NotNull().InclusiveBetween(Map.TileGrid.MinX, Map.TileGrid.MaxX);
             RuleFor(r => r.Y).NotNull().InclusiveBetween(Map.TileGrid.MinY, Map.TileGrid.MaxY);
         });
@@ -202,7 +203,7 @@ public sealed class AddOperationValidator : Validator<AddOperationRequest>
             RuleFor(r => r.SiteId).NotNull().NotEqual(0);
             RuleFor(r => r.Name).NotEmpty().MaximumLength(200);
             RuleFor(r => r.Rack).MaximumLength(100);
-            RuleFor(r => r.TypeKey).Must(k => k is not null && Cmdb.Catalog.TypeCatalog.Current.Find(k) is { Category: not "card" })
+            RuleFor(r => r.TypeKey).Must(k => k is not null && Cmdb.Catalog.TypeCatalog.Current.Find(k) is not null && !Cmdb.Catalog.TypeCatalog.Current.TypeHas(k, Cmdb.Catalog.CatalogRoles.Card))
                 .WithMessage("typeKey is an equipment model that is not a card (describe_catalog lists them).");
         });
         When(r => r.Kind == "create_cable", () =>

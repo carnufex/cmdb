@@ -1,0 +1,7 @@
+[
+  { "key": "hub", "name": "Nav", "roles": ["hub"] },
+  { "key": "aggregation", "name": "Aggregeringsnod", "roles": ["aggregation"] },
+  { "key": "radio", "name": "Radiosite", "roles": ["access"] },
+  { "key": "cabinet", "name": "Teknikskåp", "roles": ["access"] },
+  { "key": "splice", "name": "Skarvpunkt", "roles": ["splice-point"] }
+]

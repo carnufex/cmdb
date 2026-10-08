@@ -160,7 +160,10 @@ public static class RiskDetection
         {
             // The shared site that makes the point: an aggregation node before a hub (hubs are protected themselves).
             var sites = await SitesAsync(db, [.. shared.Select(g.SiteId)], ct);
-            var (siteId, _, _) = sites.OrderBy(s => s.Type switch { "aggregation" => 0, "hub" => 1, _ => 2 }).ThenBy(s => s.Id).First();
+            var catalog = Cmdb.Catalog.TypeCatalog.Current;
+            var (siteId, _, _) = sites
+                .OrderBy(s => catalog.SiteTypeHas(s.Type, Cmdb.Catalog.CatalogRoles.Aggregation) ? 0 : catalog.SiteTypeHas(s.Type, Cmdb.Catalog.CatalogRoles.Hub) ? 1 : 2)
+                .ThenBy(s => s.Id).First();
             if (await FaultAnalysis.RunAsync(g, mask, db, "site", siteId, ct) is not { } fault)
             {
                 continue;
@@ -186,13 +189,14 @@ public static class RiskDetection
         await using (var cmd = db.CreateCommand($"""
             SELECT e.id, e.name, (e.attributes->>'installationYear')::int, e.site_id
             FROM equipment e JOIN equipment_type t ON t.id = e.equipment_type_id
-            WHERE t.category = 'power' AND e.attributes ? 'installationYear' AND (e.attributes->>'installationYear')::int <= $2
+            WHERE t.category = ANY($3) AND e.attributes ? 'installationYear' AND (e.attributes->>'installationYear')::int <= $2
               AND {ScopeSql.Site("e.site_id", 1)}
             ORDER BY e.id
             """))
         {
             cmd.Parameters.Add(scope.Parameter());
             cmd.Parameters.Add(new() { Value = limit });
+            cmd.Parameters.Add(new() { Value = Cmdb.Catalog.TypeCatalog.Current.CategoriesWith(Cmdb.Catalog.CatalogRoles.Power) });
             await using var reader = await cmd.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct))
             {

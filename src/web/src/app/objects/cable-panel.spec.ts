@@ -47,6 +47,14 @@ describe('inserting a site into a cable (#168)', () => {
     };
     await settle();
     http.expectOne('/api/cables/7').flush(cable);
+    // The default type is the catalog's splice point, whatever it is called (#208).
+    http.expectOne('/api/catalog/kinds').flush({
+      siteTypes: [
+        { key: 'core', name: 'Kärna', roles: ['hub'] },
+        { key: 'joint', name: 'Skarvbrunn', roles: ['splice-point'] },
+      ],
+      categories: [],
+    });
     http
       .expectOne((r) => r.url === '/api/plans/5/view')
       .flush({
@@ -80,8 +88,8 @@ describe('inserting a site into a cable (#168)', () => {
     expect(add).toHaveBeenNthCalledWith(1, {
       kind: 'create_site',
       code: 'K-000007-S',
-      name: 'Skarvpunkt på K-000007',
-      siteType: 'splice',
+      name: 'Skarvbrunn på K-000007',
+      siteType: 'joint',
       x: 650000,
       y: 7100000,
     });

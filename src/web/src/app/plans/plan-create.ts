@@ -13,6 +13,7 @@ import { NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { MapView } from '../map/map-view';
+import { CatalogKinds } from '../shell/catalog-kinds';
 import { ActivePlan } from './active-plan';
 import { NewOperation, PlanOperation, resolveSite, SiteChoice } from './plan-model';
 
@@ -29,7 +30,6 @@ export interface NearCable {
 }
 
 interface Fields {
-  siteTypes: string[];
   types: { key: string; manufacturer: string; model: string; category: string }[];
   cableTypes: { key: string; name: string; medium: string; conductors: number }[] | null;
 }
@@ -140,8 +140,8 @@ export interface ImportResult {
           <label
             >Typ
             <select name="siteType" [(ngModel)]="siteType">
-              @for (t of siteTypes(); track t) {
-                <option [value]="t">{{ t }}</option>
+              @for (t of kinds.siteTypes(); track t.key) {
+                <option [value]="t.key">{{ t.name }}</option>
               }
             </select>
           </label>
@@ -500,6 +500,7 @@ export class PlanCreateComponent implements OnDestroy {
   private readonly http = inject(HttpClient);
   protected readonly mapView = inject(MapView);
   private readonly active = inject(ActivePlan);
+  protected readonly kinds = inject(CatalogKinds);
 
   protected readonly tabs: { key: Tab; label: string }[] = [
     { key: 'template', label: 'Från mall' },
@@ -518,9 +519,9 @@ export class PlanCreateComponent implements OnDestroy {
 
   protected readonly fields = httpResource<Fields>(() => '/api/query/fields');
   protected readonly templates = httpResource<Template[]>(() => '/api/templates');
-  protected readonly siteTypes = computed(() => this.fields.value()?.siteTypes ?? ['radio']);
+  // Cards sit in slots, so they are not offered as equipment of their own (#208: by role).
   protected readonly models = computed(() =>
-    (this.fields.value()?.types ?? []).filter((t) => t.category !== 'card'),
+    (this.fields.value()?.types ?? []).filter((t) => !this.kinds.categoryHas(t.category, 'card')),
   );
   protected readonly cableTypes = computed(() => this.fields.value()?.cableTypes ?? []);
   protected readonly plannedSites = computed<SiteChoice[]>(
@@ -533,7 +534,7 @@ export class PlanCreateComponent implements OnDestroy {
 
   protected code = '';
   protected name = '';
-  protected siteType = 'radio';
+  protected siteType = '';
   protected site = '';
   protected rack = '';
   protected room = '';
@@ -558,6 +559,13 @@ export class PlanCreateComponent implements OnDestroy {
   }
 
   constructor() {
+    // A new site defaults to the catalog's first access site type (a radio site in the synthetic catalog).
+    effect(() => {
+      const types = this.kinds.siteTypes();
+      if (!this.siteType && types.length) {
+        this.siteType = (types.find((t) => t.roles.includes('access')) ?? types[0]).key;
+      }
+    });
     // Sites picked in the map fill the cable's ends in turn.
     effect(() => {
       const picked = this.mapView.picked();

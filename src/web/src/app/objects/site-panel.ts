@@ -6,20 +6,13 @@ import { DecimalPipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, effect, inject, input } from '@angular/core';
 import { MapView } from '../map/map-view';
 import { ActivePlan } from '../plans/active-plan';
+import { CatalogKinds } from '../shell/catalog-kinds';
 import { PanelStack } from '../shell/panels';
 import { StatusComponent } from '../shell/status';
 import { EditHeaderComponent } from './edit-header';
 import { ImpactListComponent } from './impact-list';
 import { apiPath, Impact, SiteDetail } from './models';
 import { ObjectLinkComponent } from './object-link';
-
-const siteTypes: Record<string, string> = {
-  hub: 'Nav',
-  aggregation: 'Aggregering',
-  radio: 'Radiosite',
-  cabinet: 'Skåp',
-  splice: 'Skarvpunkt',
-};
 
 @Component({
   selector: 'cmdb-site-panel',
@@ -36,7 +29,7 @@ const siteTypes: Record<string, string> = {
   template: `
     @if (site.value(); as s) {
       <header class="header">
-        <div class="kind">Site · {{ siteTypes[s.siteType] ?? s.siteType }}</div>
+        <div class="kind">Site · {{ kinds.siteTypeName(s.siteType) }}</div>
         <div class="code mono">{{ s.code }}</div>
         <cmdb-edit-header
           [url]="url()"
@@ -195,7 +188,7 @@ export class SitePanelComponent {
 
   readonly id = input.required<string>();
 
-  protected readonly siteTypes = siteTypes;
+  protected readonly kinds = inject(CatalogKinds);
   protected readonly url = computed(() => `/api/${apiPath.site}/${this.id()}`);
   protected readonly site = httpResource<SiteDetail>(() => this.url());
   /** Loaded after the site itself: impact analysis has its own, larger budget. */

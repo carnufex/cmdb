@@ -9,7 +9,7 @@
   <section aria-label="Exempel">
     <h3>Exempel</h3>
     <div class="chips">
-      @for (example of examples; track example.label) {
+      @for (example of examples(); track example.label) {
         <button type="button" class="chip" (click)="useExample(example.draft)">
           {{ example.label }}
         </button>
@@ -29,7 +29,7 @@
               [attr.aria-pressed]="draft().siteTypes.includes(t)"
               (click)="toggle('siteTypes', t)"
             >
-              {{ siteTypeLabels[t] ?? t }}
+              {{ kinds.siteTypeName(t) }}
             </button>
           }
         </div>
@@ -65,7 +65,7 @@
                   <option value="">Alla</option>
                   @for (c of categories(); track c.key) {
                     <option [value]="c.key" [selected]="c.key === e.category">
-                      {{ categoryLabels[c.key] ?? c.key }}
+                      {{ kinds.categoryName(c.key) }}
                     </option>
                   }
                 </select>
@@ -205,7 +205,7 @@
           <li>
             <button type="button" (click)="open(s)">
               <span class="code">{{ s.code }}</span>
-              <span class="name">{{ siteTypeLabels[s.siteType] ?? s.siteType }}</span>
+              <span class="name">{{ kinds.siteTypeName(s.siteType) }}</span>
               @if (s.matching !== null) {
                 <span class="muted">{{ s.matching }} st</span>
               }

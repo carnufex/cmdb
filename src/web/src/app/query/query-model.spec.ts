@@ -1,4 +1,4 @@
-import { emptyEquipment, examples, QueryFields, toRequest } from './query-model';
+import { emptyEquipment, examples, examplesFor, QueryFields, toRequest } from './query-model';
 
 const fields: QueryFields = {
   siteTypes: ['radio'],
@@ -86,5 +86,20 @@ describe('toRequest', () => {
         r.equipment.length;
       expect(conditions, example.label).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('examplesFor', () => {
+  it('offers only examples whose site types, categories and attributes the catalog has', () => {
+    const offered = examplesFor(fields).map((e) => e.label);
+
+    expect(offered.length).toBeGreaterThan(0);
+    expect(offered.length).toBeLessThan(examples.length);
+    for (const label of offered) {
+      const draft = examples.find((e) => e.label === label)!.draft;
+      expect(draft.siteTypes.every((t) => t === 'radio')).toBe(true);
+      expect(draft.equipment.every((e) => !e.category || e.category === 'radio')).toBe(true);
+    }
+    expect(examplesFor(undefined)).toEqual([]);
   });
 });

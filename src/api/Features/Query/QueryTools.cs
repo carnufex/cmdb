@@ -22,7 +22,7 @@ public sealed class QueryTools(RequestDb db, TypeCatalog catalog, AgentLinks lin
         "(category, model key, one attribute test, minimum count) and service types passing through. Returns the total and the " +
         "first sites by code. Call describe_catalog first to learn categories, model keys, attribute keys and allowed values.")]
     public async Task<FindSitesResult> FindSites(
-        [Description("Site types, any of: hub, aggregation, radio, cabinet, splice.")] string[]? siteTypes = null,
+        [Description("Site type keys (describe_catalog lists them with names and roles).")] string[]? siteTypes = null,
         [Description("Lifecycles, any of: planned, under_construction, in_service, decommissioning, removed.")] string[]? lifecycles = null,
         [Description("Up to five equipment conditions, each: category and/or typeKey (model key), optional attribute " +
             "{ key, op, value } with op one of eq, neq, gt, gte, lt, lte, prefix, contains, exists (no value), and optional minCount. " +
@@ -54,8 +54,8 @@ public sealed class QueryTools(RequestDb db, TypeCatalog catalog, AgentLinks lin
     }
 
     [McpServerTool(Name = "describe_catalog", Title = "Typkatalog", ReadOnly = true, Idempotent = true, OpenWorld = false)]
-    [Description("What exists and can be queried: site types, lifecycles, service types, equipment categories with their attributes " +
-        "(type and allowed values) and every equipment model with its key. All manufacturers are fictional.")]
+    [Description("What exists and can be queried: site types (with names and roles such as hub or aggregation), lifecycles, service types, " +
+        "equipment categories (with names, roles and their attributes: type and allowed values) and every equipment model with its key.")]
     public Task<QueryFields> DescribeCatalog(CancellationToken ct = default) =>
         QueryFieldsEndpoint.LoadAsync(db, catalog, ct);
 }

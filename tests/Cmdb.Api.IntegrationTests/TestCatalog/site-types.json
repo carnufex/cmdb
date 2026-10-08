@@ -1,0 +1,6 @@
+[
+  { "key": "karna", "name": "Kärnnod", "roles": ["hub"] },
+  { "key": "nod", "name": "Nod", "roles": ["aggregation"] },
+  { "key": "kundskap", "name": "Kundskåp", "roles": ["access"] },
+  { "key": "brunn", "name": "Skarvbrunn", "roles": ["splice-point"] }
+]

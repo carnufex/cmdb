@@ -11,7 +11,12 @@ namespace Cmdb.Api.Features.Query;
 /// <param name="Values">Allowed values when the schema has an enum.</param>
 public sealed record AttributeField(string Key, string Type, IReadOnlyList<JsonElement>? Values);
 
-public sealed record CategoryField(string Key, IReadOnlyList<AttributeField> Attributes);
+/// <param name="Name">The display name from the catalog (#208).</param>
+/// <param name="Roles">What the code treats the category as: card, termination or power.</param>
+public sealed record CategoryField(string Key, IReadOnlyList<AttributeField> Attributes, string? Name = null, IReadOnlyList<string>? Roles = null);
+
+/// <summary>A site type or equipment category from the catalog with its name and roles (#208).</summary>
+public sealed record KindField(string Key, string Name, IReadOnlyList<string> Roles);
 
 public sealed record TypeField(string Key, string Manufacturer, string Model, string Category);
 
@@ -24,7 +29,8 @@ public sealed record QueryFields(
     IReadOnlyList<string> ServiceTypes,
     IReadOnlyList<CategoryField> Categories,
     IReadOnlyList<TypeField> Types,
-    IReadOnlyList<CableTypeField>? CableTypes = null);
+    IReadOnlyList<CableTypeField>? CableTypes = null,
+    IReadOnlyList<KindField>? SiteTypeDetails = null);
 
 public sealed class QueryFieldsEndpoint(RequestDb db, TypeCatalog catalog) : EndpointWithoutRequest<QueryFields>
 {
@@ -41,14 +47,29 @@ public sealed class QueryFieldsEndpoint(RequestDb db, TypeCatalog catalog) : End
     internal static async Task<QueryFields> LoadAsync(NpgsqlDataSource db, TypeCatalog catalog, CancellationToken ct)
     {
         await using var conn = await db.OpenConnectionAsync(ct);
-        var siteTypes = await Distinct(conn, "SELECT DISTINCT site_type FROM site ORDER BY 1", ct);
+        // The catalog's site types in its order, then any other type the data holds.
+        var inData = await Distinct(conn, "SELECT DISTINCT site_type FROM site ORDER BY 1", ct);
+        var siteTypes = catalog.SiteTypes.Select(t => t.Key).Concat(inData.Where(t => catalog.FindSiteType(t) is null)).ToList();
         var serviceTypes = await Distinct(conn, "SELECT DISTINCT service_type FROM service ORDER BY 1", ct);
         return new QueryFields(siteTypes, Lifecycles, serviceTypes, Categories(catalog), Types(catalog),
             [.. catalog.CableTypes.OrderBy(t => t.ConductorCount).ThenBy(t => t.Key, StringComparer.Ordinal)
-                .Select(t => new CableTypeField(t.Key, t.Name, t.Medium, t.ConductorCount))]);
+                .Select(t => new CableTypeField(t.Key, t.Name, t.Medium, t.ConductorCount))],
+            SiteTypeFields(catalog));
     }
 
-    internal static IReadOnlyList<CategoryField> Categories(TypeCatalog catalog) =>
+    internal static IReadOnlyList<KindField> SiteTypeFields(TypeCatalog catalog) =>
+        [.. catalog.SiteTypes.Select(t => new KindField(t.Key, t.Name, t.Roles))];
+
+    /// <summary>Every category in the catalog, with the attributes its models know.</summary>
+    internal static IReadOnlyList<CategoryField> Categories(TypeCatalog catalog)
+    {
+        var withTypes = CategoriesWithTypes(catalog).ToDictionary(c => c.Key, StringComparer.Ordinal);
+        return [.. catalog.Categories
+            .OrderBy(c => c.Key, StringComparer.Ordinal)
+            .Select(c => (withTypes.GetValueOrDefault(c.Key) ?? new CategoryField(c.Key, [])) with { Name = c.Name, Roles = c.Roles })];
+    }
+
+    private static IReadOnlyList<CategoryField> CategoriesWithTypes(TypeCatalog catalog) =>
         [.. catalog.Types
             .GroupBy(t => t.Category)
             .OrderBy(g => g.Key, StringComparer.Ordinal)

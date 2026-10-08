@@ -32,6 +32,7 @@ import VectorTile from 'ol/VectorTile';
 import VectorTileSource from 'ol/source/VectorTile';
 import { Auth } from '../auth/auth';
 import { RUNTIME_CONFIG } from '../config';
+import { CatalogKinds } from '../shell/catalog-kinds';
 import { PanelStack } from '../shell/panels';
 import { StatusComponent } from '../shell/status';
 import { ThemeStore } from '../shell/theme';
@@ -81,6 +82,7 @@ export class MapComponent {
   private readonly panels = inject(PanelStack);
   private readonly theme = inject(ThemeStore);
   private readonly mapView = inject(MapView);
+  private readonly kinds = inject(CatalogKinds);
   private readonly host = inject(ElementRef<HTMLElement>);
   private readonly target = viewChild.required<ElementRef<HTMLDivElement>>('target');
 
@@ -126,6 +128,11 @@ export class MapComponent {
     effect(() => {
       this.panels.top();
       this.network?.changed();
+    });
+    // Site sizes follow the catalog's roles (#208); restyle once they have loaded.
+    effect(() => {
+      this.kinds.siteTypes();
+      this.restyle();
     });
     // Advanced search marks its results; they get their own layer so they show at every zoom.
     effect(() => {
@@ -217,6 +224,7 @@ export class MapComponent {
     const { styler, reset } = createStyler(
       () => (this.palette ??= readPalette(this.host.nativeElement)),
       (f) => this.isSelected(f),
+      (t) => this.kinds.siteRole(t),
     );
     this.restyle = () => {
       reset();

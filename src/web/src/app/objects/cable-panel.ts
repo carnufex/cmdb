@@ -3,10 +3,19 @@ import { PlanRemoveComponent } from '../plans/plan-remove';
 import { ClassificationComponent } from './classification';
 import { HttpClient, httpResource } from '@angular/common/http';
 import { DecimalPipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, effect, inject, input, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  effect,
+  inject,
+  input,
+  linkedSignal,
+  signal,
+} from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { ClaimsComponent } from './claims';
 import { ActivePlan } from '../plans/active-plan';
+import { CatalogKinds } from '../shell/catalog-kinds';
 import { PanelStack } from '../shell/panels';
 import { StatusComponent } from '../shell/status';
 import { ImpactListComponent } from './impact-list';
@@ -112,17 +121,17 @@ import { ObjectLinkComponent } from './object-link';
                   >Namn
                   <input
                     required
-                    [value]="siteName() || 'Skarvpunkt på ' + c.code"
+                    [value]="siteName() || defaultSiteName(c.code)"
                     (input)="siteName.set($any($event.target).value)"
                 /></label>
                 <label
                   >Typ
                   <select [value]="siteType()" (change)="siteType.set($any($event.target).value)">
-                    <option value="splice">Skarvpunkt</option>
-                    <option value="cabinet">Teknikskåp</option>
-                    <option value="radio">Radiosite</option>
-                    <option value="aggregation">Aggregeringsnod</option>
-                    <option value="hub">Nav</option>
+                    @for (t of kinds.siteTypes(); track t.key) {
+                      <option [value]="t.key" [selected]="t.key === siteType()">
+                        {{ t.name }}
+                      </option>
+                    }
                   </select>
                 </label>
                 <label
@@ -200,6 +209,7 @@ import { ObjectLinkComponent } from './object-link';
 })
 export class CablePanelComponent {
   private readonly panels = inject(PanelStack);
+  protected readonly kinds = inject(CatalogKinds);
   protected readonly plan = inject(ActivePlan);
   private readonly http = inject(HttpClient);
   protected readonly conductor = signal(1);
@@ -209,7 +219,14 @@ export class CablePanelComponent {
   protected readonly at = signal(50);
   protected readonly siteCode = signal('');
   protected readonly siteName = signal('');
-  protected readonly siteType = signal('splice');
+  /** A splice point by default (the catalog's first type with that role), until the user picks another. */
+  protected readonly siteType = linkedSignal(() => {
+    const types = this.kinds.siteTypes();
+    return (types.find((t) => t.roles.includes('splice-point')) ?? types[0])?.key ?? '';
+  });
+  protected defaultSiteName(cableCode: string): string {
+    return `${this.kinds.siteTypeName(this.siteType())} på ${cableCode}`;
+  }
   protected readonly terminate = signal('');
   protected readonly splitting = signal(false);
   protected readonly splitError = signal<string | null>(null);
@@ -230,7 +247,7 @@ export class CablePanelComponent {
       const site = await this.plan.add({
         kind: 'create_site',
         code: (this.siteCode() || c.code + '-S').trim(),
-        name: (this.siteName() || 'Skarvpunkt på ' + c.code).trim(),
+        name: (this.siteName() || this.defaultSiteName(c.code)).trim(),
         siteType: this.siteType(),
         x: point.x,
         y: point.y,

@@ -1,0 +1,6 @@
+[
+  { "key": "vaxel", "name": "Växel", "roles": [] },
+  { "key": "modul", "name": "Modul", "roles": ["card"] },
+  { "key": "termineringsram", "name": "Termineringsram", "roles": ["termination"] },
+  { "key": "batteri", "name": "Batteri", "roles": ["power"] }
+]

@@ -42,7 +42,7 @@ const level = (
 
 const all: Filters = {
   layers: new Set(['physical', 'transmission', 'logical']),
-  siteTypes: new Set(['hub', 'aggregation', 'radio']),
+  hiddenSiteTypes: new Set(),
 };
 
 describe('Neighbourhood', () => {
@@ -69,7 +69,7 @@ describe('Neighbourhood', () => {
     const n = new Neighbourhood(1);
     n.add([level(node(1), [node(2, 'aggregation'), node(3)], [edge(1, 2, 'logical'), edge(1, 3)])]);
     const physicalOnly: Filters = { ...all, layers: new Set(['physical']) };
-    const noRadio: Filters = { ...all, siteTypes: new Set(['aggregation']) };
+    const noRadio: Filters = { ...all, hiddenSiteTypes: new Set(['radio']) };
 
     expect(n.nodeVisible(2, physicalOnly)).toBe(false);
     expect(n.nodeVisible(3, physicalOnly)).toBe(true);

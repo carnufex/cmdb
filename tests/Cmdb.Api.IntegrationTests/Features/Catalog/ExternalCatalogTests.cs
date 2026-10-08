@@ -37,4 +37,18 @@ public sealed class ExternalCatalogTests(ApiFactory factory)
         SiteTemplates.Load(source, TypeCatalog.Load(source)).All.Select(t => t.Key).ShouldBe(["globex-skap"]);
         ClassificationCatalog.Load(source).Find("criticality")!.CriticalFrom.ShouldBe(3);
     }
+
+    [Fact]
+    public void Site_types_and_categories_with_other_names_keep_their_roles()
+    {
+        var catalog = TypeCatalog.Load(CatalogSource.FromPath(Folder));
+
+        catalog.SiteTypesWith(CatalogRoles.Hub, CatalogRoles.Aggregation).ShouldBe(["karna", "nod"]);
+        catalog.SiteTypeHas("brunn", CatalogRoles.SplicePoint).ShouldBeTrue();
+        catalog.SiteTypeHas("karna", CatalogRoles.Access).ShouldBeFalse();
+        catalog.TypeHas("globex-odf-8", CatalogRoles.Termination).ShouldBeTrue();
+        catalog.CategoriesWith(CatalogRoles.Power).ShouldBe(["batteri"]);
+        catalog.FindSiteType("hub").ShouldBeNull();
+        Cmdb.Api.Features.Query.QueryFieldsEndpoint.SiteTypeFields(catalog).Select(t => t.Name).ShouldBe(["Kärnnod", "Nod", "Kundskåp", "Skarvbrunn"]);
+    }
 }

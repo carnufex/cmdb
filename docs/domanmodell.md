@@ -76,9 +76,32 @@ En fil per modell i [`catalog/equipment-types/`](../catalog/equipment-types/). F
 - `ports` är mallar. `{n}` ersätts med numret i `range` och `{slot}` med sloten som ett kort sitter i. `at` är första cellen `[rad, kolumn]` på panelen, och `layout` är `row`, `column` eller `zigzag` (udda nummer överst, som på de flesta switchar).
 - Portarna får positionsnummer 1…N i mallens ordning. Samma typ ger därför alltid samma numrering.
 - `attributes` är ett JSON Schema (2020-12) för instansens JSONB-attribut. Det valideras när utrustning skapas.
-- Kategorier: `switch`, `router`, `card`, `radio`, `antenna`, `transmission`, `odf`, `patch`, `power`.
+- Kategorierna står i [`catalog/equipment-categories.json`](../catalog/equipment-categories.json) och sitetyperna i [`catalog/site-types.json`](../catalog/site-types.json), se nedan.
 - **Sitemallar** (`catalog/site-templates/<key>.json`, #26) beskriver en sitetyp med utrustning (modell, namnmönster med `{code}`, rack) och intern kabeldragning (port till port). De valideras mot utrustningstyperna vid laddning och används i planer.
 - Katalogen valideras vid laddning (unika namn, portar inom panelen, inga överlapp, giltigt schema, kända kategorier) och synkas till `equipment_type` i samma steg som migreringarna. Om en portmall ändras genereras inte portarna om på befintlig utrustning.
+
+### Sitetyper, kategorier och roller
+
+Sitetyper och utrustningskategorier är katalogdata med nyckel, visningsnamn och **roller** (#208). Koden frågar efter roller, aldrig efter typnamn. En organisation kan därför kalla sina siter och kategorier vad den vill och ändå få planer, risker, klassningsförslag, ruttförslag, karta och graf som hittar nav och aggregeringsnoder.
+
+```json
+[
+  { "key": "hub", "name": "Nav", "roles": ["hub"] },
+  { "key": "radio", "name": "Radiosite", "roles": ["access"] }
+]
+```
+
+| Roll | Gäller | Vad koden gör med den |
+|---|---|---|
+| `hub` | sitetyp | Syns på alla zoomnivåer, störst i karta och graf, mål för kabelförslag vid klassningskrav. |
+| `aggregation` | sitetyp | Som `hub`; pekas ut först vid falsk redundans. |
+| `access` | sitetyp | Kund- och radiositer. Standardtyp för nya siter i planer. |
+| `splice-point` | sitetyp | Bara skarvar. Standardtyp när en site sätts in i en kabel. |
+| `card` | kategori | Sitter i en slot, får använda `{slot}` i portnamn och skapas inte fristående eller i sitemallar. |
+| `termination` | kategori | Terminerar fibrer (ODF): där mönster och ruttförslag landar ledare. |
+| `power` | kategori | Reservkraft: riskvyn kollar batteriernas ålder. |
+
+En typ kan ha flera roller eller ingen. Okända roller, dubbla nycklar och sitemallar med okänd sitetyp ger fel vid laddning. Avancerad sökning och MCP `describe_catalog` visar namn och roller, och webben hämtar dem från `GET /api/catalog/kinds`. Datageneratorn bygger fortfarande det syntetiska nätet mot den syntetiska katalogens nycklar.
 
 ### Extern katalog
 
@@ -87,6 +110,8 @@ Den syntetiska katalogen i `catalog/` byggs in i API:t och datageneratorn och an
 ```
 <mapp>/
   cable-types.json            krävs
+  site-types.json             krävs
+  equipment-categories.json   krävs
   equipment-types/<key>.json
   classifications/<key>.json  criticality.json krävs
   site-templates/<key>.json

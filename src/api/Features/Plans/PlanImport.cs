@@ -325,9 +325,9 @@ public sealed class PlanImport(RequestDb db, GraphHolder holder, PlanViews views
                 errors.Add(new(row, $"{code}: mallen {templateKey} finns inte."));
                 return;
             }
-            if (!PlanKinds.SiteTypes.Contains(siteType))
+            if (TypeCatalog.Current.FindSiteType(siteType) is null)
             {
-                errors.Add(new(row, $"{code}: siteType är hub, aggregation, radio, cabinet eller splice (eller ange template)."));
+                errors.Add(new(row, $"{code}: siteType är {string.Join(", ", TypeCatalog.Current.SiteTypes.Select(t => t.Key))} (eller ange template)."));
                 return;
             }
             var (x, y, wgs84) = Number(cell("x")) is { } sx && Number(cell("y")) is { } sy ? (sx, sy, LooksLikeWgs84(sx, sy))

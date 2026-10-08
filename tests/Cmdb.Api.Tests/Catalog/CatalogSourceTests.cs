@@ -68,6 +68,9 @@ public sealed class CatalogSourceTests : IDisposable
                 File.WriteAllText(Path.Combine(_folder, folder, file), json);
             }
         }
-        File.WriteAllText(Path.Combine(_folder, "cable-types.json"), CatalogSource.Embedded.Read("cable-types.json"));
+        foreach (var file in new[] { "cable-types.json", "site-types.json", "equipment-categories.json" })
+        {
+            File.WriteAllText(Path.Combine(_folder, file), CatalogSource.Embedded.Read(file));
+        }
     }
 }

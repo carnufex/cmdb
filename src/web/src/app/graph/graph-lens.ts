@@ -18,6 +18,7 @@ import Graph from 'graphology';
 import forceAtlas2 from 'graphology-layout-forceatlas2';
 import Sigma from 'sigma';
 import { firstValueFrom, map } from 'rxjs';
+import { CatalogKinds } from '../shell/catalog-kinds';
 import { PanelStack } from '../shell/panels';
 import { ThemeStore } from '../shell/theme';
 import {
@@ -28,7 +29,6 @@ import {
   nodeSizes,
   SiteGraphLevel,
   SiteGraphNode,
-  siteTypeLabels,
 } from './graph-model';
 import { GraphBenchmark, GraphView } from './graph-view';
 
@@ -87,14 +87,14 @@ const SCALE = 1 / 1000;
       </fieldset>
       <fieldset>
         <legend>Sitetyp</legend>
-        @for (t of siteTypes; track t) {
+        @for (t of kinds.siteTypes(); track t.key) {
           <label>
             <input
               type="checkbox"
-              [checked]="filters().siteTypes.has(t)"
-              (change)="toggle('siteTypes', t)"
+              [checked]="!filters().hiddenSiteTypes.has(t.key)"
+              (change)="toggle('hiddenSiteTypes', t.key)"
             />
-            {{ siteTypeLabels[t] }}
+            {{ t.name }}
           </label>
         }
       </fieldset>
@@ -212,9 +212,8 @@ export class GraphLensComponent {
   private readonly target = viewChild.required<ElementRef<HTMLDivElement>>('target');
 
   protected readonly layers = ['physical', 'transmission', 'logical'] as const;
-  protected readonly siteTypes = ['hub', 'aggregation', 'radio', 'cabinet', 'splice'] as const;
   protected readonly layerLabels = layerLabels;
-  protected readonly siteTypeLabels = siteTypeLabels;
+  protected readonly kinds = inject(CatalogKinds);
 
   private readonly g = toSignal(this.route.queryParamMap.pipe(map((q) => q.get('g'))), {
     initialValue: null,
@@ -232,7 +231,7 @@ export class GraphLensComponent {
 
   protected readonly filters = signal<Filters>({
     layers: new Set(['physical', 'transmission', 'logical']),
-    siteTypes: new Set(['hub', 'aggregation', 'radio', 'cabinet', 'splice']),
+    hiddenSiteTypes: new Set<string>(),
   });
   protected readonly busy = signal(false);
   /** Bumped whenever the explored graph changes, so derived counts recompute. */
@@ -507,7 +506,7 @@ export class GraphLensComponent {
     this.graph.addNode(String(node.id), {
       x: (node.x ?? 0) * SCALE + Math.random() * (node.x === null ? 10 : 0.5),
       y: (node.y ?? 0) * SCALE + Math.random() * (node.y === null ? 10 : 0.5),
-      size: nodeSizes[node.siteType] ?? 4,
+      size: nodeSizes[this.kinds.siteRole(node.siteType) ?? 'access'],
       label: node.code,
       color: this.statusColor(node.lifecycle),
     });
@@ -544,7 +543,7 @@ export class GraphLensComponent {
     }
   }
 
-  protected toggle(kind: 'layers' | 'siteTypes', value: string): void {
+  protected toggle(kind: 'layers' | 'hiddenSiteTypes', value: string): void {
     this.filters.update((f) => {
       const next = new Set(f[kind]);
       if (next.has(value)) {
