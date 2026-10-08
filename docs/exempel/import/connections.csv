@@ -1,0 +1,5 @@
+aEquipment,aPort,aCable,aConductor,aSide,bEquipment,bPort,bCable,bConductor,bSide,kind,lifecycle
+ex-e3,1,,,,,,ex-c1,1,A,termination,
+ex-e4,1,,,,,,ex-c1,1,B,termination,
+ex-e2,xe-1/0/1,,,,ex-e3,1,,,,patch,
+ex-e5,xe-0/1/1,,,,ex-e4,1,,,,patch,

@@ -1,0 +1,2 @@
+id,code,name,serviceType,lifecycle,bandwidthMbps
+ex-t-1,EX-TJ-1,Ethernet till Exempelradio,ethernet,,1000

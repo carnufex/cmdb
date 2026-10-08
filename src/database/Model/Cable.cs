@@ -73,6 +73,8 @@ internal sealed class CableConfiguration : IEntityTypeConfiguration<Cable>
         e.HasIndex(x => x.Geom).HasMethod("gist");
         e.Property(x => x.LengthM).HasComputedColumnSql("ST_Length(geom)", stored: true);
         e.Property(x => x.Attributes).HasColumnType("jsonb").HasDefaultValueSql("'{}'");
+        // Imports match objects on their source system and id there (#210).
+        e.HasIndex(x => new { x.SourceSystem, x.ExternalId }).IsUnique().HasFilter("external_id IS NOT NULL");
     }
 }
 
