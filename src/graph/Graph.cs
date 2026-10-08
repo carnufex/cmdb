@@ -77,6 +77,7 @@ public sealed partial class Graph
 
     public int CircuitCount => CircuitIds.Length + (CircuitDelta?.CircuitIds.Count ?? 0);
 
+    // Counts are index spaces: they include what a delta removed (#123), so masks and visited sets stay indexable.
     public int SiteCount => SiteIds.Length + (_overlay?.SiteIds.Count ?? 0);
 
     public int CableCount => CableIds.Length + (_overlay?.CableIds.Count ?? 0);
@@ -85,7 +86,9 @@ public sealed partial class Graph
 
     /// <summary>The site index of an equipment index.</summary>
     public int SiteIndexOfEquipment(int equipment) =>
-        equipment < EquipmentIds.Length ? EquipmentSites[equipment] : _overlay!.EquipmentSites[equipment - EquipmentIds.Length];
+        equipment >= EquipmentIds.Length ? _overlay!.EquipmentSites[equipment - EquipmentIds.Length]
+        : _overlay is not null && _overlay.MovedEquipment.TryGetValue(equipment, out var moved) ? moved
+        : EquipmentSites[equipment];
 
     /// <summary>The site index of a port's equipment, or -1 for a conductor end.</summary>
     public int SiteIndexOfNode(int node) => KindOf(node) == TerminalKind.Port ? SiteIndexOfEquipment(OwnerOf(node)) : -1;
@@ -96,7 +99,7 @@ public sealed partial class Graph
     public bool TryGetNode(long terminalId, out int node)
     {
         node = Array.BinarySearch(TerminalIds, terminalId);
-        if (node >= 0)
+        if (node >= 0 && (_overlay is null || !_overlay.RemovedNodes.Contains(node)))
         {
             return true;
         }
@@ -119,7 +122,7 @@ public sealed partial class Graph
     internal long ConductorId(int conductor) =>
         conductor < ConductorIds.Length ? ConductorIds[conductor] : _overlay!.ConductorIds[conductor - ConductorIds.Length];
 
-    private int CableOfConductor(int conductor) =>
+    internal int CableOfConductor(int conductor) =>
         conductor < ConductorIds.Length ? ConductorCables[conductor] : _overlay!.ConductorCables[conductor - ConductorIds.Length];
 
     public bool TryGetCircuit(long circuitId, out int circuit)
@@ -154,7 +157,7 @@ public sealed partial class Graph
     public bool TryGetEquipment(long equipmentId, out int equipment)
     {
         equipment = Array.BinarySearch(EquipmentIds, equipmentId);
-        if (equipment >= 0)
+        if (equipment >= 0 && (_overlay is null || !_overlay.RemovedEquipment.Contains(equipment)))
         {
             return true;
         }
@@ -169,7 +172,7 @@ public sealed partial class Graph
     public bool TryGetCable(long cableId, out int cable)
     {
         cable = Array.BinarySearch(CableIds, cableId);
-        if (cable >= 0)
+        if (cable >= 0 && (_overlay is null || !_overlay.RemovedCables.Contains(cable)))
         {
             return true;
         }
@@ -184,28 +187,48 @@ public sealed partial class Graph
     /// <summary>Only sites with equipment are in the graph.</summary>
     public bool TryGetSite(long siteId, out int site)
     {
-        site = Array.BinarySearch(SiteIds, siteId);
+        site = SiteIndex(siteId);
+        return site >= 0 && (_overlay is null || !_overlay.RemovedSites.Contains(site));
+    }
+
+    /// <summary>The site's index, also when a delta moved its last equipment away (#123); -1 when it has none.</summary>
+    private int SiteIndex(long siteId)
+    {
+        var site = Array.BinarySearch(SiteIds, siteId);
         if (site >= 0)
+        {
+            return site;
+        }
+        return _overlay is not null && _overlay.SiteById.TryGetValue(siteId, out var added) ? SiteIds.Length + added : -1;
+    }
+
+    /// <summary>A conductor's index, also for one a delta added (#123).</summary>
+    internal bool TryGetConductor(long conductorId, out int conductor)
+    {
+        conductor = Array.BinarySearch(ConductorIds, conductorId);
+        if (conductor >= 0 && (_overlay is null || !_overlay.RemovedConductors.Contains(conductor)))
         {
             return true;
         }
-        if (_overlay is not null && _overlay.SiteById.TryGetValue(siteId, out var planned))
+        if (_overlay is not null && _overlay.ConductorById.TryGetValue(conductorId, out var added))
         {
-            site = SiteIds.Length + planned;
+            conductor = ConductorIds.Length + added;
             return true;
         }
         return false;
     }
 
     /// <summary>The equipment's ports, as nodes.</summary>
-    public ReadOnlySpan<int> PortsOf(int equipment) => equipment < EquipmentIds.Length
-        ? Slice(EquipmentPorts, EquipmentPortStart, equipment)
-        : _overlay!.EquipmentPorts[equipment - EquipmentIds.Length];
+    public ReadOnlySpan<int> PortsOf(int equipment) =>
+        equipment >= EquipmentIds.Length ? _overlay!.EquipmentPorts[equipment - EquipmentIds.Length]
+        : _overlay is not null && _overlay.Ports.TryGetValue(equipment, out var ports) ? ports
+        : Slice(EquipmentPorts, EquipmentPortStart, equipment);
 
     /// <summary>The conductor ends of the cable, as nodes.</summary>
-    public ReadOnlySpan<int> EndsOf(int cable) => cable < CableIds.Length
-        ? Slice(CableEnds, CableEndStart, cable)
-        : _overlay!.CableEnds[cable - CableIds.Length];
+    public ReadOnlySpan<int> EndsOf(int cable) =>
+        cable >= CableIds.Length ? _overlay!.CableEnds[cable - CableIds.Length]
+        : _overlay is not null && _overlay.Ends.TryGetValue(cable, out var ends) ? ends
+        : Slice(CableEnds, CableEndStart, cable);
 
     /// <summary>The equipment at the site, as equipment indexes; in a plan view with planned equipment added.</summary>
     public ReadOnlySpan<int> EquipmentAt(int site) =>
