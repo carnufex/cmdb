@@ -26,7 +26,7 @@ En CMDB för en rikstäckande telekomanläggning som är snabbare, enklare och s
 
 Totalt cirka 5–10 miljoner noder och lika många kanter. Det ryms i minnet (~1–2 GB kompakt), och det är grunden för arkitekturen.
 
-### Tillväxt: 2× och 4× full skala (#81, #119, #121)
+### Tillväxt: 2× och 4× full skala (#81, #119, #121, #123)
 
 Vid 25–50 % tillväxt per år är nätet dubbelt så stort om 2–3 år och fyra gånger så stort om 3–6 år. Datageneratorn tar `--scale 2x` och `--scale 4x` (80 000 respektive 160 000 siter). Uppmätt 2026-09-30 på en utvecklingsmaskin (32 kärnor), så tiderna är lägre än i demon:
 
@@ -37,6 +37,16 @@ Vid 25–50 % tillväxt per år är nätet dubbelt så stort om 2–3 år och fy
 | full | 7,6 M | 4,3 M | 1,4 s | 265 MB | 234 MB | 0,1 s | < 0,01 ms | 0,06 ms | 0,05 ms | 0,39 s | +295 MB | 1,2 s | +956 MB |
 | 2× | 15,2 M | 8,6 M | 2,1 s | 529 MB | 467 MB | 0,2 s | < 0,01 ms | 0,05 ms | 0,05 ms | 0,57 s | +590 MB | 2,4 s | +1 778 MB |
 | 4× | 30,5 M | 17,3 M | 4,5 s | 1 060 MB | 935 MB | 0,4 s | < 0,01 ms | 0,07 ms | 0,05 ms | 0,89 s | +1 180 MB | 4,9 s | +3 417 MB |
+
+**Borttag och flytt som delta (#123)**, samma körning med en sats där en utrustning och en kabel tas bort med sina kopplingar och en utrustning flyttas till en annan site. Uppmätt 2026-10-08 på en mindre maskin (4 kärnor), så tiderna är högre än i tabellen ovan. Samma maskin gav 0,79 / 1,01 / 1,91 s för att kompaktera installationen och 3,9 / 7,2 / 15,3 s för ombyggnaden från rader i full / 2× / 4×:
+
+| Skala | Delta borttag och flytt | Kompaktering av delta | Topp | Ombyggnad från rader | Topp |
+|---|---|---|---|---|---|
+| full | 1,2 ms | 1,3 s | +392 MB | 2,6 s | +699 MB |
+| 2× | 0,9 ms | 1,3 s | +783 MB | 6,2 s | +1 397 MB |
+| 4× | 1,0 ms | 2,7 s | +1 567 MB | 12,8 s | +2 795 MB |
+
+Kompakteringen numrerar om arrayerna när något har tagits bort, så den kostar mer än en installation som bara läggs sist, men den tar runt en femtedel av ombyggnadens tid och toppen är ungefär halva ombyggnadens (cirka 1,5 gånger grafens storlek).
 
 **API:t** (docker compose mot en databas i respektive skala; minne = containerns `memory.current`/`memory.peak`, med GC:ns marginal):
 
@@ -50,8 +60,8 @@ Slutsatser:
 
 - **Frågorna skalar.** Hela budgeten håller i 4×. Kartplattan är raden som växer (fler objekt per ruta).
 - **Snabbsöket behöver inget eget index (#100).** Sökningen i två omgångar (prefix först, delsträng bara vid behov) växer knappt med datan. Lokalt är p50 7,9 / 9,1 / 9,8 ms och p95 18,9 / 15,4 / 18,9 ms i full / 2× / 4×. I demon är p95 19–22 ms i full skala. Med samma tillväxt ger det ungefär 25–30 ms vid 4×, långt under budgeten 50 ms. Ett sökindex i minnet eller en separat söktjänst blir aktuellt först om snabbsökets p95 i demon passerar 35 ms.
-- **Ändringar skalar.** Satser som flyttar kopplingar, ändrar objekt utan att ändra struktur, lägger till utrustning och kablar eller ändrar kretsar blir ett delta (#81, #119, #121, se [arkitektur.md](arkitektur.md)): millisekunder oavsett nätets storlek. Deltat kompakteras in i arrayerna vart tionde minut eller vid 50 000 noder. Det tar under en sekund även i 4×, och toppen är högst 1,1 gånger grafens storlek.
-- **Borttagningar och flyttar skalar inte ännu.** Satser som tar bort, flyttar eller bygger om utrustning och kablar byggs om från rader. Tiden och toppen växer linjärt, och toppen är ungefär tre gånger grafens storlek. Inget flöde i appen gör sådana ändringar i dag (#123). Podgränsen bestäms därför av laddningen vid start och av den ovanliga ombyggnaden. I full skala räcker 2 GiB (topp 1,6 GB). I 2× behövs cirka 4 GiB och i 4× cirka 7 GiB.
+- **Ändringar skalar.** Satser som flyttar kopplingar, ändrar objekt, lägger till, tar bort, flyttar eller bygger om utrustning och kablar, eller ändrar kretsar blir ett delta (#81, #119, #121, #123, se [arkitektur.md](arkitektur.md)): millisekunder oavsett nätets storlek. Deltat kompakteras in i arrayerna vart tionde minut eller vid 50 000 noder. Utan borttag tar det under en sekund även i 4× och toppen är högst 1,1 gånger grafens storlek. Med borttag numreras arrayerna om, och toppen blir cirka 1,5 gånger grafens storlek.
+- **Ombyggnad från rader är en reservväg.** Den sker bara när en sats rader inte passar deltat (till exempel en borttagen terminal som en krets fortfarande går genom). Tiden och toppen växer linjärt, och toppen är ungefär tre gånger grafens storlek. Podgränsen bestäms ändå av laddningen vid start och av den ovanliga ombyggnaden, tills API-tabellen ovan har mätts om. I full skala räcker 2 GiB (topp 1,6 GB). I 2× behövs cirka 4 GiB och i 4× cirka 7 GiB.
 
 ## Prestandabudget
 

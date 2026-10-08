@@ -3,82 +3,110 @@ namespace Cmdb.Graph;
 public sealed partial class Graph
 {
     /// <summary>
-    /// This production graph with its delta folded into the arrays (#81, #119, #121): the adjacency is rebuilt, new
-    /// terminals, equipment, conductors and cables are appended after the arrays' own, sites are sorted in, and the
-    /// circuit arrays are rebuilt when circuits changed. Arrays the delta does not touch are shared. The result is the graph a rebuild from rows would give, byte
-    /// for byte, at a fraction of the time and memory. <paramref name="batches"/> are the batches applied as the delta, in
-    /// order: they carry the lifecycles the delta does not hold. Null when a new object's id is not above every id of its
-    /// kind in the arrays, so appending would break their order; then only a rebuild from rows will do.
+    /// This production graph with its delta folded into the arrays (#81, #119, #121, #123): the adjacency is rebuilt, new
+    /// terminals, equipment, conductors and cables are sorted in by id, removed ones dropped, sites follow their
+    /// equipment, and the circuit arrays are rebuilt when circuits or node indexes changed. While nothing was removed and
+    /// new ids follow the arrays' own, objects keep their indexes and arrays the delta does not touch are shared. The
+    /// result is the graph a rebuild from rows would give, byte for byte, at a fraction of the time and memory.
+    /// <paramref name="batches"/> are the batches applied as the delta, in order: they carry the lifecycles the delta
+    /// does not hold.
     /// </summary>
-    internal Graph? Flatten(IReadOnlyList<GraphChangeBatch> batches)
+    internal Graph Flatten(IReadOnlyList<GraphChangeBatch> batches)
     {
         if (_base is not null)
         {
             throw new InvalidOperationException("A plan view cannot be folded into production.");
         }
         var o = _overlay ?? new GraphOverlay();
-        if (!Appendable(TerminalIds, o.TerminalIds) || !Appendable(EquipmentIds, o.EquipmentIds)
-            || !Appendable(ConductorIds, o.ConductorIds) || !Appendable(CableIds, o.CableIds))
+        var removedConductors = o.RemovedConductors;
+        if (o.RemovedCables.Count > 0)
         {
-            return null;
-        }
-
-        // New objects in id order: position in the delta → position after the arrays' own.
-        var terminalOrder = Order(o.TerminalIds);
-        var equipmentOrder = Order(o.EquipmentIds);
-        var conductorOrder = Order(o.ConductorIds);
-        var cableOrder = Order(o.CableIds);
-        int Node(int node) => node < TerminalIds.Length ? node : TerminalIds.Length + terminalOrder[node - TerminalIds.Length];
-        var terminalInverse = new int[terminalOrder.Length];
-        for (var i = 0; i < terminalOrder.Length; i++)
-        {
-            terminalInverse[terminalOrder[i]] = i;
-        }
-        int Old(int node) => node < TerminalIds.Length ? node : TerminalIds.Length + terminalInverse[node - TerminalIds.Length];
-        int EquipmentIndex(int e) => e < EquipmentIds.Length ? e : EquipmentIds.Length + equipmentOrder[e - EquipmentIds.Length];
-        int ConductorIndex(int c) => c < ConductorIds.Length ? c : ConductorIds.Length + conductorOrder[c - ConductorIds.Length];
-        int CableIndex(int c) => c < CableIds.Length ? c : CableIds.Length + cableOrder[c - CableIds.Length];
-
-        // Sites merge: a site getting its first equipment may be older than others in the graph.
-        var siteIds = SiteIds.Concat(o.SiteIds).Order().ToArray();
-        var siteIndex = new int[SiteIds.Length + o.SiteIds.Count];
-        for (var s = 0; s < siteIndex.Length; s++)
-        {
-            siteIndex[s] = Array.BinarySearch(siteIds, SiteId(s));
-        }
-
-        var terminalIds = Append(TerminalIds, o.TerminalIds, terminalOrder);
-        var terminalKinds = Append(TerminalKinds, o.Kinds, terminalOrder);
-        var terminalOwners = Append(TerminalOwners, o.Owners, terminalOrder);
-        for (var node = TerminalIds.Length; node < terminalOwners.Length; node++)
-        {
-            var owner = terminalOwners[node];
-            terminalOwners[node] = terminalKinds[node] == TerminalKind.Port ? EquipmentIndex(owner) : ConductorIndex(owner);
-        }
-        var equipmentIds = Append(EquipmentIds, o.EquipmentIds, equipmentOrder);
-        var equipmentSites = Append(EquipmentSites, o.EquipmentSites, equipmentOrder);
-        if (o.SiteIds.Count > 0)
-        {
-            // New sites move the indexes of the ones sorted after them.
-            equipmentSites = [.. equipmentSites];
-            for (var e = 0; e < equipmentSites.Length; e++)
+            // A removed cable's conductors go with it, also any without ends, which the delta never saw.
+            removedConductors = [.. removedConductors];
+            for (var c = 0; c < ConductorIds.Length + o.ConductorIds.Count; c++)
             {
-                equipmentSites[e] = siteIndex[equipmentSites[e]];
+                if (o.RemovedCables.Contains(CableOfConductor(c)))
+                {
+                    removedConductors.Add(c);
+                }
             }
         }
-        var conductorIds = Append(ConductorIds, o.ConductorIds, conductorOrder);
-        var conductorCables = Append(ConductorCables, o.ConductorCables, conductorOrder);
-        for (var c = ConductorIds.Length; c < conductorCables.Length; c++)
+        var terminals = Renumbering.Of(TerminalIds, o.TerminalIds, o.RemovedNodes);
+        var equipment = Renumbering.Of(EquipmentIds, o.EquipmentIds, o.RemovedEquipment);
+        var conductors = Renumbering.Of(ConductorIds, o.ConductorIds, removedConductors);
+        var cables = Renumbering.Of(CableIds, o.CableIds, o.RemovedCables);
+        // A site getting its first equipment may be older than others in the graph, and one losing its last one goes.
+        var sites = Renumbering.Of(SiteIds, o.SiteIds, o.RemovedSites);
+
+        var terminalIds = terminals.Ids;
+        var n = terminalIds.Length;
+        var terminalKinds = terminals.Gather(TerminalKinds, o.Kinds);
+        int[] terminalOwners;
+        if (terminals.Appends && equipment.Appends && conductors.Appends)
         {
-            conductorCables[c] = CableIndex(conductorCables[c]);
+            terminalOwners = terminals.Gather(TerminalOwners, o.Owners);
+            for (var node = TerminalIds.Length; node < n; node++)
+            {
+                var owner = terminalOwners[node];
+                terminalOwners[node] = terminalKinds[node] == TerminalKind.Port ? equipment.New(owner) : conductors.New(owner);
+            }
         }
-        var cableIds = Append(CableIds, o.CableIds, cableOrder);
+        else
+        {
+            terminalOwners = new int[n];
+            for (var node = 0; node < n; node++)
+            {
+                var owner = OwnerOf(terminals.Old(node));
+                terminalOwners[node] = terminalKinds[node] == TerminalKind.Port ? equipment.New(owner) : conductors.New(owner);
+            }
+        }
+        var equipmentIds = equipment.Ids;
+        int[] equipmentSites;
+        if (equipment.Appends && sites.Appends && o.MovedEquipment.Count == 0)
+        {
+            equipmentSites = equipment.Gather(EquipmentSites, o.EquipmentSites);
+            for (var e = EquipmentIds.Length; e < equipmentSites.Length; e++)
+            {
+                equipmentSites[e] = sites.New(equipmentSites[e]);
+            }
+        }
+        else
+        {
+            equipmentSites = new int[equipmentIds.Length];
+            for (var e = 0; e < equipmentSites.Length; e++)
+            {
+                equipmentSites[e] = sites.New(SiteIndexOfEquipment(equipment.Old(e)));
+            }
+        }
+        var siteIds = sites.Ids;
+        var conductorIds = conductors.Ids;
+        int[] conductorCables;
+        if (conductors.Appends && cables.Appends)
+        {
+            conductorCables = conductors.Gather(ConductorCables, o.ConductorCables);
+            for (var c = ConductorIds.Length; c < conductorCables.Length; c++)
+            {
+                conductorCables[c] = cables.New(conductorCables[c]);
+            }
+        }
+        else
+        {
+            conductorCables = new int[conductorIds.Length];
+            for (var c = 0; c < conductorCables.Length; c++)
+            {
+                conductorCables[c] = cables.New(CableOfConductor(conductors.Old(c)));
+            }
+        }
+        var cableIds = cables.Ids;
 
         // The latest lifecycle of every connection and cable the batches read, and the nodes whose edges they touch.
         var connectionLifecycles = new Dictionary<(long, long, EdgeKind), Lifecycle>();
         var cableLifecycles = new Lifecycle[cableIds.Length];
-        Array.Copy(CableLifecycles, cableLifecycles, CableLifecycles.Length);
-        Array.Fill(cableLifecycles, Lifecycle.InService, CableLifecycles.Length, cableIds.Length - CableLifecycles.Length);
+        for (var c = 0; c < cableLifecycles.Length; c++)
+        {
+            var old = cables.Old(c);
+            cableLifecycles[c] = old < CableIds.Length ? CableLifecycles[old] : Lifecycle.InService;
+        }
         var touched = new HashSet<int>(o.Edges.Keys);
         foreach (var batch in batches)
         {
@@ -101,32 +129,38 @@ public sealed partial class Graph
                 if (cable >= 0)
                 {
                     cableLifecycles[cable] = (Lifecycle)rows.CableLifecycles[i];
-                    if (cable < CableIds.Length)
-                    {
-                        touched.UnionWith(EndsOf(cable).ToArray());
-                    }
+                    touched.UnionWith(EndsOf(cables.Old(cable)).ToArray());
                 }
             }
         }
 
-        var n = terminalIds.Length;
         var start = new int[n + 1];
         for (var node = 0; node < n; node++)
         {
-            start[node + 1] = start[node] + Neighbours(Old(node)).Length;
+            start[node + 1] = start[node] + Neighbours(terminals.Old(node)).Length;
         }
         var targets = new int[start[n]];
         var kinds = new EdgeKind[targets.Length];
         var lifecycles = new Lifecycle[targets.Length];
         for (var node = 0; node < n; node++)
         {
-            var old = Old(node);
+            var old = terminals.Old(node);
             if (old < TerminalIds.Length && !touched.Contains(old))
             {
-                // Untouched nodes of the arrays point at nodes of the arrays, whose indexes stay.
+                // Untouched nodes of the arrays point at nodes of the arrays that stay, in the same order.
                 var first = EdgeStart[old];
                 var count = EdgeStart[old + 1] - first;
-                Array.Copy(EdgeTargets, first, targets, start[node], count);
+                if (terminals.Appends)
+                {
+                    Array.Copy(EdgeTargets, first, targets, start[node], count);
+                }
+                else
+                {
+                    for (var i = 0; i < count; i++)
+                    {
+                        targets[start[node] + i] = terminals.New(EdgeTargets[first + i]);
+                    }
+                }
                 Array.Copy(EdgeKinds, first, kinds, start[node], count);
                 Array.Copy(EdgeLifecycles, first, lifecycles, start[node], count);
                 continue;
@@ -136,7 +170,7 @@ public sealed partial class Graph
             var neighbourKinds = NeighbourKinds(old);
             for (var i = 0; i < neighbours.Length; i++)
             {
-                edges.Add((Node(neighbours[i]), neighbourKinds[i]));
+                edges.Add((terminals.New(neighbours[i]), neighbourKinds[i]));
             }
             // The builder's order: by target, then kind.
             edges.Sort();
@@ -152,7 +186,7 @@ public sealed partial class Graph
             }
         }
 
-        var circuits = FlattenCircuits(n, Node, Old);
+        var circuits = FlattenCircuits(n, terminals);
 
         var graph = new Graph
         {
@@ -187,7 +221,9 @@ public sealed partial class Graph
             CarrierStart = circuits.CarrierStart,
             Carriers = circuits.Carriers,
         };
-        return AppendOwners(graph) ? graph : graph.IndexOwners();
+        var appends = terminals.Appends && equipment.Appends && conductors.Appends && cables.Appends && sites.Appends
+            && o.MovedEquipment.Count == 0;
+        return appends && AppendOwners(graph) ? graph : graph.IndexOwners();
     }
 
     /// <summary>
@@ -250,12 +286,13 @@ public sealed partial class Graph
     }
 
     /// <summary>
-    /// The circuit arrays after the delta: shared when no circuit changed (grown to the new node count when terminals
-    /// were added), otherwise rebuilt from the delta's circuits the way the builder does it (#121).
+    /// The circuit arrays after the delta: shared when no circuit changed and nodes kept their indexes (grown to the new
+    /// node count when terminals were added), otherwise rebuilt from the delta's circuits the way the builder does it
+    /// (#121, #123).
     /// </summary>
-    private CircuitArrays FlattenCircuits(int nodes, Func<int, int> node, Func<int, int> old)
+    private CircuitArrays FlattenCircuits(int nodes, Renumbering terminals)
     {
-        if (CircuitDelta is null)
+        if (CircuitDelta is null && terminals.Appends)
         {
             var grown = NodeCircuitStart;
             if (nodes > TerminalIds.Length)
@@ -269,7 +306,7 @@ public sealed partial class Graph
                 Dependents, CircuitServiceStart, CircuitServices, ServiceIds, ServiceCircuitStart, ServiceCircuitList, CarrierStart, Carriers);
         }
 
-        var alive = Enumerable.Range(0, CircuitCount).Where(c => !CircuitDelta.Removed.Contains(c)).ToArray();
+        var alive = Enumerable.Range(0, CircuitCount).Where(c => CircuitDelta?.Removed.Contains(c) != true).ToArray();
         var ids = alive.Select(CircuitId).ToArray();
         Array.Sort(ids, alive);
         var position = new int[CircuitCount];
@@ -290,7 +327,7 @@ public sealed partial class Graph
             foreach (var hop in HopsOf(c))
             {
                 hopCircuit.Add(p);
-                hopNode.Add(node(hop));
+                hopNode.Add(terminals.New(hop));
             }
             foreach (var carrier in CarriersOf(c))
             {
@@ -308,12 +345,12 @@ public sealed partial class Graph
         var nodeCircuitStart = new int[nodes + 1];
         for (var n = 0; n < nodes; n++)
         {
-            nodeCircuitStart[n + 1] = nodeCircuitStart[n] + CircuitsThrough(old(n)).Length;
+            nodeCircuitStart[n + 1] = nodeCircuitStart[n] + CircuitsThrough(terminals.Old(n)).Length;
         }
         var nodeCircuits = new int[nodeCircuitStart[nodes]];
         for (var n = 0; n < nodes; n++)
         {
-            var through = CircuitsThrough(old(n));
+            var through = CircuitsThrough(terminals.Old(n));
             var segment = nodeCircuits.AsSpan(nodeCircuitStart[n], through.Length);
             for (var i = 0; i < through.Length; i++)
             {
@@ -325,8 +362,96 @@ public sealed partial class Graph
             [.. serviceCircuits], (nodeCircuitStart, nodeCircuits));
     }
 
-    /// <summary>New ids can follow the arrays' own when they are all above the highest.</summary>
-    private static bool Appendable(long[] ids, List<long> added) => added.Count == 0 || ids.Length == 0 || added.Min() > ids[^1];
+    /// <summary>
+    /// One kind of object's indexes before folding (the arrays' own, then the delta's) and after (#123). While nothing
+    /// was removed and the delta's ids all follow the arrays' own, the arrays' objects keep their indexes, the delta's
+    /// follow in id order, and arrays can be shared or appended to. Otherwise survivors are merged by id into new indexes.
+    /// </summary>
+    private sealed class Renumbering
+    {
+        private readonly int _count;
+        private readonly int[]? _rank;
+        private readonly int[]? _inverse;
+        private readonly int[]? _newOf;
+        private readonly int[]? _oldOf;
+
+        private Renumbering(long[] ids, int count, int[]? rank, int[]? inverse, int[]? newOf, int[]? oldOf)
+        {
+            Ids = ids;
+            _count = count;
+            _rank = rank;
+            _inverse = inverse;
+            _newOf = newOf;
+            _oldOf = oldOf;
+        }
+
+        /// <summary>The ids after folding, sorted.</summary>
+        public long[] Ids { get; }
+
+        /// <summary>The arrays' objects keep their indexes and the delta's follow.</summary>
+        public bool Appends => _newOf is null;
+
+        /// <summary>The new index of an object, or -1 when it was removed.</summary>
+        public int New(int old) => _newOf?[old] ?? (old < _count ? old : _count + _rank![old - _count]);
+
+        public int Old(int index) => _oldOf?[index] ?? (index < _count ? index : _count + _inverse![index - _count]);
+
+        public static Renumbering Of(long[] ids, List<long> added, HashSet<int> removed)
+        {
+            if (removed.Count == 0 && (added.Count == 0 || ids.Length == 0 || added.Min() > ids[^1]))
+            {
+                var rank = Order(added);
+                var inverse = new int[rank.Length];
+                for (var i = 0; i < rank.Length; i++)
+                {
+                    inverse[rank[i]] = i;
+                }
+                return new Renumbering(Append(ids, added, rank), ids.Length, rank, inverse, null, null);
+            }
+            var fresh = Enumerable.Range(0, added.Count).Where(i => !removed.Contains(ids.Length + i)).ToArray();
+            Array.Sort(fresh.Select(i => added[i]).ToArray(), fresh);
+            var kept = ids.Length - removed.Count(r => r < ids.Length);
+            var merged = new long[kept + fresh.Length];
+            var oldOf = new int[merged.Length];
+            var newOf = new int[ids.Length + added.Count];
+            Array.Fill(newOf, -1);
+            for (int at = 0, i = 0, f = 0; at < merged.Length; at++)
+            {
+                while (i < ids.Length && removed.Contains(i))
+                {
+                    i++;
+                }
+                if (f < fresh.Length && (i == ids.Length || added[fresh[f]] < ids[i]))
+                {
+                    oldOf[at] = ids.Length + fresh[f];
+                    merged[at] = added[fresh[f++]];
+                }
+                else
+                {
+                    oldOf[at] = i;
+                    merged[at] = ids[i++];
+                }
+                newOf[oldOf[at]] = at;
+            }
+            return new Renumbering(merged, ids.Length, null, null, newOf, oldOf);
+        }
+
+        /// <summary>A per-object array after folding: shared or appended to while <see cref="Appends"/>.</summary>
+        public T[] Gather<T>(T[] values, List<T> added)
+        {
+            if (Appends)
+            {
+                return Append(values, added, _rank!);
+            }
+            var result = new T[Ids.Length];
+            for (var i = 0; i < result.Length; i++)
+            {
+                var old = _oldOf![i];
+                result[i] = old < _count ? values[old] : added[old - _count];
+            }
+            return result;
+        }
+    }
 
     /// <summary>For each new object in the delta's order, its rank among the new objects by id.</summary>
     private static int[] Order(List<long> ids)
