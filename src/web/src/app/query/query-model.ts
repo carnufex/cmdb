@@ -7,12 +7,23 @@ export interface QueryFields {
   serviceTypes: string[];
   categories: { key: string; attributes: AttributeField[] }[];
   types: { key: string; manufacturer: string; model: string; category: string }[];
+  /** Site types with the fields of their attribute schemas (#211). */
+  siteTypeDetails?: { key: string; name: string; attributes: AttributeField[] | null }[] | null;
 }
 
 export interface AttributeField {
   key: string;
   type: 'string' | 'number';
   values: (string | number)[] | null;
+  /** The schema's title (#211), when it has one. */
+  title?: string | null;
+}
+
+/** A test on the site's own attributes (#211); an empty key means none. */
+export interface SiteAttributeDraft {
+  key: string;
+  op: Op;
+  value: string;
 }
 
 export type Op = 'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte' | 'prefix' | 'contains' | 'exists';
@@ -32,6 +43,13 @@ export interface QueryDraft {
   lifecycles: string[];
   serviceTypes: string[];
   equipment: EquipmentDraft[];
+  siteAttribute?: SiteAttributeDraft;
+}
+
+/** Every attribute field the site types' schemas have, once per key. */
+export function siteAttributeFields(fields: QueryFields | undefined): AttributeField[] {
+  const all = (fields?.siteTypeDetails ?? []).flatMap((t) => t.attributes ?? []);
+  return [...new Map(all.map((a) => [a.key, a])).values()];
 }
 
 /** POST /api/query/sites */
@@ -172,6 +190,9 @@ export function toRequest(draft: QueryDraft, fields: QueryFields | undefined, li
     siteTypes: draft.siteTypes.length ? draft.siteTypes : undefined,
     lifecycles: draft.lifecycles.length ? draft.lifecycles : undefined,
     serviceTypes: draft.serviceTypes.length ? draft.serviceTypes : undefined,
+    siteAttributes: draft.siteAttribute?.key
+      ? [siteAttributeRequest(draft.siteAttribute, siteAttributeFields(fields))]
+      : undefined,
     equipment: draft.equipment
       .filter((e) => e.category || e.typeKey || e.key)
       .map((e) => ({
@@ -194,5 +215,17 @@ export function toRequest(draft: QueryDraft, fields: QueryFields | undefined, li
           : undefined,
       })),
     limit,
+  };
+}
+
+function siteAttributeRequest(a: SiteAttributeDraft, fields: AttributeField[]) {
+  const numeric =
+    fields.find((f) => f.key === a.key)?.type === 'number' &&
+    a.op !== 'prefix' &&
+    a.op !== 'contains';
+  return {
+    key: a.key,
+    op: a.op,
+    value: a.op === 'exists' ? undefined : numeric ? Number(a.value) : a.value,
   };
 }

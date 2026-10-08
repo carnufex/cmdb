@@ -11,7 +11,7 @@ using NpgsqlTypes;
 
 namespace Cmdb.Api.Features.Query;
 
-/// <summary>A test on one equipment attribute. Value is a JSON number or string, and absent for <c>exists</c>.</summary>
+/// <summary>A test on one attribute of equipment or of the site itself. Value is a JSON number or string, and absent for <c>exists</c>.</summary>
 public sealed record AttributeCondition(string Key, string Op, JsonElement? Value);
 
 /// <summary>
@@ -25,7 +25,8 @@ public sealed record SiteQuery(
     IReadOnlyList<string>? Lifecycles,
     IReadOnlyList<EquipmentCondition>? Equipment,
     IReadOnlyList<string>? ServiceTypes,
-    int Limit = 200);
+    int Limit = 200,
+    IReadOnlyList<AttributeCondition>? SiteAttributes = null);
 
 /// <param name="Matching">Equipment on the site matching the first equipment condition, if there is one.</param>
 public sealed record SiteQueryHit(long Id, string Code, string Name, string SiteType, string Lifecycle, double? X, double? Y, int? Matching);
@@ -50,6 +51,8 @@ public sealed class SiteQueryValidator : Validator<SiteQuery>
         RuleForEach(q => q.Lifecycles).Must(l => QueryFieldsEndpoint.Lifecycles.Contains(l)).WithMessage("Unknown lifecycle.");
         RuleForEach(q => q.ServiceTypes).Matches("^[a-z0-9_-]{1,40}$");
         RuleFor(q => q.Equipment).Must(e => e is null || e.Count <= 5).WithMessage("At most five equipment conditions.");
+        RuleFor(q => q.SiteAttributes).Must(a => a is null || a.Count <= 5).WithMessage("At most five site attribute conditions.");
+        RuleForEach(q => q.SiteAttributes).SetValidator(new AttributeConditionValidator());
         RuleForEach(q => q.Equipment).ChildRules(e =>
         {
             e.RuleFor(c => c).Must(c => c.Category is not null || c.TypeKey is not null || c.Attribute is not null)
@@ -57,20 +60,25 @@ public sealed class SiteQueryValidator : Validator<SiteQuery>
             e.RuleFor(c => c.Category).Matches("^[a-z_]{1,40}$").When(c => c.Category is not null);
             e.RuleFor(c => c.TypeKey).Matches("^[a-z0-9-]{1,60}$").When(c => c.TypeKey is not null);
             e.RuleFor(c => c.MinCount).InclusiveBetween(1, 1000).When(c => c.MinCount is not null);
-            e.RuleFor(c => c.Attribute!).ChildRules(a =>
-            {
-                a.RuleFor(x => x.Key).Matches("^[A-Za-z][A-Za-z0-9]{0,40}$");
-                a.RuleFor(x => x.Op).Must(op => Ops.Contains(op)).WithMessage($"Operator must be one of {string.Join(", ", Ops)}.");
-                a.RuleFor(x => x.Value).Must(v => v is null || v.Value.ValueKind == JsonValueKind.Undefined)
-                    .When(x => x.Op == "exists").WithMessage("exists takes no value.");
-                a.RuleFor(x => x.Value).Must(v => v is { ValueKind: JsonValueKind.Number })
-                    .When(x => NumericOps.Contains(x.Op)).WithMessage("Comparisons need a number.");
-                a.RuleFor(x => x.Value).Must(v => v is { ValueKind: JsonValueKind.String } && v.Value.GetString()!.Length is > 0 and <= 100)
-                    .When(x => x.Op is "prefix" or "contains").WithMessage("Text operators need a non-empty string.");
-                a.RuleFor(x => x.Value).Must(v => v is { ValueKind: JsonValueKind.String or JsonValueKind.Number or JsonValueKind.True or JsonValueKind.False })
-                    .When(x => x.Op is "eq" or "neq").WithMessage("Equality needs a string, number or boolean.");
-            }).When(c => c.Attribute is not null);
+            e.RuleFor(c => c.Attribute!).SetValidator(new AttributeConditionValidator()).When(c => c.Attribute is not null);
         });
+    }
+
+    private sealed class AttributeConditionValidator : AbstractValidator<AttributeCondition>
+    {
+        public AttributeConditionValidator()
+        {
+            RuleFor(x => x.Key).Matches("^[A-Za-z][A-Za-z0-9]{0,40}$");
+            RuleFor(x => x.Op).Must(op => Ops.Contains(op)).WithMessage($"Operator must be one of {string.Join(", ", Ops)}.");
+            RuleFor(x => x.Value).Must(v => v is null || v.Value.ValueKind == JsonValueKind.Undefined)
+                .When(x => x.Op == "exists").WithMessage("exists takes no value.");
+            RuleFor(x => x.Value).Must(v => v is { ValueKind: JsonValueKind.Number })
+                .When(x => NumericOps.Contains(x.Op)).WithMessage("Comparisons need a number.");
+            RuleFor(x => x.Value).Must(v => v is { ValueKind: JsonValueKind.String } && v.Value.GetString()!.Length is > 0 and <= 100)
+                .When(x => x.Op is "prefix" or "contains").WithMessage("Text operators need a non-empty string.");
+            RuleFor(x => x.Value).Must(v => v is { ValueKind: JsonValueKind.String or JsonValueKind.Number or JsonValueKind.True or JsonValueKind.False })
+                .When(x => x.Op is "eq" or "neq").WithMessage("Equality needs a string, number or boolean.");
+        }
     }
 }
 
@@ -87,7 +95,7 @@ public sealed class QuerySitesEndpoint(RequestDb db, TypeCatalog catalog) : Endp
 
     public override async Task HandleAsync(SiteQuery req, CancellationToken ct)
     {
-        foreach (var error in CatalogErrors(req, catalog))
+        foreach (var error in CatalogErrors(req, catalog, HttpContext.Scope()))
         {
             AddError(error);
         }
@@ -132,19 +140,30 @@ public sealed class QuerySitesEndpoint(RequestDb db, TypeCatalog catalog) : Endp
         return new SiteQueryResult(total, sites, points, extent, Math.Round(sw.Elapsed.TotalMilliseconds, 1));
     }
 
-    /// <summary>Attribute keys and models the catalog does not know. Shared with the MCP tool.</summary>
-    internal static IEnumerable<string> CatalogErrors(SiteQuery req, TypeCatalog catalog)
+    /// <summary>
+    /// Attribute keys and models the catalog does not know. Shared with the MCP tool. An attribute the caller's scopes
+    /// hide (#22) is as unknown as one no type has, so a search cannot test what the caller may not see.
+    /// </summary>
+    internal static IEnumerable<string> CatalogErrors(SiteQuery req, TypeCatalog catalog, UserScope scope)
     {
         var keys = QueryFieldsEndpoint.AttributeKeys(catalog);
         foreach (var condition in req.Equipment ?? [])
         {
-            if (condition.Attribute is { } a && !keys.Contains(a.Key))
+            if (condition.Attribute is { } a && (!keys.Contains(a.Key) || scope.HiddenAttributes.Contains(a.Key)))
             {
                 yield return $"No equipment type has the attribute '{a.Key}'.";
             }
             if (condition.TypeKey is { } key && catalog.Find(key) is null)
             {
                 yield return $"Unknown equipment type '{key}'.";
+            }
+        }
+        var siteKeys = QueryFieldsEndpoint.SiteAttributeKeys(catalog);
+        foreach (var a in req.SiteAttributes ?? [])
+        {
+            if (!siteKeys.Contains(a.Key) || scope.HiddenAttributes.Contains(a.Key))
+            {
+                yield return $"No site type has the attribute '{a.Key}'.";
             }
         }
     }
@@ -174,6 +193,11 @@ public sealed class QuerySitesEndpoint(RequestDb db, TypeCatalog catalog) : Endp
         {
             where.Add($"s.lifecycle::text = ANY({P(req.Lifecycles.ToArray())}::text[])");
         }
+        // The site's own attributes (#211): a plain filter on the site row.
+        foreach (var a in req.SiteAttributes ?? [])
+        {
+            where.Add(Attribute(a, P, "s"));
+        }
 
         string? firstEquipment = null;
         foreach (var condition in req.Equipment ?? [])
@@ -189,7 +213,7 @@ public sealed class QuerySitesEndpoint(RequestDb db, TypeCatalog catalog) : Endp
             }
             if (condition.Attribute is { } a)
             {
-                parts.Add(Attribute(a, P));
+                parts.Add(Attribute(a, P, "e"));
             }
             var filter = string.Join(" AND ", parts);
             firstEquipment ??= filter;
@@ -236,26 +260,26 @@ public sealed class QuerySitesEndpoint(RequestDb db, TypeCatalog catalog) : Endp
         return sql.ToString();
     }
 
-    private static string Attribute(AttributeCondition a, Func<object, NpgsqlDbType?, string> p)
+    private static string Attribute(AttributeCondition a, Func<object, NpgsqlDbType?, string> p, string alias)
     {
         var key = p(a.Key, NpgsqlDbType.Text);
         var value = a.Value ?? default;
         string Json() => p(JsonSerializer.Serialize(new Dictionary<string, JsonElement> { [a.Key] = value }), NpgsqlDbType.Jsonb);
         string Number() => p(value.GetDecimal(), NpgsqlDbType.Numeric);
         string Text() => p(value.GetString()!, NpgsqlDbType.Text);
-        string Numeric(string op) => $"(jsonb_typeof(e.attributes -> {key}) = 'number' AND (e.attributes ->> {key})::numeric {op} {Number()})";
+        string Numeric(string op) => $"(jsonb_typeof({alias}.attributes -> {key}) = 'number' AND ({alias}.attributes ->> {key})::numeric {op} {Number()})";
         return a.Op switch
         {
             // Containment uses the jsonb_path_ops GIN index.
-            "eq" => $"e.attributes @> {Json()}",
-            "neq" => $"(e.attributes ? {key} AND NOT e.attributes @> {Json()})",
+            "eq" => $"{alias}.attributes @> {Json()}",
+            "neq" => $"({alias}.attributes ? {key} AND NOT {alias}.attributes @> {Json()})",
             "gt" => Numeric(">"),
             "gte" => Numeric(">="),
             "lt" => Numeric("<"),
             "lte" => Numeric("<="),
-            "prefix" => $"starts_with(e.attributes ->> {key}, {Text()})",
-            "contains" => $"strpos(lower(e.attributes ->> {key}), lower({Text()})) > 0",
-            "exists" => $"e.attributes ? {key}",
+            "prefix" => $"starts_with({alias}.attributes ->> {key}, {Text()})",
+            "contains" => $"strpos(lower({alias}.attributes ->> {key}), lower({Text()})) > 0",
+            "exists" => $"{alias}.attributes ? {key}",
             _ => throw new ArgumentOutOfRangeException(nameof(a), a.Op, "Unknown operator."),
         };
     }

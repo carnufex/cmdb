@@ -96,6 +96,8 @@ export interface CableDetail {
   id: number;
   code: string;
   typeName: string;
+  /** The cable type's key in the catalog (#211). */
+  typeKey?: string | null;
   medium: string;
   conductors: number;
   conductorsInUse: number;

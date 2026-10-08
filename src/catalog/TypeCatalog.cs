@@ -29,10 +29,15 @@ public sealed class TypeCatalog
     private readonly FrozenDictionary<string, CatalogSiteType> _siteTypesByKey;
     private readonly IReadOnlyList<EquipmentCategory> _categories;
     private readonly FrozenDictionary<string, EquipmentCategory> _categoriesByKey;
+    private readonly IReadOnlyList<ServiceType> _serviceTypes;
+    private readonly FrozenDictionary<(string Object, string Key), JsonSchema> _objectSchemas;
 
     private TypeCatalog(IEnumerable<EquipmentType> types, IDictionary<string, JsonSchema> schemas, IEnumerable<CableType> cableTypes,
-        IReadOnlyList<CatalogSiteType> siteTypes, IReadOnlyList<EquipmentCategory> categories)
+        IReadOnlyList<CatalogSiteType> siteTypes, IReadOnlyList<EquipmentCategory> categories, IReadOnlyList<ServiceType> serviceTypes,
+        IDictionary<(string, string), JsonSchema> objectSchemas)
     {
+        _serviceTypes = serviceTypes;
+        _objectSchemas = objectSchemas.ToFrozenDictionary();
         _types = types.ToFrozenDictionary(t => t.Key, StringComparer.Ordinal);
         _schemas = schemas.ToFrozenDictionary(StringComparer.Ordinal);
         _cableTypes = cableTypes.ToFrozenDictionary(t => t.Key, StringComparer.Ordinal);
@@ -78,11 +83,40 @@ public sealed class TypeCatalog
     /// <summary>Whether the type with <paramref name="key"/> exists and its category has <paramref name="role"/>.</summary>
     public bool TypeHas(string key, string role) => Find(key) is { } type && CategoryHas(type.Category, role);
 
+    /// <summary>The service types in catalog order (#211); empty when the catalog has no service-types.json.</summary>
+    public IReadOnlyList<ServiceType> ServiceTypes => _serviceTypes;
+
+    public ServiceType? FindServiceType(string key) => _serviceTypes.FirstOrDefault(t => t.Key == key);
+
+    /// <summary>
+    /// The attribute schema of a site type, cable type or service type (#211), or of an equipment model; null when the
+    /// type has none and its attributes are free.
+    /// </summary>
+    public JsonElement? AttributeSchema(string objectType, string typeKey) => objectType switch
+    {
+        "site" => FindSiteType(typeKey)?.Attributes,
+        "cable" => FindCable(typeKey)?.Attributes,
+        "service" => FindServiceType(typeKey)?.Attributes,
+        "equipment" => Find(typeKey)?.Attributes,
+        _ => null,
+    };
+
+    /// <summary>
+    /// Validates the attributes of a site, cable or service against its type's schema (#211), or of equipment against its
+    /// model's. Without a schema anything goes. Returns error messages, empty when valid.
+    /// </summary>
+    public IReadOnlyList<string> ValidateAttributes(string objectType, string typeKey, JsonElement attributes) =>
+        objectType == "equipment" ? ValidateAttributes(typeKey, attributes)
+        : _objectSchemas.TryGetValue((objectType, typeKey), out var schema) ? Evaluate(schema, attributes)
+        : [];
+
     /// <summary>Validates instance attributes against the type's JSON Schema. Returns error messages, empty when valid.</summary>
-    public IReadOnlyList<string> ValidateAttributes(string key, JsonElement attributes)
+    public IReadOnlyList<string> ValidateAttributes(string key, JsonElement attributes) => Evaluate(_schemas[key], attributes);
+
+    private static IReadOnlyList<string> Evaluate(JsonSchema schema, JsonElement attributes)
     {
         // Formats (ipv4, date and so on) are part of the model, not annotations: they are checked too.
-        var result = _schemas[key].Evaluate(attributes, new EvaluationOptions { OutputFormat = OutputFormat.List, RequireFormatValidation = true });
+        var result = schema.Evaluate(attributes, new EvaluationOptions { OutputFormat = OutputFormat.List, RequireFormatValidation = true });
         if (result.IsValid)
         {
             return [];
@@ -96,8 +130,9 @@ public sealed class TypeCatalog
     /// <summary>Parses and validates catalog files. Throws with every problem found, not just the first.</summary>
     /// <param name="siteTypesJson">site-types.json; null takes the embedded one.</param>
     /// <param name="categoriesJson">equipment-categories.json; null takes the embedded one.</param>
+    /// <param name="serviceTypesJson">service-types.json; null takes the embedded one, <c>[]</c> is none.</param>
     public static TypeCatalog Parse(IEnumerable<(string File, string Json)> files, string cableTypesJson = "[]",
-        string? siteTypesJson = null, string? categoriesJson = null)
+        string? siteTypesJson = null, string? categoriesJson = null, string? serviceTypesJson = null)
     {
         var types = new List<EquipmentType>();
         var schemas = new Dictionary<string, JsonSchema>(StringComparer.Ordinal);
@@ -107,6 +142,8 @@ public sealed class TypeCatalog
         KindRules.Check("site-types.json", [.. siteTypes.Select(t => (t.Key, t.Name, t.Roles))], CatalogRoles.SiteRoles, errors);
         var categories = Kinds<EquipmentCategory>("equipment-categories.json", categoriesJson, errors);
         KindRules.Check("equipment-categories.json", [.. categories.Select(c => (c.Key, c.Name, c.Roles))], CatalogRoles.CategoryRoles, errors);
+        var serviceTypes = Kinds<ServiceType>("service-types.json", serviceTypesJson, errors);
+        KindRules.Check("service-types.json", [.. serviceTypes.Select(t => (t.Key, t.Name, (IReadOnlyList<string>)[]))], CatalogRoles.SiteRoles, errors);
         if (errors.Count > 0)
         {
             throw new InvalidOperationException("Invalid type catalog:" + Environment.NewLine + string.Join(Environment.NewLine, errors));
@@ -138,7 +175,7 @@ public sealed class TypeCatalog
                 {
                     schemas[type.Key] = JsonSchema.FromText(type.Attributes.GetRawText());
                 }
-                catch (Exception ex) when (ex is JsonException or InvalidOperationException)
+                catch (Exception ex) when (ex is JsonException or JsonSchemaException or InvalidOperationException)
                 {
                     errors.Add($"{file}: attributes is not a valid JSON Schema: {ex.Message}");
                 }
@@ -161,11 +198,46 @@ public sealed class TypeCatalog
         }
         CatalogRules.CheckCableTypes(cableTypes, errors);
 
+        // Attribute schemas for sites, cables and services (#211): optional, checked like the equipment ones.
+        var objectSchemas = new Dictionary<(string, string), JsonSchema>();
+        void Schema(string file, string objectType, string? key, JsonElement? attributes)
+        {
+            if (key is null || attributes is not { } schema)
+            {
+                return;
+            }
+            if (schema.ValueKind != JsonValueKind.Object)
+            {
+                errors.Add($"{file}: '{key}' attributes must be a JSON Schema object");
+                return;
+            }
+            try
+            {
+                objectSchemas[(objectType, key)] = JsonSchema.FromText(schema.GetRawText());
+            }
+            catch (Exception ex) when (ex is JsonException or JsonSchemaException or InvalidOperationException)
+            {
+                errors.Add($"{file}: '{key}' attributes is not a valid JSON Schema: {ex.Message}");
+            }
+        }
+        foreach (var t in siteTypes)
+        {
+            Schema("site-types.json", "site", t.Key, t.Attributes);
+        }
+        foreach (var t in cableTypes)
+        {
+            Schema("cable-types.json", "cable", t.Key, t.Attributes);
+        }
+        foreach (var t in serviceTypes)
+        {
+            Schema("service-types.json", "service", t.Key, t.Attributes);
+        }
+
         if (errors.Count > 0)
         {
             throw new InvalidOperationException("Invalid type catalog:" + Environment.NewLine + string.Join(Environment.NewLine, errors));
         }
-        return new TypeCatalog(types, schemas, cableTypes, siteTypes, categories);
+        return new TypeCatalog(types, schemas, cableTypes, siteTypes, categories, serviceTypes, objectSchemas);
     }
 
     /// <summary>Loads and validates the equipment and cable types from <paramref name="source"/>.</summary>
@@ -175,7 +247,8 @@ public sealed class TypeCatalog
         {
             string Required(string file) =>
                 source.Read(file) ?? throw new InvalidOperationException("Invalid type catalog:" + Environment.NewLine + $"{file}: missing");
-            return Parse(source.Files("equipment-types"), Required("cable-types.json"), Required("site-types.json"), Required("equipment-categories.json"));
+            return Parse(source.Files("equipment-types"), Required("cable-types.json"), Required("site-types.json"), Required("equipment-categories.json"),
+                source.Read("service-types.json") ?? "[]");
         }
         catch (InvalidOperationException ex)
         {

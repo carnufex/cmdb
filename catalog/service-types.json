@@ -1,0 +1,47 @@
+[
+  {
+    "key": "mobile-backhaul",
+    "name": "Mobil backhaul",
+    "attributes": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "capacityMbps": {
+          "title": "Kapacitet (Mbit/s)",
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  },
+  {
+    "key": "ethernet",
+    "name": "Ethernet",
+    "attributes": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "bandwidthMbps": {
+          "title": "Bandbredd (Mbit/s)",
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  },
+  {
+    "key": "core-link",
+    "name": "Stamnätslänk",
+    "attributes": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "capacityGbps": {
+          "title": "Kapacitet (Gbit/s)",
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  }
+]

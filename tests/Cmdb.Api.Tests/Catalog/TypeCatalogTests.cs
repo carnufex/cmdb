@@ -119,6 +119,44 @@ public sealed class TypeCatalogTests
         Should.Throw<InvalidOperationException>(() => TypeCatalog.Parse([], siteTypesJson: siteTypes)).Message.ShouldContain(expected);
     }
 
+    [Fact]
+    public void Site_cable_and_service_attributes_are_validated_against_their_type_schema()
+    {
+        Catalog.ValidateAttributes("site", "hub", Json("""{ "backupHours": 8, "aliases": ["Norra"] }""")).ShouldBeEmpty();
+        Catalog.ValidateAttributes("site", "hub", Json("""{ "backupHours": "åtta" }""")).ShouldNotBeEmpty();
+        Catalog.ValidateAttributes("cable", "fiber-12", Json("""{ "installationYear": 1850 }""")).ShouldNotBeEmpty();
+        Catalog.ValidateAttributes("service", "ethernet", Json("""{ "bandwidthMbps": 0 }""")).ShouldNotBeEmpty();
+        Catalog.ValidateAttributes("service", "ethernet", Json("""{ "bandwidthMbps": 100, "note": "fri" }""")).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Types_without_a_schema_take_any_attributes()
+    {
+        var catalog = TypeCatalog.Parse([], serviceTypesJson: """[{ "key": "fri", "name": "Fri" }]""");
+
+        catalog.AttributeSchema("service", "fri").ShouldBeNull();
+        catalog.ValidateAttributes("service", "fri", Json("""{ "anything": [1, 2] }""")).ShouldBeEmpty();
+        catalog.ValidateAttributes("service", "not-in-catalog", Json("""{ "x": 1 }""")).ShouldBeEmpty();
+        TypeCatalog.Parse([], serviceTypesJson: "[]").ServiceTypes.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void The_schema_titles_reach_the_catalog()
+    {
+        var schema = Catalog.AttributeSchema("site", "hub")!.Value;
+
+        schema.GetProperty("properties").GetProperty("backupHours").GetProperty("title").GetString().ShouldBe("Reservkraft (timmar)");
+        Catalog.FindServiceType("core-link")!.Name.ShouldBe("Stamnätslänk");
+    }
+
+    [Theory]
+    [InlineData("""[{ "key": "hub", "name": "Nav", "roles": ["hub"], "attributes": 5 }]""", "'hub' attributes must be a JSON Schema object")]
+    [InlineData("""[{ "key": "hub", "name": "Nav", "roles": ["hub"], "attributes": { "type": "nonsense" } }]""", "'hub' attributes is not a valid JSON Schema")]
+    public void Broken_site_type_schemas_are_rejected(string siteTypes, string expected)
+    {
+        Should.Throw<InvalidOperationException>(() => TypeCatalog.Parse([], siteTypesJson: siteTypes)).Message.ShouldContain(expected);
+    }
+
     private static TypeCatalog Parse(string json) => TypeCatalog.Parse([("t.json", json)]);
 
     private static string Type(string ports) => $$"""

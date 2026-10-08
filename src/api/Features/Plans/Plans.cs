@@ -112,7 +112,8 @@ public sealed class AddOperationRequest
     /// <summary>create_equipment: its lowest rack unit (#173); without it, it goes on top of what the rack holds.</summary>
     public int? Position { get; set; }
 
-    /// <summary>set_attributes: keys to set; a null value removes the key (#27).</summary>
+    /// <summary>set_attributes: keys to set; a null value removes the key (#27). create_site, create_cable: the new object's
+    /// attributes, checked against its type's schema (#211).</summary>
     public System.Text.Json.JsonElement? Attributes { get; set; }
 
     /// <summary>create_cable: the sites at the two ends, existing or planned.</summary>
@@ -137,17 +138,27 @@ public sealed class AddOperationValidator : Validator<AddOperationRequest>
 {
     private static readonly string[] Lifecycles = ["planned", "under_construction", "in_service", "decommissioning", "removed"];
 
+    /// <summary>1–50 keys whose values are plain or a flat list of plain values (a site's other names, #211).</summary>
+    private static bool PlainAttributes(System.Text.Json.JsonElement? attributes) =>
+        attributes is { ValueKind: System.Text.Json.JsonValueKind.Object } o
+            && o.EnumerateObject().Count() is > 0 and <= 50
+            && o.EnumerateObject().All(p => p.Name.Length <= 100 && Plain(p.Value, list: true));
+
+    private static bool Plain(System.Text.Json.JsonElement value, bool list) => value.ValueKind switch
+    {
+        System.Text.Json.JsonValueKind.Object => false,
+        System.Text.Json.JsonValueKind.Array => list && value.GetArrayLength() <= 100 && value.EnumerateArray().All(v => Plain(v, list: false)),
+        _ => true,
+    };
+
     public AddOperationValidator()
     {
         RuleFor(r => r.Kind).Must(k => PlanKinds.Operations.Contains(k)).WithMessage($"kind is one of {string.Join(", ", PlanKinds.Operations)}.");
         When(r => r.Kind == "set_attributes", () =>
         {
-            RuleFor(r => r.Type).Must(t => t is "site" or "equipment").WithMessage("type is site or equipment.");
+            RuleFor(r => r.Type).Must(t => t is "site" or "equipment" or "cable").WithMessage("type is site, equipment or cable.");
             RuleFor(r => r.ObjectId).NotNull();
-            RuleFor(r => r.Attributes).Must(a => a is { ValueKind: System.Text.Json.JsonValueKind.Object } o
-                    && o.EnumerateObject().Count() is > 0 and <= 50
-                    && o.EnumerateObject().All(p => p.Name.Length <= 100 && p.Value.ValueKind is not (System.Text.Json.JsonValueKind.Object or System.Text.Json.JsonValueKind.Array)))
-                .WithMessage("attributes is an object of 1–50 keys with plain values; null removes a key.");
+            RuleFor(r => r.Attributes).Must(PlainAttributes).WithMessage("attributes is an object of 1–50 keys with plain values or lists of them; null removes a key.");
         });
         When(r => r.Kind is "connect" or "disconnect", () =>
         {
@@ -189,6 +200,8 @@ public sealed class AddOperationValidator : Validator<AddOperationRequest>
             RuleFor(r => r.SiteId).NotNull().NotEqual(0);
             RuleFor(r => r.Terminate).Must(t => t is null || t.Length <= CableSplit.MaxConductors).WithMessage("Too many conductors to terminate.");
         });
+        When(r => r.Kind is "create_site" or "create_cable" && r.Attributes is not null, () =>
+            RuleFor(r => r.Attributes).Must(PlainAttributes).WithMessage("attributes is an object of 1–50 keys with plain values or lists of them."));
         When(r => r.Kind == "create_site", () =>
         {
             RuleFor(r => r.Code).NotEmpty().MaximumLength(50);

@@ -21,7 +21,8 @@ public sealed record CableDetail(
     ObjectRef A,
     ObjectRef B,
     IReadOnlyList<ObjectRef> Circuits,
-    IReadOnlyList<ConductorClaims>? Claims = null);
+    IReadOnlyList<ConductorClaims>? Claims = null,
+    string? TypeKey = null);
 
 /// <summary>A conductor (fibre) that is reserved or wanted by a plan (#25).</summary>
 public sealed record ConductorClaims(long ConductorId, int Number, Cmdb.Api.Features.Reservations.ResourceClaims Claims);
@@ -58,7 +59,7 @@ public sealed class GetCableEndpoint(RequestDb db) : Endpoint<CableRequest, Cabl
                 new($"""
                     SELECT c.id, c.code, ct.name, ct.medium::text, ct.conductor_count, c.length_m, c.lifecycle::text, c.attributes::text,
                            a.id, a.code, a.name, a.lifecycle::text, b.id, b.code, b.name, b.lifecycle::text,
-                           {ScopeSql.Site("a.id", 2)}, {ScopeSql.Site("b.id", 2)}
+                           {ScopeSql.Site("a.id", 2)}, {ScopeSql.Site("b.id", 2)}, ct.key
                     FROM cable c
                     JOIN cable_type ct ON ct.id = c.cable_type_id
                     JOIN site a ON a.id = c.a_site_id
@@ -95,7 +96,8 @@ public sealed class GetCableEndpoint(RequestDb db) : Endpoint<CableRequest, Cabl
             reader.GetBoolean(17)
                 ? new ObjectRef("site", reader.GetInt64(12), reader.GetString(13), reader.GetString(14), reader.GetString(15))
                 : ObjectRef.Hidden("site"),
-            []);
+            [],
+            TypeKey: reader.GetString(18));
 
         await reader.NextResultAsync(ct);
         var circuits = new List<ObjectRef>();

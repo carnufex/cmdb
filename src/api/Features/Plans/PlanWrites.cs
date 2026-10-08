@@ -189,6 +189,9 @@ public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views
         return new((await PlanSql.DescribeAsync(db, graph, mask, scope, [op], after.Problems, ct, after.Chain.Operations)).Single());
     }
 
+    private static readonly System.Text.Json.JsonSerializerOptions OmitNull =
+        new() { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull };
+
     /// <summary>
     /// Checks a create operation (#107) and gives its payload: sites it refers to must exist and be visible, or be
     /// planned in the plan's view; a planned site must lie inside the caller's scopes; codes must be new.
@@ -203,6 +206,27 @@ public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views
                     ? null : $"Den planerade siten {site} finns inte i planen.";
             }
             return await PlanSql.ObjectVisibleAsync(db, "site", site, scope, ct) ? null : $"Site {site} finns inte.";
+        }
+
+        // Attributes of a new site or cable must fit the type's schema (#211); nulls mean nothing on a new object.
+        var attributes = req.Attributes is { } given
+            ? System.Text.Json.Nodes.JsonNode.Parse(given.GetRawText())!.AsObject() : null;
+        foreach (var key in attributes?.Where(p => p.Value is null).Select(p => p.Key).ToList() ?? [])
+        {
+            attributes!.Remove(key);
+        }
+        if (attributes is { Count: > 0 } && req.Kind is "create_site" or "create_cable")
+        {
+            var (objectType, typeKey) = req.Kind == "create_site" ? ("site", req.SiteType!) : ("cable", req.TypeKey!);
+            using var doc = System.Text.Json.JsonDocument.Parse(attributes.ToJsonString());
+            if (PlannedAttributes.Problems(objectType, typeKey, doc.RootElement) is { Count: > 0 } problems)
+            {
+                return (null, $"Attributen passar inte typens schema: {string.Join("; ", problems)}");
+            }
+        }
+        else
+        {
+            attributes = null;
         }
 
         switch (req.Kind)
@@ -233,7 +257,8 @@ public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views
                         siteType = req.SiteType,
                         x = Math.Round(req.X!.Value, 1),
                         y = Math.Round(req.Y!.Value, 1),
-                    }), null);
+                        attributes,
+                    }, OmitNull), null);
                 }
             case "create_equipment":
                 {
@@ -264,7 +289,7 @@ public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views
                         return (null, cableSite);
                     }
                 }
-                return (System.Text.Json.JsonSerializer.Serialize(new { a = req.ASiteId, b = req.BSiteId, typeKey = req.TypeKey }), null);
+                return (System.Text.Json.JsonSerializer.Serialize(new { a = req.ASiteId, b = req.BSiteId, typeKey = req.TypeKey, attributes }, OmitNull), null);
         }
     }
 
@@ -660,29 +685,35 @@ public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views
         [.. Enumerable.Range(0, points.GetLength(0)).Select(i => new[] { points[i, 0], points[i, 1] })];
 
     /// <summary>
-    /// Equipment attributes must fit their model's schema in the type catalog (#27): the current attributes with the
-    /// change merged in (null removes a key) are validated before the change enters the plan.
+    /// Attributes must fit their type's schema in the catalog: equipment its model's (#27), sites and cables their
+    /// type's when it has one (#211). The current attributes with the change merged in (null removes a key) are
+    /// validated before the change enters the plan.
     /// </summary>
     private async Task<string?> AttributeProblemAsync(string type, long id, System.Text.Json.JsonElement patch, CancellationToken ct)
     {
-        if (type != "equipment")
+        var sql = type switch
+        {
+            "equipment" => "SELECT t.key, jsonb_strip_nulls(o.attributes || $2::jsonb)::text FROM equipment o JOIN equipment_type t ON t.id = o.equipment_type_id WHERE o.id = $1",
+            "site" => "SELECT o.site_type, jsonb_strip_nulls(o.attributes || $2::jsonb)::text FROM site o WHERE o.id = $1",
+            "cable" => "SELECT t.key, jsonb_strip_nulls(o.attributes || $2::jsonb)::text FROM cable o JOIN cable_type t ON t.id = o.cable_type_id WHERE o.id = $1",
+            _ => null,
+        };
+        if (sql is null)
         {
             return null;
         }
-        await using var cmd = db.CreateCommand("""
-            SELECT t.key, jsonb_strip_nulls(e.attributes || $2::jsonb)::text
-            FROM equipment e JOIN equipment_type t ON t.id = e.equipment_type_id WHERE e.id = $1
-            """);
+        await using var cmd = db.CreateCommand(sql);
         cmd.Parameters.Add(new() { Value = id });
         cmd.Parameters.Add(new() { Value = patch.GetRawText() });
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         if (!await reader.ReadAsync(ct))
         {
-            return $"equipment {id} finns inte.";
+            return $"{type} {id} finns inte.";
         }
         using var merged = System.Text.Json.JsonDocument.Parse(reader.GetString(1));
-        var errors = Cmdb.Catalog.TypeCatalog.Current.ValidateAttributes(reader.GetString(0), merged.RootElement);
-        return errors.Count == 0 ? null : $"Attributen passar inte modellens schema: {string.Join("; ", errors)}";
+        var errors = Cmdb.Catalog.TypeCatalog.Current.ValidateAttributes(type, reader.GetString(0), merged.RootElement);
+        return errors.Count == 0 ? null
+            : $"Attributen passar inte {(type == "equipment" ? "modellens" : "typens")} schema: {string.Join("; ", errors)}";
     }
 
     /// <summary>Whether a new site of the type at the point is inside one of the caller's scopes.</summary>

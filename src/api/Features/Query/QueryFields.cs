@@ -9,18 +9,20 @@ namespace Cmdb.Api.Features.Query;
 /// <summary>An attribute that equipment of a category can carry, from the catalog's JSON Schemas.</summary>
 /// <param name="Type">string, number or integer.</param>
 /// <param name="Values">Allowed values when the schema has an enum.</param>
-public sealed record AttributeField(string Key, string Type, IReadOnlyList<JsonElement>? Values);
+/// <param name="Title">The display name from the schema's <c>title</c> (#211), when it has one.</param>
+public sealed record AttributeField(string Key, string Type, IReadOnlyList<JsonElement>? Values, string? Title = null);
 
 /// <param name="Name">The display name from the catalog (#208).</param>
 /// <param name="Roles">What the code treats the category as: card, termination or power.</param>
 public sealed record CategoryField(string Key, IReadOnlyList<AttributeField> Attributes, string? Name = null, IReadOnlyList<string>? Roles = null);
 
 /// <summary>A site type or equipment category from the catalog with its name and roles (#208).</summary>
-public sealed record KindField(string Key, string Name, IReadOnlyList<string> Roles);
+/// <param name="Attributes">The fields of the type's attribute schema (#211); null when its attributes are free.</param>
+public sealed record KindField(string Key, string Name, IReadOnlyList<string> Roles, IReadOnlyList<AttributeField>? Attributes = null);
 
 public sealed record TypeField(string Key, string Manufacturer, string Model, string Category);
 
-public sealed record CableTypeField(string Key, string Name, string Medium, int Conductors);
+public sealed record CableTypeField(string Key, string Name, string Medium, int Conductors, IReadOnlyList<AttributeField>? Attributes = null);
 
 /// <summary>What advanced search can filter on. The UI builds its pickers from this.</summary>
 public sealed record QueryFields(
@@ -30,7 +32,8 @@ public sealed record QueryFields(
     IReadOnlyList<CategoryField> Categories,
     IReadOnlyList<TypeField> Types,
     IReadOnlyList<CableTypeField>? CableTypes = null,
-    IReadOnlyList<KindField>? SiteTypeDetails = null);
+    IReadOnlyList<KindField>? SiteTypeDetails = null,
+    IReadOnlyList<KindField>? ServiceTypeDetails = null);
 
 public sealed class QueryFieldsEndpoint(RequestDb db, TypeCatalog catalog) : EndpointWithoutRequest<QueryFields>
 {
@@ -50,15 +53,27 @@ public sealed class QueryFieldsEndpoint(RequestDb db, TypeCatalog catalog) : End
         // The catalog's site types in its order, then any other type the data holds.
         var inData = await Distinct(conn, "SELECT DISTINCT site_type FROM site ORDER BY 1", ct);
         var siteTypes = catalog.SiteTypes.Select(t => t.Key).Concat(inData.Where(t => catalog.FindSiteType(t) is null)).ToList();
-        var serviceTypes = await Distinct(conn, "SELECT DISTINCT service_type FROM service ORDER BY 1", ct);
+        var inServices = await Distinct(conn, "SELECT DISTINCT service_type FROM service ORDER BY 1", ct);
+        var serviceTypes = catalog.ServiceTypes.Select(t => t.Key).Concat(inServices.Where(t => catalog.FindServiceType(t) is null)).ToList();
         return new QueryFields(siteTypes, Lifecycles, serviceTypes, Categories(catalog), Types(catalog),
             [.. catalog.CableTypes.OrderBy(t => t.ConductorCount).ThenBy(t => t.Key, StringComparer.Ordinal)
-                .Select(t => new CableTypeField(t.Key, t.Name, t.Medium, t.ConductorCount))],
-            SiteTypeFields(catalog));
+                .Select(t => new CableTypeField(t.Key, t.Name, t.Medium, t.ConductorCount, Fields(t.Attributes)))],
+            SiteTypeFields(catalog), ServiceTypeFields(catalog));
     }
 
     internal static IReadOnlyList<KindField> SiteTypeFields(TypeCatalog catalog) =>
-        [.. catalog.SiteTypes.Select(t => new KindField(t.Key, t.Name, t.Roles))];
+        [.. catalog.SiteTypes.Select(t => new KindField(t.Key, t.Name, t.Roles, Fields(t.Attributes)))];
+
+    internal static IReadOnlyList<KindField> ServiceTypeFields(TypeCatalog catalog) =>
+        [.. catalog.ServiceTypes.Select(t => new KindField(t.Key, t.Name, [], Fields(t.Attributes)))];
+
+    /// <summary>The fields of an optional attribute schema (#211), or null when there is none.</summary>
+    internal static IReadOnlyList<AttributeField>? Fields(JsonElement? schema) =>
+        schema is { } s ? [.. Attributes(s)] : null;
+
+    /// <summary>Every attribute key a site type's schema knows; site conditions in advanced search accept only these.</summary>
+    internal static IReadOnlySet<string> SiteAttributeKeys(TypeCatalog catalog) =>
+        catalog.SiteTypes.SelectMany(t => Fields(t.Attributes) ?? []).Select(a => a.Key).ToHashSet(StringComparer.Ordinal);
 
     /// <summary>Every category in the catalog, with the attributes its models know.</summary>
     internal static IReadOnlyList<CategoryField> Categories(TypeCatalog catalog)
@@ -96,15 +111,16 @@ public sealed class QueryFieldsEndpoint(RequestDb db, TypeCatalog catalog) : End
         }
         foreach (var property in properties.EnumerateObject())
         {
+            var title = property.Value.TryGetProperty("title", out var t) && t.ValueKind == JsonValueKind.String ? t.GetString() : null;
             if (property.Value.TryGetProperty("enum", out var values) && values.ValueKind == JsonValueKind.Array)
             {
                 var list = values.EnumerateArray().Select(v => v.Clone()).ToList();
                 var type = list.All(v => v.ValueKind == JsonValueKind.Number) ? "number" : "string";
-                yield return new AttributeField(property.Name, type, list);
+                yield return new AttributeField(property.Name, type, list, title);
             }
             else if (property.Value.TryGetProperty("type", out var type) && type.ValueKind == JsonValueKind.String)
             {
-                yield return new AttributeField(property.Name, type.GetString() == "integer" ? "number" : type.GetString()!, null);
+                yield return new AttributeField(property.Name, type.GetString() == "integer" ? "number" : type.GetString()!, null, title);
             }
         }
     }
