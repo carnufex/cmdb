@@ -1,5 +1,6 @@
 import Feature from 'ol/Feature';
 import { Circle } from 'ol/style';
+import { siteRole } from '../shell/catalog-kinds';
 import { createStyler, Palette, statusColor } from './map-style';
 
 const palette: Palette = {
@@ -23,12 +24,18 @@ describe('map style', () => {
 
   it('draws hubs larger than access sites and rings the selected one', () => {
     let selected: Feature | null = null;
+    // Type names are the catalog's own; only the roles matter (#208).
+    const kinds = [
+      { key: 'core', name: 'Kärna', roles: ['hub'] },
+      { key: 'box', name: 'Låda', roles: ['access'] },
+    ];
     const { styler } = createStyler(
       () => palette,
       (f) => f === selected,
+      (t) => siteRole(kinds, t),
     );
-    const hub = new Feature({ layer: 'sites', kind: 'hub', lifecycle: 'in_service' });
-    const cabinet = new Feature({ layer: 'sites', kind: 'cabinet', lifecycle: 'in_service' });
+    const hub = new Feature({ layer: 'sites', kind: 'core', lifecycle: 'in_service' });
+    const cabinet = new Feature({ layer: 'sites', kind: 'box', lifecycle: 'in_service' });
 
     const hubRadius = (styler(hub).getImage() as Circle).getRadius();
     expect(hubRadius).toBeGreaterThan((styler(cabinet).getImage() as Circle).getRadius());

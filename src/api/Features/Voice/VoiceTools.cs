@@ -311,15 +311,9 @@ public sealed class VoiceTools(SystemDb system, RequestDb db, GraphHolder holder
 
     private static string Clip(string text, int max) => text.Length <= max ? text : text[..max];
 
-    private static string SiteType(string type) => type switch
-    {
-        "hub" => "nav",
-        "aggregation" => "aggregeringsnod",
-        "radio" => "radiosite",
-        "cabinet" => "teknikskåp",
-        "splice" => "skarvpunkt",
-        _ => type,
-    };
+    /// <summary>The site type's name from the catalog, lower case as it is spoken (#208).</summary>
+    private static string SiteType(string type) =>
+        Cmdb.Catalog.TypeCatalog.Current.FindSiteType(type)?.Name.ToLowerInvariant() ?? type;
 
     private static string Status(string lifecycle) => lifecycle switch
     {

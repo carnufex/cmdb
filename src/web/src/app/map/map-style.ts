@@ -1,5 +1,6 @@
 import { FeatureLike } from 'ol/Feature';
 import { Circle, Fill, Stroke, Style } from 'ol/style';
+import { SiteRole } from '../shell/catalog-kinds';
 
 /** Colours read from the design tokens, so the map follows the theme. */
 export interface Palette {
@@ -28,13 +29,15 @@ export function readPalette(root: HTMLElement): Palette {
   };
 }
 
-const siteRadius: Record<string, number> = {
+/** Sites by role (#208): the backbone stands out. */
+const siteRadius: Record<SiteRole, number> = {
   hub: 6,
   aggregation: 4.5,
-  radio: 3,
-  cabinet: 2.5,
-  splice: 2,
+  access: 3,
+  'splice-point': 2,
 };
+
+const siteZ: Record<SiteRole, number> = { hub: 3, aggregation: 2, access: 1, 'splice-point': 1 };
 
 /**
  * Status is the only thing colour says. Sites always carry their status colour; cables in service are
@@ -56,6 +59,7 @@ export function statusColor(lifecycle: string, palette: Palette, neutral: string
 export function createStyler(
   getPalette: () => Palette,
   isSelected: (feature: FeatureLike) => boolean,
+  roleOf: (siteType: string) => SiteRole | null,
 ) {
   const cache = new Map<string, Style>();
 
@@ -69,7 +73,8 @@ export function createStyler(
       const key = `s|${kind}|${lifecycle}|${selected}`;
       let style = cache.get(key);
       if (!style) {
-        const radius = siteRadius[kind] ?? 3;
+        const role = roleOf(kind);
+        const radius = role ? siteRadius[role] : 3;
         style = new Style({
           image: new Circle({
             radius: selected ? radius + 3 : radius,
@@ -79,7 +84,7 @@ export function createStyler(
               width: selected ? 2.5 : 1,
             }),
           }),
-          zIndex: selected ? 100 : kind === 'hub' ? 3 : kind === 'aggregation' ? 2 : 1,
+          zIndex: selected ? 100 : role ? siteZ[role] : 1,
         });
         cache.set(key, style);
       }

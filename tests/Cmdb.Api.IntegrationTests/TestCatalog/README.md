@@ -1,1 +1,1 @@
-Syntetisk extern katalog för testerna av `CMDB_CATALOG_PATH` (#207). Påhittade tillverkare och nycklar som inte finns i `catalog/`, så att testerna ser att katalogen kommer från mappen.
+Syntetisk extern katalog för testerna av `CMDB_CATALOG_PATH` (#207). Påhittade tillverkare och nycklar som inte finns i `catalog/`, så att testerna ser att katalogen kommer från mappen. Sitetyper och kategorier heter något annat än i den syntetiska katalogen men har samma roller (#208).

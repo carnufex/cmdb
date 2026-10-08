@@ -64,6 +64,64 @@ public sealed class QuerySitesTests(ApiFactory factory)
         (await QueryAsync(new { serviceTypes = new[] { "ethernet" } })).Ids.ShouldNotContain(planned);
     }
 
+    [Fact]
+    public async Task Finds_sites_by_their_own_attributes()
+    {
+        var weak = await SiteWithAsync("cabinet", ("acme-ax-24", "{}"));
+        var strong = await SiteWithAsync("cabinet", ("acme-ax-24", "{}"));
+        var tag = Guid.NewGuid().ToString("N")[..8];
+        await Exec($$"""UPDATE site SET attributes = '{"backupHours": 2, "aliases": ["Svag {{tag}}"]}' WHERE id = {{weak}}""");
+        await Exec($$"""UPDATE site SET attributes = '{"backupHours": 48}' WHERE id = {{strong}}""");
+
+        async Task<IReadOnlyList<long>> Ids(params object[] conditions) =>
+            [.. (await QueryAsync(new { siteTypes = new[] { "cabinet" }, siteAttributes = conditions })).Ids];
+
+        (await Ids(new { key = "backupHours", op = "lt", value = 4 })).ShouldContain(weak);
+        (await Ids(new { key = "backupHours", op = "lt", value = 4 })).ShouldNotContain(strong);
+        (await Ids(new { key = "backupHours", op = "gte", value = 48 })).ShouldContain(strong);
+        (await Ids(new { key = "aliases", op = "contains", value = tag })).ShouldBe([weak]);
+        (await Ids(new { key = "backupHours", op = "exists" }, new { key = "backupHours", op = "gt", value = 10 })).ShouldNotContain(weak);
+    }
+
+    [Theory]
+    [InlineData("""{ "siteAttributes": [ { "key": "noSuchKey", "op": "eq", "value": 1 } ] }""")]
+    [InlineData("""{ "siteAttributes": [ { "key": "backupHours", "op": "gt", "value": "many" } ] }""")]
+    [InlineData("""{ "siteAttributes": [ { "key": "backupHours", "op": "like", "value": 1 } ] }""")]
+    public async Task Rejects_unknown_site_attributes_and_operators(string body)
+    {
+        using var client = factory.CreateAuthenticatedClient();
+
+        var response = await client.PostAsync("/api/query/sites", new StringContent(body, System.Text.Encoding.UTF8, "application/json"), Ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task Attributes_hidden_by_the_scope_cannot_be_searched()
+    {
+        await Exec("""
+            INSERT INTO access_scope (key, name, area, site_types, hidden_attributes, plans, crossing_mode, groups, db_roles, reason, granted_by, approved_by)
+            VALUES ('test-dolda-attribut', 'Test dolda attribut', ST_MakeEnvelope(0, 6000000, 1000000, 8000000, 3006), '{}',
+                    '{backupHours,bandMHz}', '{}', 'whole', '{cmdb-test-dolda-attribut}', '{}', 'test', 'a', 'b')
+            ON CONFLICT (key) DO NOTHING
+            """);
+        await factory.RefreshScopesAsync();
+        using var client = factory.CreateAuthenticatedClient("dold", ["cmdb-test-dolda-attribut"]);
+
+        foreach (var query in new object[]
+        {
+            new { siteAttributes = new[] { new { key = "backupHours", op = "lt", value = 4 } } },
+            new { equipment = new[] { new { category = "radio", attribute = new { key = "bandMHz", op = "eq", value = 3500 } } } },
+        })
+        {
+            var response = await client.PostAsJsonAsync("/api/query/sites", query, Ct);
+            response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+            (await response.Content.ReadAsStringAsync(Ct)).ShouldContain("has the attribute");
+        }
+        (await client.PostAsJsonAsync("/api/query/sites", new { siteAttributes = new[] { new { key = "aliases", op = "exists" } } }, Ct))
+            .StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
     [Theory]
     [InlineData("""{ "equipment": [ { "attribute": { "key": "noSuchKey", "op": "eq", "value": 1 } } ] }""")]
     [InlineData("""{ "equipment": [ { "attribute": { "key": "bandMHz", "op": "like", "value": 1 } } ] }""")]
@@ -94,6 +152,10 @@ public sealed class QuerySitesTests(ApiFactory factory)
         radio.Attributes.Single(a => a.Key == "transmitPowerW").Type.ShouldBe("number");
         fields.Types.ShouldContain(t => t.Key == "acme-ax-48p" && t.Category == "switch");
         fields.Lifecycles.ShouldContain("in_service");
+        var hub = fields.SiteTypeDetails!.Single(t => t.Key == "hub");
+        hub.Attributes!.Single(a => a.Key == "backupHours").Title.ShouldBe("Reservkraft (timmar)");
+        fields.ServiceTypeDetails!.Single(t => t.Key == "ethernet").Attributes!.Single().Key.ShouldBe("bandwidthMbps");
+        fields.CableTypes!.Single(t => t.Key == "fiber-12").Attributes!.Select(a => a.Key).ShouldBe(["installationYear", "owner"], ignoreOrder: true);
     }
 
     [Fact]

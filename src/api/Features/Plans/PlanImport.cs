@@ -36,16 +36,22 @@ public sealed record ImportResult(bool DryRun, int Sites, int Equipment, int Cab
 /// <remarks>
 /// CSV: a header row; columns <c>kind</c> (site or cable), <c>code</c>, <c>name</c>, <c>siteType</c> or <c>template</c>,
 /// <c>x</c>/<c>y</c> (SWEREF 99 TM) or <c>lat</c>/<c>lon</c> (WGS 84), and for cables <c>a</c>, <c>b</c> (site codes) and
-/// <c>cableType</c>. Comma or semicolon separated. GeoJSON: points are sites, line strings cables (their line is the
-/// cable's route), with the same names as properties; coordinates in SWEREF 99 TM, or WGS 84 when they look like it.
+/// <c>cableType</c>. Other columns named like a property in the type's attribute schema become attributes (#211).
+/// Comma or semicolon separated. GeoJSON: points are sites, line strings cables (their line is the cable's route), with
+/// the same names as properties; coordinates in SWEREF 99 TM, or WGS 84 when they look like it.
 /// </remarks>
 public sealed class PlanImport(RequestDb db, GraphHolder holder, PlanViews views)
 {
     public const int MaxRows = 20_000;
 
-    private sealed record SiteRow(int Row, string Code, string Name, string SiteType, SiteTemplate? Template, double X, double Y, bool Wgs84);
+    // Optional parts of a payload (a route, attributes) are left out rather than written as null.
+    private static readonly JsonSerializerOptions Payload = new() { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull };
 
-    private sealed record CableRow(int Row, string A, string B, string TypeKey, double[][]? Line, bool Wgs84);
+    private sealed record SiteRow(int Row, string Code, string Name, string SiteType, SiteTemplate? Template, double X, double Y, bool Wgs84,
+        System.Text.Json.Nodes.JsonObject? Attributes = null);
+
+    private sealed record CableRow(int Row, string A, string B, string TypeKey, double[][]? Line, bool Wgs84,
+        System.Text.Json.Nodes.JsonObject? Attributes = null);
 
     public async Task<PlanWrite<ImportResult>> ImportAsync(ClaimsPrincipal user, UserScope scope, ImportRequest req, CancellationToken ct)
     {
@@ -134,14 +140,9 @@ public sealed class PlanImport(RequestDb db, GraphHolder holder, PlanViews views
         // cabling and the cables.
         await using var tx = await conn.BeginTransactionAsync(ct);
         var actor = PlanSql.Actor(user);
-        var siteOps = await InsertAsync(conn, tx, req.Id, actor, [.. sites.Select(s => ("create_site", JsonSerializer.Serialize(new
-        {
-            code = s.Code,
-            name = s.Name,
-            siteType = s.SiteType,
-            x = Math.Round(s.X, 1),
-            y = Math.Round(s.Y, 1),
-        })))], ct);
+        var siteOps = await InsertAsync(conn, tx, req.Id, actor, [.. sites.Select(s => ("create_site", s.Attributes is null
+            ? JsonSerializer.Serialize(new { code = s.Code, name = s.Name, siteType = s.SiteType, x = Math.Round(s.X, 1), y = Math.Round(s.Y, 1) })
+            : JsonSerializer.Serialize(new { code = s.Code, name = s.Name, siteType = s.SiteType, x = Math.Round(s.X, 1), y = Math.Round(s.Y, 1), attributes = s.Attributes })))], ct);
         var siteIds = new Dictionary<string, long>(planned, StringComparer.Ordinal);
         for (var i = 0; i < sites.Count; i++)
         {
@@ -177,9 +178,8 @@ public sealed class PlanImport(RequestDb db, GraphHolder holder, PlanViews views
             b = Port(s.Code, c.To, c.ToPort),
             kind = c.Kind,
         })))));
-        last.AddRange(cables.Select(c => ("create_cable", c.Line is null
-            ? JsonSerializer.Serialize(new { a = End(c.A), b = End(c.B), typeKey = c.TypeKey })
-            : JsonSerializer.Serialize(new { a = End(c.A), b = End(c.B), typeKey = c.TypeKey, line = c.Line }))));
+        last.AddRange(cables.Select(c => ("create_cable", JsonSerializer.Serialize(new { a = End(c.A), b = End(c.B), typeKey = c.TypeKey, line = c.Line, attributes = c.Attributes },
+            Payload))));
         await InsertAsync(conn, tx, req.Id, actor, last, ct);
         await PlanSql.TouchAsync(conn, tx, req.Id, ct);
         await tx.CommitAsync(ct);
@@ -325,9 +325,9 @@ public sealed class PlanImport(RequestDb db, GraphHolder holder, PlanViews views
                 errors.Add(new(row, $"{code}: mallen {templateKey} finns inte."));
                 return;
             }
-            if (!PlanKinds.SiteTypes.Contains(siteType))
+            if (TypeCatalog.Current.FindSiteType(siteType) is null)
             {
-                errors.Add(new(row, $"{code}: siteType är hub, aggregation, radio, cabinet eller splice (eller ange template)."));
+                errors.Add(new(row, $"{code}: siteType är {string.Join(", ", TypeCatalog.Current.SiteTypes.Select(t => t.Key))} (eller ange template)."));
                 return;
             }
             var (x, y, wgs84) = Number(cell("x")) is { } sx && Number(cell("y")) is { } sy ? (sx, sy, LooksLikeWgs84(sx, sy))
@@ -338,7 +338,15 @@ public sealed class PlanImport(RequestDb db, GraphHolder holder, PlanViews views
                 errors.Add(new(row, $"{code}: ange x och y (SWEREF 99 TM) eller lat och lon (WGS 84)."));
                 return;
             }
-            sites.Add(new SiteRow(row, code, name, siteType, template, x, y, wgs84));
+            // Columns named like the site type's schema properties become attributes (#211).
+            var problems = new List<string>();
+            var attributes = PlannedAttributes.FromCells("site", siteType, cell, problems);
+            if (problems.Count > 0)
+            {
+                errors.Add(new(row, $"{code}: attributen passar inte sitetypens schema: {string.Join("; ", problems)}"));
+                return;
+            }
+            sites.Add(new SiteRow(row, code, name, siteType, template, x, y, wgs84, attributes));
         }
         else if (kind == "cable")
         {
@@ -353,7 +361,14 @@ public sealed class PlanImport(RequestDb db, GraphHolder holder, PlanViews views
                 errors.Add(new(row, $"Kabeltypen {typeKey} finns inte: {string.Join(", ", TypeCatalog.Current.CableTypes.Select(t => t.Key))}."));
                 return;
             }
-            cables.Add(new CableRow(row, a, b, typeKey, null, false));
+            var problems = new List<string>();
+            var attributes = PlannedAttributes.FromCells("cable", typeKey, cell, problems);
+            if (problems.Count > 0)
+            {
+                errors.Add(new(row, $"{a}–{b}: attributen passar inte kabeltypens schema: {string.Join("; ", problems)}"));
+                return;
+            }
+            cables.Add(new CableRow(row, a, b, typeKey, null, false, attributes));
         }
         else
         {

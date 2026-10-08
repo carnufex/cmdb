@@ -2,7 +2,7 @@
   "key": "globex-sw-4",
   "manufacturer": "Globex Networks",
   "model": "SW-4",
-  "category": "switch",
+  "category": "vaxel",
   "panel": { "rows": 1, "columns": 4 },
   "ports": [
     { "name": "p{n}", "range": [1, 4], "type": "SFP", "group": "access", "at": [0, 0], "layout": "row" }

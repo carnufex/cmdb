@@ -1,3 +1,4 @@
+import { SiteRole } from '../shell/catalog-kinds';
 /** GET /api/sites/{id}/graph: one level of the neighbourhood (#20). */
 export interface SiteGraphNode {
   id: number;
@@ -31,7 +32,8 @@ export interface SiteGraphLevel {
 
 export interface Filters {
   layers: ReadonlySet<string>;
-  siteTypes: ReadonlySet<string>;
+  /** Site types switched off; every type shows by default, whatever the catalog calls them (#208). */
+  hiddenSiteTypes: ReadonlySet<string>;
 }
 
 /** What one expansion added, so it can be taken back. */
@@ -138,7 +140,7 @@ export class Neighbourhood {
 
   private siteTypeShown(id: number, filters: Filters): boolean {
     const node = this.nodes.get(id);
-    return id === this.focus || (node !== undefined && filters.siteTypes.has(node.siteType));
+    return id === this.focus || (node !== undefined && !filters.hiddenSiteTypes.has(node.siteType));
   }
 }
 
@@ -148,21 +150,12 @@ export const layerLabels: Record<string, string> = {
   logical: 'Logisk',
 };
 
-export const siteTypeLabels: Record<string, string> = {
-  hub: 'Nav',
-  aggregation: 'Aggregering',
-  radio: 'Radiosite',
-  cabinet: 'Skåp',
-  splice: 'Skarvpunkt',
-};
-
-/** Node size by site type: the backbone stands out. */
-export const nodeSizes: Record<string, number> = {
+/** Node size by site role (#208): the backbone stands out. */
+export const nodeSizes: Record<SiteRole, number> = {
   hub: 12,
   aggregation: 8,
-  cabinet: 5,
-  radio: 5,
-  splice: 3,
+  access: 5,
+  'splice-point': 3,
 };
 
 /** How many nodes one "expand a level" fetches at most, so a hub does not fire hundreds of requests. */

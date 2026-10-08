@@ -1,0 +1,11 @@
+[
+  { "key": "switch", "name": "Switch", "roles": [] },
+  { "key": "router", "name": "Router", "roles": [] },
+  { "key": "card", "name": "Kort", "roles": ["card"] },
+  { "key": "radio", "name": "Radio", "roles": [] },
+  { "key": "antenna", "name": "Antenn", "roles": [] },
+  { "key": "transmission", "name": "Transmission", "roles": [] },
+  { "key": "odf", "name": "ODF", "roles": ["termination"] },
+  { "key": "patch", "name": "Patchpanel", "roles": [] },
+  { "key": "power", "name": "Kraft", "roles": ["power"] }
+]

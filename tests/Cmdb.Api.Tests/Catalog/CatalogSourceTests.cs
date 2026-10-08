@@ -29,6 +29,16 @@ public sealed class CatalogSourceTests : IDisposable
     }
 
     [Fact]
+    public void Service_types_are_optional_in_a_folder()
+    {
+        CopyEmbedded();
+        TypeCatalog.Load(CatalogSource.FromPath(_folder)).ServiceTypes.ShouldBeEmpty();
+
+        File.WriteAllText(Path.Combine(_folder, "service-types.json"), """[{ "key": "fiber-access", "name": "Fiberaccess" }]""");
+        TypeCatalog.Load(CatalogSource.FromPath(_folder)).ServiceTypes.Single().Key.ShouldBe("fiber-access");
+    }
+
+    [Fact]
     public void A_missing_folder_is_an_error_naming_the_variable()
     {
         var missing = Path.Combine(_folder, "nope");
@@ -68,6 +78,9 @@ public sealed class CatalogSourceTests : IDisposable
                 File.WriteAllText(Path.Combine(_folder, folder, file), json);
             }
         }
-        File.WriteAllText(Path.Combine(_folder, "cable-types.json"), CatalogSource.Embedded.Read("cable-types.json"));
+        foreach (var file in new[] { "cable-types.json", "site-types.json", "equipment-categories.json" })
+        {
+            File.WriteAllText(Path.Combine(_folder, file), CatalogSource.Embedded.Read(file));
+        }
     }
 }

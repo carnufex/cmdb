@@ -1,10 +1,193 @@
 [
-  { "key": "fiber-12", "name": "Fiberkabel 12", "medium": "fiber", "conductorCount": 12, "colorCode": "IEC 60304" },
-  { "key": "fiber-24", "name": "Fiberkabel 24", "medium": "fiber", "conductorCount": 24, "colorCode": "IEC 60304" },
-  { "key": "fiber-48", "name": "Fiberkabel 48", "medium": "fiber", "conductorCount": 48, "colorCode": "IEC 60304" },
-  { "key": "fiber-96", "name": "Fiberkabel 96", "medium": "fiber", "conductorCount": 96, "colorCode": "IEC 60304" },
-  { "key": "fiber-144", "name": "Fiberkabel 144", "medium": "fiber", "conductorCount": 144, "colorCode": "IEC 60304" },
-  { "key": "fiber-288", "name": "Fiberkabel 288", "medium": "fiber", "conductorCount": 288, "colorCode": "IEC 60304" },
-  { "key": "copper-50", "name": "Kopparkabel 50 par", "medium": "copper", "conductorCount": 50, "colorCode": "Parfärg" },
-  { "key": "power-4", "name": "Kraftkabel 4 ledare", "medium": "power", "conductorCount": 4 }
+  {
+    "key": "fiber-12",
+    "name": "Fiberkabel 12",
+    "medium": "fiber",
+    "conductorCount": 12,
+    "colorCode": "IEC 60304",
+    "attributes": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "installationYear": {
+          "title": "Förläggningsår",
+          "type": "integer",
+          "minimum": 1900,
+          "maximum": 2100
+        },
+        "owner": {
+          "title": "Ägare",
+          "type": "string",
+          "maxLength": 100
+        }
+      }
+    }
+  },
+  {
+    "key": "fiber-24",
+    "name": "Fiberkabel 24",
+    "medium": "fiber",
+    "conductorCount": 24,
+    "colorCode": "IEC 60304",
+    "attributes": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "installationYear": {
+          "title": "Förläggningsår",
+          "type": "integer",
+          "minimum": 1900,
+          "maximum": 2100
+        },
+        "owner": {
+          "title": "Ägare",
+          "type": "string",
+          "maxLength": 100
+        }
+      }
+    }
+  },
+  {
+    "key": "fiber-48",
+    "name": "Fiberkabel 48",
+    "medium": "fiber",
+    "conductorCount": 48,
+    "colorCode": "IEC 60304",
+    "attributes": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "installationYear": {
+          "title": "Förläggningsår",
+          "type": "integer",
+          "minimum": 1900,
+          "maximum": 2100
+        },
+        "owner": {
+          "title": "Ägare",
+          "type": "string",
+          "maxLength": 100
+        }
+      }
+    }
+  },
+  {
+    "key": "fiber-96",
+    "name": "Fiberkabel 96",
+    "medium": "fiber",
+    "conductorCount": 96,
+    "colorCode": "IEC 60304",
+    "attributes": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "installationYear": {
+          "title": "Förläggningsår",
+          "type": "integer",
+          "minimum": 1900,
+          "maximum": 2100
+        },
+        "owner": {
+          "title": "Ägare",
+          "type": "string",
+          "maxLength": 100
+        }
+      }
+    }
+  },
+  {
+    "key": "fiber-144",
+    "name": "Fiberkabel 144",
+    "medium": "fiber",
+    "conductorCount": 144,
+    "colorCode": "IEC 60304",
+    "attributes": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "installationYear": {
+          "title": "Förläggningsår",
+          "type": "integer",
+          "minimum": 1900,
+          "maximum": 2100
+        },
+        "owner": {
+          "title": "Ägare",
+          "type": "string",
+          "maxLength": 100
+        }
+      }
+    }
+  },
+  {
+    "key": "fiber-288",
+    "name": "Fiberkabel 288",
+    "medium": "fiber",
+    "conductorCount": 288,
+    "colorCode": "IEC 60304",
+    "attributes": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "installationYear": {
+          "title": "Förläggningsår",
+          "type": "integer",
+          "minimum": 1900,
+          "maximum": 2100
+        },
+        "owner": {
+          "title": "Ägare",
+          "type": "string",
+          "maxLength": 100
+        }
+      }
+    }
+  },
+  {
+    "key": "copper-50",
+    "name": "Kopparkabel 50 par",
+    "medium": "copper",
+    "conductorCount": 50,
+    "colorCode": "Parfärg",
+    "attributes": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "installationYear": {
+          "title": "Förläggningsår",
+          "type": "integer",
+          "minimum": 1900,
+          "maximum": 2100
+        },
+        "owner": {
+          "title": "Ägare",
+          "type": "string",
+          "maxLength": 100
+        }
+      }
+    }
+  },
+  {
+    "key": "power-4",
+    "name": "Kraftkabel 4 ledare",
+    "medium": "power",
+    "conductorCount": 4,
+    "attributes": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "installationYear": {
+          "title": "Förläggningsår",
+          "type": "integer",
+          "minimum": 1900,
+          "maximum": 2100
+        },
+        "owner": {
+          "title": "Ägare",
+          "type": "string",
+          "maxLength": 100
+        }
+      }
+    }
+  }
 ]

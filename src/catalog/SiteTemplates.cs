@@ -27,11 +27,6 @@ public sealed record TemplateConnection(string From, string FromPort, string To,
 /// <summary>The site templates, loaded and checked against the type catalog.</summary>
 public sealed class SiteTemplates
 {
-    public static readonly IReadOnlySet<string> SiteTypes = new HashSet<string>(StringComparer.Ordinal)
-    {
-        "hub", "aggregation", "radio", "cabinet", "splice",
-    };
-
     private static readonly HashSet<string> ConnectionKinds = new(StringComparer.Ordinal)
     {
         "patch", "splice", "termination", "internal",
@@ -96,7 +91,7 @@ public sealed class SiteTemplates
         {
             errors.Add($"{file}: key '{t.Key}' must match the file name");
         }
-        if (!SiteTypes.Contains(t.SiteType))
+        if (catalog.FindSiteType(t.SiteType) is null)
         {
             errors.Add($"{file}: unknown site type '{t.SiteType}'");
         }
@@ -117,7 +112,7 @@ public sealed class SiteTemplates
                 errors.Add($"{file}: '{e.Ref}' has unknown type '{e.TypeKey}'");
                 continue;
             }
-            if (type.Category == "card")
+            if (catalog.CategoryHas(type.Category, CatalogRoles.Card))
             {
                 errors.Add($"{file}: '{e.Ref}' is a card; templates hold top-level equipment");
             }

@@ -2,7 +2,7 @@
   "key": "globex-odf-8",
   "manufacturer": "Globex Optical",
   "model": "ODF-8",
-  "category": "odf",
+  "category": "termineringsram",
   "rackUnits": 1,
   "panel": { "rows": 1, "columns": 8 },
   "ports": [

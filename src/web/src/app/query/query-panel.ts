@@ -3,22 +3,23 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { firstValueFrom } from 'rxjs';
 import { Selection } from '../grid/selection';
 import { MapView } from '../map/map-view';
+import { CatalogKinds } from '../shell/catalog-kinds';
 import { PanelStack } from '../shell/panels';
 import { StatusComponent } from '../shell/status';
 import { Tools } from '../shell/tools';
 import {
-  categoryLabels,
   EquipmentDraft,
   emptyEquipment,
-  examples,
+  examplesFor,
   numericOps,
   Op,
   opLabels,
   QueryDraft,
   QueryFields,
+  SiteAttributeDraft,
+  siteAttributeFields,
   serviceTypeLabels,
   SiteQueryResult,
-  siteTypeLabels,
   textOps,
   toRequest,
 } from './query-model';
@@ -52,13 +53,22 @@ export class QueryPanelComponent {
   protected readonly error = signal<string | null>(null);
   protected readonly running = signal(false);
 
-  protected readonly examples = examples;
+  protected readonly examples = computed(() => examplesFor(this.fields.value()));
   protected readonly opLabels = opLabels;
-  protected readonly siteTypeLabels = siteTypeLabels;
-  protected readonly categoryLabels = categoryLabels;
+  protected readonly kinds = inject(CatalogKinds);
   protected readonly serviceTypeLabels = serviceTypeLabels;
 
   protected readonly categories = computed(() => this.fields.value()?.categories ?? []);
+  /** Fields the site types' schemas define (#211), for a test on the site's own attributes. */
+  protected readonly siteAttributes = computed(() => siteAttributeFields(this.fields.value()));
+  protected readonly siteAttribute = computed<SiteAttributeDraft>(
+    () => this.draft().siteAttribute ?? { key: '', op: 'eq', value: '' },
+  );
+  protected readonly siteAttributeOps = computed(() =>
+    this.siteAttributes().find((a) => a.key === this.siteAttribute().key)?.type === 'number'
+      ? numericOps
+      : textOps,
+  );
 
   protected typesFor(category: string) {
     const types = this.fields.value()?.types ?? [];
@@ -112,6 +122,17 @@ export class QueryPanelComponent {
         return next;
       }),
     }));
+  }
+
+  protected updateSiteAttribute(change: Partial<SiteAttributeDraft>): void {
+    this.draft.update((d) => {
+      const next = { ...this.siteAttribute(), ...change };
+      if ('key' in change) {
+        next.op = 'eq';
+        next.value = '';
+      }
+      return { ...d, siteAttribute: next };
+    });
   }
 
   protected addEquipment(): void {

@@ -294,17 +294,18 @@ public sealed class PlanPatterns(RequestDb db, PlanWrites writes, PlanViews view
     {
         var odfs = chain.Operations
             .Where(o => o.Kind == "create_equipment" && o.Payload.GetProperty("site").GetInt64() == siteId
-                && TypeCatalog.Current.Find(o.Payload.GetProperty("typeKey").GetString()!)?.Category == "odf")
+                && TypeCatalog.Current.TypeHas(o.Payload.GetProperty("typeKey").GetString()!, CatalogRoles.Termination))
             .Select(o => (Planned.ObjectId(o.Id), o.Payload.GetProperty("name").GetString()!))
             .ToList();
         if (siteId > 0)
         {
             await using var cmd = db.CreateCommand($"""
                 SELECT e.id, e.name FROM equipment e JOIN equipment_type t ON t.id = e.equipment_type_id
-                WHERE e.site_id = $1 AND t.category = 'odf' AND {ScopeSql.Site("e.site_id", 2)} ORDER BY e.id
+                WHERE e.site_id = $1 AND t.category = ANY($3) AND {ScopeSql.Site("e.site_id", 2)} ORDER BY e.id
                 """);
             cmd.Parameters.Add(new() { Value = siteId });
             cmd.Parameters.Add(scope.Parameter());
+            cmd.Parameters.Add(new() { Value = TypeCatalog.Current.CategoriesWith(CatalogRoles.Termination) });
             await using var reader = await cmd.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct))
             {

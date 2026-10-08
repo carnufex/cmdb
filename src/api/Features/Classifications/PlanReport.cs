@@ -191,7 +191,7 @@ public sealed class PlanClassification(RequestDb db, ClassificationDerivation de
                 // Cables to the nearest hubs and aggregation nodes the site has none to yet.
                 var have = result.Objects.Count;
                 var missing = Math.Max(rule.Min - have, 0);
-                foreach (var near in await NearAsync(site, at, 2, chain, scope, ["hub", "aggregation"], ct))
+                foreach (var near in await NearAsync(site, at, 2, chain, scope, TypeCatalog.Current.SiteTypesWith(CatalogRoles.Hub, CatalogRoles.Aggregation), ct))
                 {
                     if (missing-- <= 0)
                     {

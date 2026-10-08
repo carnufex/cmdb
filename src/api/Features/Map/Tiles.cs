@@ -42,7 +42,7 @@ public sealed class TilesEndpoint(RequestDb db) : Endpoint<TileRequest>
                 FROM site s, bounds b
                 WHERE s.geom && b.geom
                   AND s.lifecycle <> 'removed'
-                  AND ($1 >= {TileGrid.DetailZoom} OR s.site_type IN ('hub', 'aggregation'))
+                  AND ($1 >= {TileGrid.DetailZoom} OR s.site_type = ANY($5))
                   AND {ScopeSql.Site("s.id", 4)}
             ), cables AS (
                 SELECT ST_AsMVTGeom({ScopeSql.CableGeometry("c", 4, scope)}, b.geom, 4096, 64, true) AS geom,
@@ -60,6 +60,8 @@ public sealed class TilesEndpoint(RequestDb db) : Endpoint<TileRequest>
         cmd.Parameters.Add(new NpgsqlParameter { Value = req.X });
         cmd.Parameters.Add(new NpgsqlParameter { Value = req.Y });
         cmd.Parameters.Add(scope.Parameter());
+        // Hubs and aggregation nodes show at every zoom level (#208: by role, not type name).
+        cmd.Parameters.Add(new NpgsqlParameter { Value = Cmdb.Catalog.TypeCatalog.Current.SiteTypesWith(Cmdb.Catalog.CatalogRoles.Hub, Cmdb.Catalog.CatalogRoles.Aggregation) });
         var tile = (byte[])(await cmd.ExecuteScalarAsync(ct))!;
 
         await Send.BytesAsync(tile, contentType: "application/vnd.mapbox-vector-tile", cancellation: ct);

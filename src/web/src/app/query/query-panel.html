@@ -9,7 +9,7 @@
   <section aria-label="Exempel">
     <h3>Exempel</h3>
     <div class="chips">
-      @for (example of examples; track example.label) {
+      @for (example of examples(); track example.label) {
         <button type="button" class="chip" (click)="useExample(example.draft)">
           {{ example.label }}
         </button>
@@ -29,7 +29,7 @@
               [attr.aria-pressed]="draft().siteTypes.includes(t)"
               (click)="toggle('siteTypes', t)"
             >
-              {{ siteTypeLabels[t] ?? t }}
+              {{ kinds.siteTypeName(t) }}
             </button>
           }
         </div>
@@ -51,6 +51,54 @@
         </div>
       </fieldset>
 
+      @if (siteAttributes().length) {
+        <fieldset>
+          <legend>Siteattribut</legend>
+          <div class="condition">
+            <div class="row">
+              <label>
+                <span>Attribut</span>
+                <select
+                  [value]="siteAttribute().key"
+                  (change)="updateSiteAttribute({ key: $any($event.target).value })"
+                >
+                  <option value="">Inget</option>
+                  @for (a of siteAttributes(); track a.key) {
+                    <option [value]="a.key" [selected]="a.key === siteAttribute().key">
+                      {{ a.title ?? a.key }}
+                    </option>
+                  }
+                </select>
+              </label>
+              @if (siteAttribute().key) {
+                <label class="op">
+                  <span>Villkor</span>
+                  <select
+                    [value]="siteAttribute().op"
+                    (change)="updateSiteAttribute({ op: $any($event.target).value })"
+                  >
+                    @for (op of siteAttributeOps(); track op) {
+                      <option [value]="op" [selected]="op === siteAttribute().op">
+                        {{ opLabels[op] }}
+                      </option>
+                    }
+                  </select>
+                </label>
+                @if (siteAttribute().op !== 'exists') {
+                  <label>
+                    <span>Värde</span>
+                    <input
+                      [value]="siteAttribute().value"
+                      (input)="updateSiteAttribute({ value: $any($event.target).value })"
+                    />
+                  </label>
+                }
+              }
+            </div>
+          </div>
+        </fieldset>
+      }
+
       <fieldset>
         <legend>Har utrustning</legend>
         @for (e of draft().equipment; track $index; let i = $index) {
@@ -65,7 +113,7 @@
                   <option value="">Alla</option>
                   @for (c of categories(); track c.key) {
                     <option [value]="c.key" [selected]="c.key === e.category">
-                      {{ categoryLabels[c.key] ?? c.key }}
+                      {{ kinds.categoryName(c.key) }}
                     </option>
                   }
                 </select>
@@ -205,7 +253,7 @@
           <li>
             <button type="button" (click)="open(s)">
               <span class="code">{{ s.code }}</span>
-              <span class="name">{{ siteTypeLabels[s.siteType] ?? s.siteType }}</span>
+              <span class="name">{{ kinds.siteTypeName(s.siteType) }}</span>
               @if (s.matching !== null) {
                 <span class="muted">{{ s.matching }} st</span>
               }

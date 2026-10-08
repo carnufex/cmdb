@@ -3,7 +3,7 @@ namespace Cmdb.Catalog;
 /// <summary>Consistency rules for catalog entries, so a broken file fails at load rather than at use.</summary>
 internal static class CatalogRules
 {
-    public static void Check(string file, EquipmentType type, List<string> errors)
+    public static void Check(string file, EquipmentType type, IReadOnlyDictionary<string, EquipmentCategory> categories, List<string> errors)
     {
         void Error(string message) => errors.Add($"{file}: {message}");
 
@@ -18,7 +18,7 @@ internal static class CatalogRules
         {
             Error($"file name must be '{type.Key}.json'");
         }
-        if (!TypeCatalog.Categories.Contains(type.Category))
+        if (!categories.ContainsKey(type.Category))
         {
             Error($"unknown category '{type.Category}'");
         }
@@ -79,14 +79,14 @@ internal static class CatalogRules
         }
         foreach (var slot in type.SlotList)
         {
-            foreach (var category in slot.Accepts.Where(c => !TypeCatalog.Categories.Contains(c)))
+            foreach (var category in slot.Accepts.Where(c => !categories.ContainsKey(c)))
             {
                 Error($"slot '{slot.Name}' accepts unknown category '{category}'");
             }
         }
-        if (type.Category != "card" && type.Ports.Any(p => p.Name.Contains("{slot}", StringComparison.Ordinal)))
+        if (categories.GetValueOrDefault(type.Category)?.Has(CatalogRoles.Card) != true && type.Ports.Any(p => p.Name.Contains("{slot}", StringComparison.Ordinal)))
         {
-            Error("only cards may use '{slot}' in port names");
+            Error("only cards (a category with role card) may use '{slot}' in port names");
         }
     }
 
