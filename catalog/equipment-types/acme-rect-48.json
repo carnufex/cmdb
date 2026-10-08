@@ -4,13 +4,33 @@
   "model": "RECT-48",
   "category": "power",
   "rackUnits": 2,
-  "panel": { "rows": 1, "columns": 10 },
+  "panel": {
+    "rows": 1,
+    "columns": 10,
+    "images": {
+      "front": {
+        "file": "acme-rect-48-front.svg",
+        "width": 960,
+        "height": 176
+      },
+      "back": {
+        "file": "acme-rect-48-back.svg",
+        "width": 960,
+        "height": 176
+      }
+    }
+  },
   "ports": [
     {
       "name": "ac",
       "type": "AC",
       "group": "input",
-      "at": [0, 0]
+      "at": [0, 0],
+      "image": {
+        "side": "back",
+        "at": [40, 60],
+        "size": [60, 50]
+      }
     },
     {
       "name": "out{n}",
@@ -18,13 +38,24 @@
       "type": "DC",
       "group": "output",
       "at": [0, 1],
-      "layout": "row"
+      "layout": "row",
+      "image": {
+        "side": "back",
+        "at": [180, 66],
+        "size": [50, 40],
+        "step": [80, 0]
+      }
     },
     {
       "name": "mon",
       "type": "RJ45",
       "group": "management",
-      "at": [0, 9]
+      "at": [0, 9],
+      "image": {
+        "side": "front",
+        "at": [860, 120],
+        "size": [26, 20]
+      }
     }
   ],
   "attributes": {

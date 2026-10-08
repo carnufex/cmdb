@@ -4,7 +4,17 @@
   "model": "PP-24",
   "category": "patch",
   "rackUnits": 1,
-  "panel": { "rows": 1, "columns": 24 },
+  "panel": {
+    "rows": 1,
+    "columns": 24,
+    "images": {
+      "front": {
+        "file": "acme-pp-24-front.svg",
+        "width": 960,
+        "height": 88
+      }
+    }
+  },
   "ports": [
     {
       "name": "{n}",
@@ -12,7 +22,13 @@
       "type": "RJ45",
       "group": "front",
       "at": [0, 0],
-      "layout": "row"
+      "layout": "row",
+      "image": {
+        "side": "front",
+        "at": [60, 40],
+        "size": [26, 20],
+        "step": [34, 0]
+      }
     }
   ],
   "attributes": {

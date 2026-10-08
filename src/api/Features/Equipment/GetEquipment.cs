@@ -9,8 +9,10 @@ namespace Cmdb.Api.Features.Equipment;
 public sealed record EquipmentRequest(long Id);
 
 /// <param name="Claims">Reservation and plans wanting the port (#25); null when nobody claims it.</param>
+/// <param name="Box">The port's area on the panel image (#214); null when the model has no image.</param>
 public sealed record EquipmentPort(long TerminalId, string Name, string Type, string? Group, int Position, int Row, int Column,
-    IReadOnlyList<PortConnection> Connections, int Circuits, Cmdb.Api.Features.Reservations.ResourceClaims? Claims = null);
+    IReadOnlyList<PortConnection> Connections, int Circuits, Cmdb.Api.Features.Reservations.ResourceClaims? Claims = null,
+    Cmdb.Catalog.PortBox? Box = null);
 
 public sealed record PortConnection(string Kind, string Lifecycle, TerminalRef Peer);
 
@@ -146,20 +148,18 @@ public sealed class GetEquipmentEndpoint(RequestDb db) : Endpoint<EquipmentReque
             Cards = cards,
             Ports = [.. ports.Select(p =>
             {
-                var (row, column) = cells.GetValueOrDefault(p.Position);
-                return new EquipmentPort(p.Terminal, p.Name, p.Type, p.Group, p.Position, row, column,
+                var cell = cells.GetValueOrDefault(p.Position);
+                return new EquipmentPort(p.Terminal, p.Name, p.Type, p.Group, p.Position, cell?.Row ?? 0, cell?.Column ?? 0,
                     [.. byPort[p.Terminal].Where(c => peers.ContainsKey(c.Peer)).Select(c => new PortConnection(c.Kind, c.Lifecycle, peers[c.Peer]))],
-                    p.Circuits, claims.GetValueOrDefault(p.Terminal));
+                    p.Circuits, claims.GetValueOrDefault(p.Terminal), cell?.Box);
             })],
         };
     }
 
-    /// <summary>Front-panel cell per port position, from the type's template.</summary>
-    private static Dictionary<int, (int Row, int Column)> PanelCells(string typeKey, string? slot)
+    /// <summary>Front-panel cell and image area per port position, from the type's template.</summary>
+    private static Dictionary<int, Cmdb.Catalog.Port> PanelCells(string typeKey, string? slot)
     {
         var type = Cmdb.Catalog.TypeCatalog.Current.Find(typeKey);
-        return type is null
-            ? []
-            : Cmdb.Catalog.PortExpansion.Expand(type, slot).ToDictionary(p => p.Position, p => (p.Row, p.Column));
+        return type is null ? [] : Cmdb.Catalog.PortExpansion.Expand(type, slot).ToDictionary(p => p.Position);
     }
 }

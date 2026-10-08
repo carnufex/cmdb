@@ -69,7 +69,8 @@ export interface EquipmentDetail {
   manufacturer: string;
   model: string;
   category: string;
-  panel: { rows: number; columns: number };
+  /** The grid, and pictures of the front and back when the catalog has them (#214). */
+  panel: { rows: number; columns: number; images?: PanelImages | null };
   attributes: Record<string, unknown>;
   site: ObjectRef;
   locationPath: string | null;
@@ -89,7 +90,31 @@ export interface EquipmentDetail {
     circuits: number;
     /** Reservation and plans wanting the port (#25); null when nobody claims it. */
     claims?: ResourceClaims | null;
+    /** The port's area on the panel image (#214); null when the model has none. */
+    box?: PortBox | null;
   }[];
+}
+
+export type PanelSide = 'front' | 'back';
+
+/** An image in the catalog; width and height are the coordinates ports are placed in. */
+export interface PanelImage {
+  file: string;
+  width: number;
+  height: number;
+}
+
+export interface PanelImages {
+  front?: PanelImage | null;
+  back?: PanelImage | null;
+}
+
+export interface PortBox {
+  side: PanelSide;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 export interface CableDetail {

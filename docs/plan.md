@@ -74,7 +74,7 @@ Slutsatser:
 | Kartplatta per omfång | < 100 ms |
 | Växla vy mellan produktion och plan | < 100 ms |
 
-Budgeten kan mätas direkt i appen: **Prestanda** i verktygsfältet kör interaktionerna mot det laddade nätet och visar p50 och p95 för servern (`Server-Timing`) och webbläsaren. Status bedöms på serverns p95. Är kartan öppen mäts också kartans bildtid, och är grannskapsgrafen öppen mäts grafens bildtid när den har expanderats från ett nav till minst 2 000 siter (#89). Målet för båda är p95 under 33 ms (30 fps), men de ingår inte i budgeten.
+Budgeten kan mätas direkt i appen: **Prestanda** i verktygsfältet kör interaktionerna mot det laddade nätet och visar p50 och p95 för servern (`Server-Timing`) och webbläsaren. Status bedöms på serverns p95. Är kartan öppen mäts också kartans bildtid, och är grannskapsgrafen öppen mäts grafens bildtid när den har expanderats från ett nav till minst 2 000 siter (#89). Visas en frontpanel med bild mäts dess bildtid medan ett portintervall flyttas en port per bild (#214). Målet för alla tre är p95 under 33 ms (30 fps), men de ingår inte i budgeten.
 
 Samma rader mäts automatiskt med k6: `scripts/perf.sh` (se [drift.md](drift.md#prestandamätning)) skriver en rapport och avslutas med fel om någon rad är över budget.
 

@@ -27,9 +27,21 @@ public static class PortExpansion
                 var name = template.Name
                     .Replace("{n}", n.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal)
                     .Replace("{slot}", slot ?? "0", StringComparison.Ordinal);
-                ports.Add(new Port(name, template.Type, template.Group, ports.Count + 1, template.At[0] + dr, template.At[1] + dc));
+                ports.Add(new Port(name, template.Type, template.Group, ports.Count + 1, template.At[0] + dr, template.At[1] + dc,
+                    Box(template.Image, dr, dc)));
             }
         }
         return ports;
+    }
+
+    // The run steps through the image the way it steps through the grid: a column is one step right, a row one step down.
+    private static PortBox? Box(PortImage? image, int row, int column)
+    {
+        if (image is null)
+        {
+            return null;
+        }
+        var (dx, dy) = image.Step is [var x, var y] ? (x, y) : (0, 0);
+        return new PortBox(image.Side, image.At[0] + column * dx, image.At[1] + row * dy, image.Size[0], image.Size[1]);
     }
 }

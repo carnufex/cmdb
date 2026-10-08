@@ -4,7 +4,17 @@
   "model": "AX-48",
   "category": "switch",
   "rackUnits": 1,
-  "panel": { "rows": 2, "columns": 26 },
+  "panel": {
+    "rows": 2,
+    "columns": 26,
+    "images": {
+      "front": {
+        "file": "acme-ax-48-front.svg",
+        "width": 960,
+        "height": 88
+      }
+    }
+  },
   "ports": [
     {
       "name": "ge-0/0/{n}",
@@ -12,7 +22,13 @@
       "type": "RJ45",
       "group": "access",
       "at": [0, 0],
-      "layout": "zigzag"
+      "layout": "zigzag",
+      "image": {
+        "side": "front",
+        "at": [60, 18],
+        "size": [26, 20],
+        "step": [30, 26]
+      }
     },
     {
       "name": "xe-0/1/{n}",
@@ -20,7 +36,13 @@
       "type": "SFP+",
       "group": "uplink",
       "at": [0, 24],
-      "layout": "zigzag"
+      "layout": "zigzag",
+      "image": {
+        "side": "front",
+        "at": [820, 18],
+        "size": [32, 20],
+        "step": [40, 26]
+      }
     }
   ],
   "attributes": {

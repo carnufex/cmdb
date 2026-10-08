@@ -4,7 +4,17 @@
   "model": "ODF-96",
   "category": "odf",
   "rackUnits": 4,
-  "panel": { "rows": 8, "columns": 12 },
+  "panel": {
+    "rows": 8,
+    "columns": 12,
+    "images": {
+      "front": {
+        "file": "acme-odf-96-front.svg",
+        "width": 960,
+        "height": 352
+      }
+    }
+  },
   "ports": [
     {
       "name": "{n}",
@@ -12,7 +22,13 @@
       "type": "LC",
       "group": "front",
       "at": [0, 0],
-      "layout": "row"
+      "layout": "row",
+      "image": {
+        "side": "front",
+        "at": [120, 36],
+        "size": [44, 26],
+        "step": [64, 36]
+      }
     },
     {
       "name": "{n}",
@@ -20,7 +36,13 @@
       "type": "LC",
       "group": "front",
       "at": [1, 0],
-      "layout": "row"
+      "layout": "row",
+      "image": {
+        "side": "front",
+        "at": [120, 72],
+        "size": [44, 26],
+        "step": [64, 36]
+      }
     },
     {
       "name": "{n}",
@@ -28,7 +50,13 @@
       "type": "LC",
       "group": "front",
       "at": [2, 0],
-      "layout": "row"
+      "layout": "row",
+      "image": {
+        "side": "front",
+        "at": [120, 108],
+        "size": [44, 26],
+        "step": [64, 36]
+      }
     },
     {
       "name": "{n}",
@@ -36,7 +64,13 @@
       "type": "LC",
       "group": "front",
       "at": [3, 0],
-      "layout": "row"
+      "layout": "row",
+      "image": {
+        "side": "front",
+        "at": [120, 144],
+        "size": [44, 26],
+        "step": [64, 36]
+      }
     },
     {
       "name": "{n}",
@@ -44,7 +78,13 @@
       "type": "LC",
       "group": "front",
       "at": [4, 0],
-      "layout": "row"
+      "layout": "row",
+      "image": {
+        "side": "front",
+        "at": [120, 180],
+        "size": [44, 26],
+        "step": [64, 36]
+      }
     },
     {
       "name": "{n}",
@@ -52,7 +92,13 @@
       "type": "LC",
       "group": "front",
       "at": [5, 0],
-      "layout": "row"
+      "layout": "row",
+      "image": {
+        "side": "front",
+        "at": [120, 216],
+        "size": [44, 26],
+        "step": [64, 36]
+      }
     },
     {
       "name": "{n}",
@@ -60,7 +106,13 @@
       "type": "LC",
       "group": "front",
       "at": [6, 0],
-      "layout": "row"
+      "layout": "row",
+      "image": {
+        "side": "front",
+        "at": [120, 252],
+        "size": [44, 26],
+        "step": [64, 36]
+      }
     },
     {
       "name": "{n}",
@@ -68,7 +120,13 @@
       "type": "LC",
       "group": "front",
       "at": [7, 0],
-      "layout": "row"
+      "layout": "row",
+      "image": {
+        "side": "front",
+        "at": [120, 288],
+        "size": [44, 26],
+        "step": [64, 36]
+      }
     }
   ],
   "attributes": {

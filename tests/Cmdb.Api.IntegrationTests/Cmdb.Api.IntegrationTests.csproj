@@ -17,7 +17,7 @@
   </ItemGroup>
   <ItemGroup>
     <!-- A synthetic catalog outside the build, read from a folder like CMDB_CATALOG_PATH (#207). -->
-    <None Include="TestCatalog\**\*.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="TestCatalog\**\*.json;TestCatalog\**\*.png" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />

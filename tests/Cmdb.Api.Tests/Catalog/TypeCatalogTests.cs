@@ -27,11 +27,12 @@ public sealed class TypeCatalogTests
         var ports = PortExpansion.Expand(Catalog.Find("acme-ax-48")!);
 
         ports.Count.ShouldBe(52);
-        ports[0].ShouldBe(new Port("ge-0/0/1", "RJ45", "access", 1, 0, 0));
-        ports[1].ShouldBe(new Port("ge-0/0/2", "RJ45", "access", 2, 1, 0));
-        ports[2].ShouldBe(new Port("ge-0/0/3", "RJ45", "access", 3, 0, 1));
-        ports[47].ShouldBe(new Port("ge-0/0/48", "RJ45", "access", 48, 1, 23));
-        ports[48].ShouldBe(new Port("xe-0/1/1", "SFP+", "uplink", 49, 0, 24));
+        var cells = ports.Select(p => p with { Box = null }).ToList();
+        cells[0].ShouldBe(new Port("ge-0/0/1", "RJ45", "access", 1, 0, 0));
+        cells[1].ShouldBe(new Port("ge-0/0/2", "RJ45", "access", 2, 1, 0));
+        cells[2].ShouldBe(new Port("ge-0/0/3", "RJ45", "access", 3, 0, 1));
+        cells[47].ShouldBe(new Port("ge-0/0/48", "RJ45", "access", 48, 1, 23));
+        cells[48].ShouldBe(new Port("xe-0/1/1", "SFP+", "uplink", 49, 0, 24));
     }
 
     [Fact]

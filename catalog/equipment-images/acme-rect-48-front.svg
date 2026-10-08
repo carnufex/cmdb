@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 176" width="960" height="176">
+<!-- Fictional Acme equipment for the synthetic catalog (#214). -->
+<rect x="0" y="0" width="960" height="176" rx="4" fill="#3b4048"/>
+<rect x="22" y="2" width="916" height="172" rx="3" fill="#4a5059" stroke="#2a2e34"/>
+<circle cx="11" cy="52.8" r="4" fill="#23272c"/>
+<circle cx="11" cy="123.19999999999999" r="4" fill="#23272c"/>
+<circle cx="949" cy="52.8" r="4" fill="#23272c"/>
+<circle cx="949" cy="123.19999999999999" r="4" fill="#23272c"/>
+<text x="32" y="16" font-family="Arial, sans-serif" font-size="10" font-weight="bold" fill="#e7eaee">ACME POWER</text>
+<text x="32" y="28" font-family="Arial, sans-serif" font-size="8" fill="#b9c0c8">RECT-48</text>
+<rect x="120" y="50" width="150" height="100" rx="3" fill="#41464e" stroke="#2a2e34"/>
+<circle cx="135" cy="64" r="4" fill="#4fbf6a"/>
+<rect x="290" y="50" width="150" height="100" rx="3" fill="#41464e" stroke="#2a2e34"/>
+<circle cx="305" cy="64" r="4" fill="#4fbf6a"/>
+<rect x="460" y="50" width="150" height="100" rx="3" fill="#41464e" stroke="#2a2e34"/>
+<circle cx="475" cy="64" r="4" fill="#4fbf6a"/>
+<rect x="630" y="50" width="150" height="100" rx="3" fill="#41464e" stroke="#2a2e34"/>
+<circle cx="645" cy="64" r="4" fill="#4fbf6a"/>
+<text x="873" y="112" font-family="Arial, sans-serif" font-size="7" text-anchor="middle" fill="#c9d0d7">MON</text>
+<rect x="860" y="120" width="26" height="20" rx="1.5" fill="#1b1e22" stroke="#7d858f"/>
+<rect x="867.8" y="132.4" width="10.4" height="6.0" fill="#4a5059"/>
+</svg>
