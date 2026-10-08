@@ -23,7 +23,7 @@ public sealed class ClassificationTests(ApiFactory factory)
     public async Task Levels_are_set_checked_against_the_schema_and_read_back_and_a_regional_reader_cannot_write()
     {
         var db = await factory.NewDatabaseAsync();
-        await Loader.LoadAsync(db, NetworkBuilder.Build(51, Scale.Small, TypeCatalog.Embedded), reset: false, TextWriter.Null, ct: Ct);
+        await Loader.LoadAsync(db, NetworkBuilder.Build(51, Scale.Small, TypeCatalog.Current), reset: false, TextWriter.Null, ct: Ct);
         var connectionString = new NpgsqlConnectionStringBuilder(factory.ConnectionString)
         {
             Database = new NpgsqlConnectionStringBuilder(db.ConnectionString).Database,
@@ -64,7 +64,7 @@ public sealed class ClassificationTests(ApiFactory factory)
     public async Task A_plan_sets_a_classification_on_apply_and_a_service_counts_as_critical_from_the_schemas_level()
     {
         var db = await factory.NewDatabaseAsync();
-        await Loader.LoadAsync(db, NetworkBuilder.Build(52, Scale.Small, TypeCatalog.Embedded), reset: false, TextWriter.Null, ct: Ct);
+        await Loader.LoadAsync(db, NetworkBuilder.Build(52, Scale.Small, TypeCatalog.Current), reset: false, TextWriter.Null, ct: Ct);
         var connectionString = new NpgsqlConnectionStringBuilder(factory.ConnectionString)
         {
             Database = new NpgsqlConnectionStringBuilder(db.ConnectionString).Database,
@@ -103,7 +103,7 @@ public sealed class ClassificationTests(ApiFactory factory)
         // The fault analysis reads the level: a service at the schema's critical level counts as critical, level 4 does not.
         (await Scalar(db, $"""
             SELECT count(*) FROM classification c WHERE c.object_type = 'service' AND c.object_id = {service}
-              AND c.level >= {ClassificationCatalog.Embedded.Find("criticality")!.CriticalFrom}
+              AND c.level >= {ClassificationCatalog.Current.Find("criticality")!.CriticalFrom}
             """)).ShouldBe(1);
     }
 
@@ -111,7 +111,7 @@ public sealed class ClassificationTests(ApiFactory factory)
     public async Task A_site_and_a_cable_inherit_the_highest_level_of_what_they_contain_and_carry_and_a_plan_counts_in_its_own_view()
     {
         var db = await factory.NewDatabaseAsync();
-        await Loader.LoadAsync(db, NetworkBuilder.Build(53, Scale.Small, TypeCatalog.Embedded), reset: false, TextWriter.Null, ct: Ct);
+        await Loader.LoadAsync(db, NetworkBuilder.Build(53, Scale.Small, TypeCatalog.Current), reset: false, TextWriter.Null, ct: Ct);
         var connectionString = new NpgsqlConnectionStringBuilder(factory.ConnectionString)
         {
             Database = new NpgsqlConnectionStringBuilder(db.ConnectionString).Database,
@@ -173,7 +173,7 @@ public sealed class ClassificationTests(ApiFactory factory)
     public async Task A_classified_site_must_meet_the_requirements_of_its_level_and_what_is_missing_shows_as_a_risk()
     {
         var db = await factory.NewDatabaseAsync();
-        await Loader.LoadAsync(db, NetworkBuilder.Build(54, Scale.Small, TypeCatalog.Embedded), reset: false, TextWriter.Null, ct: Ct);
+        await Loader.LoadAsync(db, NetworkBuilder.Build(54, Scale.Small, TypeCatalog.Current), reset: false, TextWriter.Null, ct: Ct);
         var connectionString = new NpgsqlConnectionStringBuilder(factory.ConnectionString)
         {
             Database = new NpgsqlConnectionStringBuilder(db.ConnectionString).Database,
@@ -235,7 +235,7 @@ public sealed class ClassificationTests(ApiFactory factory)
     public async Task A_new_level_five_switch_raises_its_site_and_the_plan_says_what_is_missing_and_is_applied_only_with_an_exception()
     {
         var db = await factory.NewDatabaseAsync();
-        await Loader.LoadAsync(db, NetworkBuilder.Build(55, Scale.Small, TypeCatalog.Embedded), reset: false, TextWriter.Null, ct: Ct);
+        await Loader.LoadAsync(db, NetworkBuilder.Build(55, Scale.Small, TypeCatalog.Current), reset: false, TextWriter.Null, ct: Ct);
         var connectionString = new NpgsqlConnectionStringBuilder(factory.ConnectionString)
         {
             Database = new NpgsqlConnectionStringBuilder(db.ConnectionString).Database,
@@ -295,7 +295,7 @@ public sealed class ClassificationTests(ApiFactory factory)
     public async Task A_new_critical_site_gets_nearby_sites_that_already_meet_the_requirements_as_alternatives()
     {
         var db = await factory.NewDatabaseAsync();
-        await Loader.LoadAsync(db, NetworkBuilder.Build(56, Scale.Small, TypeCatalog.Embedded), reset: false, TextWriter.Null, ct: Ct);
+        await Loader.LoadAsync(db, NetworkBuilder.Build(56, Scale.Small, TypeCatalog.Current), reset: false, TextWriter.Null, ct: Ct);
         // Every service critical, and reserve power everywhere: the existing sites meet level 5 in production.
         await using (var cmd = db.CreateCommand("""
             INSERT INTO classification (object_type, object_id, schema_key, level, source, set_by) SELECT 'service', id, 'criticality', 5, 'imported', 'test' FROM service;
@@ -341,7 +341,7 @@ public sealed class ClassificationTests(ApiFactory factory)
     public async Task The_map_layer_lists_sites_and_cables_from_a_level_with_what_they_contain_and_carry_and_a_narrow_reader_sees_less()
     {
         var db = await factory.NewDatabaseAsync();
-        await Loader.LoadAsync(db, NetworkBuilder.Build(54, Scale.Small, TypeCatalog.Embedded), reset: false, TextWriter.Null, ct: Ct);
+        await Loader.LoadAsync(db, NetworkBuilder.Build(54, Scale.Small, TypeCatalog.Current), reset: false, TextWriter.Null, ct: Ct);
         var connectionString = new NpgsqlConnectionStringBuilder(factory.ConnectionString)
         {
             Database = new NpgsqlConnectionStringBuilder(db.ConnectionString).Database,

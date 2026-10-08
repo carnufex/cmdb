@@ -6,13 +6,13 @@ namespace Cmdb.Api.Tests.DataGen;
 
 public sealed class NetworkBuilderTests
 {
-    private static readonly Network Small = NetworkBuilder.Build(1, Scale.Small, TypeCatalog.Embedded);
+    private static readonly Network Small = NetworkBuilder.Build(1, Scale.Small, TypeCatalog.Current);
 
     [Fact]
     public void The_same_seed_always_gives_the_same_network()
     {
-        var again = NetworkBuilder.Build(1, Scale.Small, TypeCatalog.Embedded);
-        var other = NetworkBuilder.Build(2, Scale.Small, TypeCatalog.Embedded);
+        var again = NetworkBuilder.Build(1, Scale.Small, TypeCatalog.Current);
+        var other = NetworkBuilder.Build(2, Scale.Small, TypeCatalog.Current);
 
         Fingerprint.Of(again).ShouldBe(Fingerprint.Of(Small));
         Fingerprint.Of(other).ShouldNotBe(Fingerprint.Of(Small));
@@ -47,7 +47,7 @@ public sealed class NetworkBuilderTests
     {
         foreach (var equipment in Small.Equipment)
         {
-            TypeCatalog.Embedded.ValidateAttributes(equipment.Type.Key, NetworkBuilder.ParseAttributes(equipment.Attributes))
+            TypeCatalog.Current.ValidateAttributes(equipment.Type.Key, NetworkBuilder.ParseAttributes(equipment.Attributes))
                 .ShouldBeEmpty($"{equipment.Name} ({equipment.Type.Key}): {equipment.Attributes}");
         }
     }

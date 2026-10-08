@@ -1,0 +1,13 @@
+{
+  "key": "globex-skap",
+  "name": "Globex-skåp",
+  "siteType": "cabinet",
+  "description": "Testmall i den externa katalogen.",
+  "equipment": [
+    { "ref": "odf", "typeKey": "globex-odf-8", "name": "{code} ODF 1", "rack": "Skåp" },
+    { "ref": "switch", "typeKey": "globex-sw-4", "name": "{code} SW 1", "rack": "Skåp" }
+  ],
+  "connections": [
+    { "from": "switch", "fromPort": "p1", "to": "odf", "toPort": "1", "kind": "patch" }
+  ]
+}

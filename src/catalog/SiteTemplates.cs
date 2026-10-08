@@ -1,5 +1,4 @@
 using System.Collections.Frozen;
-using System.Reflection;
 using System.Text.Json;
 
 namespace Cmdb.Catalog;
@@ -38,14 +37,14 @@ public sealed class SiteTemplates
         "patch", "splice", "termination", "internal",
     };
 
-    private static readonly Lazy<SiteTemplates> EmbeddedTemplates = new(() => Load(typeof(SiteTemplates).Assembly, TypeCatalog.Embedded));
+    private static readonly Lazy<SiteTemplates> CurrentTemplates = new(() => Load(CatalogSource.Current, TypeCatalog.Current));
 
     private readonly FrozenDictionary<string, SiteTemplate> _templates;
 
     private SiteTemplates(IEnumerable<SiteTemplate> templates) =>
         _templates = templates.ToFrozenDictionary(t => t.Key, StringComparer.Ordinal);
 
-    public static SiteTemplates Embedded => EmbeddedTemplates.Value;
+    public static SiteTemplates Current => CurrentTemplates.Value;
 
     public IReadOnlyCollection<SiteTemplate> All => _templates.Values;
 
@@ -161,19 +160,16 @@ public sealed class SiteTemplates
         }
     }
 
-    private static SiteTemplates Load(Assembly assembly, TypeCatalog catalog)
+    /// <summary>Loads the site templates from <paramref name="source"/> and checks them against <paramref name="catalog"/>.</summary>
+    public static SiteTemplates Load(CatalogSource source, TypeCatalog catalog)
     {
-        const string prefix = "site-templates/";
-        string Read(string name)
+        try
         {
-            using var reader = new StreamReader(assembly.GetManifestResourceStream(name)!);
-            return reader.ReadToEnd();
+            return Parse(source.Files("site-templates"), catalog);
         }
-        return Parse(
-            [.. assembly.GetManifestResourceNames()
-                .Where(n => n.StartsWith(prefix, StringComparison.Ordinal))
-                .Order(StringComparer.Ordinal)
-                .Select(n => (n[prefix.Length..], Read(n)))],
-            catalog);
+        catch (InvalidOperationException ex)
+        {
+            throw new InvalidOperationException($"{ex.Message}{Environment.NewLine}(catalog: {source.Name})", ex);
+        }
     }
 }

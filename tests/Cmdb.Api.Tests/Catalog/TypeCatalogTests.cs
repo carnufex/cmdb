@@ -5,7 +5,7 @@ namespace Cmdb.Api.Tests.Catalog;
 
 public sealed class TypeCatalogTests
 {
-    private static readonly TypeCatalog Catalog = TypeCatalog.Embedded;
+    private static readonly TypeCatalog Catalog = TypeCatalog.Current;
 
     [Fact]
     public void Embedded_catalog_has_at_least_twenty_models_across_the_main_categories()

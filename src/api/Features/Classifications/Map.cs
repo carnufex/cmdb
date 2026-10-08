@@ -40,7 +40,7 @@ public sealed class ClassificationMapEndpoint(RequestDb db, GraphHolder holder, 
     {
         var started = System.Diagnostics.Stopwatch.GetTimestamp();
         var scope = HttpContext.Scope();
-        if (ClassificationCatalog.Embedded.Find(req.Schema) is not { } schema || holder.Current is not { } graph)
+        if (ClassificationCatalog.Current.Find(req.Schema) is not { } schema || holder.Current is not { } graph)
         {
             await Send.NotFoundAsync(ct);
             return;

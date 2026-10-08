@@ -25,7 +25,7 @@ public class GraphBenchmarks
     [GlobalSetup]
     public void Setup()
     {
-        var network = NetworkBuilder.Build(1, Cmdb.DataGen.Scale.Parse(Scale), TypeCatalog.Embedded);
+        var network = NetworkBuilder.Build(1, Cmdb.DataGen.Scale.Parse(Scale), TypeCatalog.Current);
         _data = NetworkGraph.From(network);
         _graph = GraphBuilder.Build(_data, "bench");
         using var stream = new MemoryStream();

@@ -13,7 +13,7 @@ public sealed class LoaderTests(ApiFactory factory)
     public async Task Loads_the_small_network_with_foreign_key_checks_on()
     {
         await using var db = await factory.NewDatabaseAsync();
-        var network = NetworkBuilder.Build(1, Scale.Small, TypeCatalog.Embedded);
+        var network = NetworkBuilder.Build(1, Scale.Small, TypeCatalog.Current);
 
         // fast: false keeps every foreign key checked per row, which proves the generator's references.
         await Loader.LoadAsync(db, network, reset: false, TextWriter.Null, fast: false, ct: Ct);
@@ -33,7 +33,7 @@ public sealed class LoaderTests(ApiFactory factory)
     public async Task Refuses_to_load_over_an_existing_network_unless_reset()
     {
         await using var db = await factory.NewDatabaseAsync();
-        var network = NetworkBuilder.Build(3, Scale.Small, TypeCatalog.Embedded);
+        var network = NetworkBuilder.Build(3, Scale.Small, TypeCatalog.Current);
         await Loader.LoadAsync(db, network, reset: false, TextWriter.Null, ct: Ct);
 
         await Should.ThrowAsync<InvalidOperationException>(() => Loader.LoadAsync(db, network, reset: false, TextWriter.Null, ct: Ct));
@@ -63,7 +63,7 @@ public sealed class LoaderTests(ApiFactory factory)
             Options = $"-c role={role}" + (scopes is null ? "" : $" -c cmdb.scopes={scopes}"),
         }.ConnectionString);
         await using var db = As("*"); // like the generator's command line
-        var network = NetworkBuilder.Build(1, Scale.Small, TypeCatalog.Embedded);
+        var network = NetworkBuilder.Build(1, Scale.Small, TypeCatalog.Current);
 
         await Loader.LoadAsync(db, network, reset: false, TextWriter.Null, ct: Ct);
 
@@ -75,7 +75,7 @@ public sealed class LoaderTests(ApiFactory factory)
     public async Task Seeds_demo_plans_including_two_that_want_the_same_fibre_termination()
     {
         await using var db = await factory.NewDatabaseAsync();
-        await Loader.LoadAsync(db, NetworkBuilder.Build(1, Scale.Small, TypeCatalog.Embedded), reset: false, TextWriter.Null, ct: Ct);
+        await Loader.LoadAsync(db, NetworkBuilder.Build(1, Scale.Small, TypeCatalog.Current), reset: false, TextWriter.Null, ct: Ct);
 
         (await Count(db, "plan")).ShouldBe(5);
         (await Count(db, "reservation")).ShouldBe(1);
@@ -90,7 +90,7 @@ public sealed class LoaderTests(ApiFactory factory)
     public async Task The_operations_agents_scenarios_are_seeded_the_same_when_run_again()
     {
         await using var db = await factory.NewDatabaseAsync();
-        await Loader.LoadAsync(db, NetworkBuilder.Build(1, Scale.Small, TypeCatalog.Embedded), reset: false, TextWriter.Null, scenarios: true, ct: Ct);
+        await Loader.LoadAsync(db, NetworkBuilder.Build(1, Scale.Small, TypeCatalog.Current), reset: false, TextWriter.Null, scenarios: true, ct: Ct);
         var circuits = await Count(db, "circuit");
 
         await using (var conn = await db.OpenConnectionAsync(Ct))

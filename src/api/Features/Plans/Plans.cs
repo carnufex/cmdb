@@ -202,7 +202,7 @@ public sealed class AddOperationValidator : Validator<AddOperationRequest>
             RuleFor(r => r.SiteId).NotNull().NotEqual(0);
             RuleFor(r => r.Name).NotEmpty().MaximumLength(200);
             RuleFor(r => r.Rack).MaximumLength(100);
-            RuleFor(r => r.TypeKey).Must(k => k is not null && Cmdb.Catalog.TypeCatalog.Embedded.Find(k) is { Category: not "card" })
+            RuleFor(r => r.TypeKey).Must(k => k is not null && Cmdb.Catalog.TypeCatalog.Current.Find(k) is { Category: not "card" })
                 .WithMessage("typeKey is an equipment model that is not a card (describe_catalog lists them).");
         });
         When(r => r.Kind == "create_cable", () =>

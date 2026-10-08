@@ -308,7 +308,7 @@ internal static class PlanSql
 
     private static string ClassificationText(PlanOp op, ObjectRef target)
     {
-        var schema = Cmdb.Catalog.ClassificationCatalog.Embedded.Find(op.Payload.GetProperty("schema").GetString()!);
+        var schema = Cmdb.Catalog.ClassificationCatalog.Current.Find(op.Payload.GetProperty("schema").GetString()!);
         var name = schema?.Name ?? op.Payload.GetProperty("schema").GetString();
         if (op.Payload.TryGetProperty("level", out var level) && level.ValueKind == System.Text.Json.JsonValueKind.Number)
         {

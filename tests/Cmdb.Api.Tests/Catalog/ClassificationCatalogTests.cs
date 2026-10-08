@@ -8,7 +8,7 @@ public sealed class ClassificationCatalogTests
     [Fact]
     public void The_criticality_schema_has_five_levels_and_level_five_counts_as_critical()
     {
-        var schema = ClassificationCatalog.Embedded.Find("criticality").ShouldNotBeNull();
+        var schema = ClassificationCatalog.Current.Find("criticality").ShouldNotBeNull();
 
         schema.Levels.Select(l => l.Level).ShouldBe([1, 2, 3, 4, 5]);
         schema.CriticalFrom.ShouldBe(5);
@@ -20,7 +20,7 @@ public sealed class ClassificationCatalogTests
     [Fact]
     public void The_criticality_schema_has_requirements_for_levels_four_and_five()
     {
-        var rules = ClassificationCatalog.Embedded.Find("criticality")!.RuleList;
+        var rules = ClassificationCatalog.Current.Find("criticality")!.RuleList;
 
         rules.Select(r => r.Id).ShouldBe(["two-independent-cables", "backup-power"]);
         rules.ShouldAllBe(r => r.FromLevel == 4 && r.AppliesTo.Contains("site"));

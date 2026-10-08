@@ -1,0 +1,16 @@
+{
+  "key": "globex-sw-4",
+  "manufacturer": "Globex Networks",
+  "model": "SW-4",
+  "category": "switch",
+  "panel": { "rows": 1, "columns": 4 },
+  "ports": [
+    { "name": "p{n}", "range": [1, 4], "type": "SFP", "group": "access", "at": [0, 0], "layout": "row" }
+  ],
+  "attributes": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": { "serialNumber": { "type": "string" } },
+    "additionalProperties": false
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "key": "criticality",
+  "name": "Kritikalitet",
+  "description": "Tre nivåer i testkatalogen.",
+  "appliesTo": ["site", "equipment", "cable", "service"],
+  "levels": [
+    { "level": 1, "name": "Låg", "description": "Kan vänta." },
+    { "level": 2, "name": "Hög", "description": "Åtgärdas samma dag." },
+    { "level": 3, "name": "Kritisk", "description": "Får inte falla." }
+  ],
+  "criticalFrom": 3,
+  "inheritance": { "containment": "max", "dependency": "max" }
+}

@@ -82,8 +82,8 @@ public sealed class CreateEquipmentTests(ApiFactory factory)
     public async Task Catalog_sync_is_idempotent()
     {
         await using var context = CmdbDatabase.CreateContext(factory.Db);
-        (await CatalogSync.SyncAsync(context, TypeCatalog.Embedded, Ct)).ShouldBe(0);
-        (await Scalar<long>("SELECT count(*) FROM equipment_type WHERE key LIKE 'acme-%'")).ShouldBe(TypeCatalog.Embedded.Types.Count);
+        (await CatalogSync.SyncAsync(context, TypeCatalog.Current, Ct)).ShouldBe(0);
+        (await Scalar<long>("SELECT count(*) FROM equipment_type WHERE key LIKE 'acme-%'")).ShouldBe(TypeCatalog.Current.Types.Count);
     }
 
     private async Task<CreateEquipmentResponse> CreateAsync(object body)

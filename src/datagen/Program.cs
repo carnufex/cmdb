@@ -71,7 +71,7 @@ internal static class Cli
 
         var total = Stopwatch.StartNew();
         Console.WriteLine($"Generating {scale.Name} network, seed {seed}");
-        var network = NetworkBuilder.Build(seed, scale, TypeCatalog.Embedded);
+        var network = NetworkBuilder.Build(seed, scale, TypeCatalog.Current);
         Console.WriteLine($"Generated in {total.Elapsed.TotalSeconds:0.0} s");
         foreach (var (name, count) in network.Counts())
         {

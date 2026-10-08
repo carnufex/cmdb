@@ -27,7 +27,7 @@ public sealed class PlanBatchTests(ApiFactory factory)
         await using var dbScope = db;
         await using var apiScope = api;
         using var client = NetworkFixture.Client(api);
-        var template = SiteTemplates.Embedded.Find("radiosite-standard")!;
+        var template = SiteTemplates.Current.Find("radiosite-standard")!;
         var plan = await CreateAsync(client, "Ny radiosite");
 
         (await client.GetFromJsonAsync<List<TemplateSummary>>("/api/templates", Ct))!.ShouldContain(t => t.Key == "radiosite-standard");
@@ -135,7 +135,7 @@ public sealed class PlanBatchTests(ApiFactory factory)
     private async Task<(NpgsqlDataSource Db, WebApplicationFactory<Program> Api)> NetworkAsync(int seed)
     {
         var db = await factory.NewDatabaseAsync();
-        await Loader.LoadAsync(db, NetworkBuilder.Build(seed, Scale.Small, TypeCatalog.Embedded), reset: false, TextWriter.Null, ct: Ct);
+        await Loader.LoadAsync(db, NetworkBuilder.Build(seed, Scale.Small, TypeCatalog.Current), reset: false, TextWriter.Null, ct: Ct);
         await using (var clear = db.CreateCommand("DELETE FROM reservation; DELETE FROM plan_operation; DELETE FROM plan_dependency; DELETE FROM plan"))
         {
             await clear.ExecuteNonQueryAsync(Ct);

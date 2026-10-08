@@ -76,10 +76,10 @@ public static class Planned
     public static long Conductor(long op, int k) => -((op * PerObject) + Conductors + k);
 
     public static int PortCount(string typeKey) =>
-        Cmdb.Catalog.TypeCatalog.Embedded.Find(typeKey) is { } type ? Cmdb.Catalog.PortExpansion.Expand(type).Count : 0;
+        Cmdb.Catalog.TypeCatalog.Current.Find(typeKey) is { } type ? Cmdb.Catalog.PortExpansion.Expand(type).Count : 0;
 
     public static int ConductorCount(string typeKey) =>
-        Cmdb.Catalog.TypeCatalog.Embedded.CableTypes.FirstOrDefault(t => t.Key == typeKey)?.ConductorCount ?? 0;
+        Cmdb.Catalog.TypeCatalog.Current.CableTypes.FirstOrDefault(t => t.Key == typeKey)?.ConductorCount ?? 0;
 }
 
 /// <summary>

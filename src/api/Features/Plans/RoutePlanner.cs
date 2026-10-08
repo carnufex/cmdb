@@ -432,7 +432,7 @@ public sealed class RoutePlanner(RequestDb db, GraphHolder holder, PlanViews vie
         return best;
     }
 
-    private static string? CableTypeFor(int fibres) => TypeCatalog.Embedded.CableTypes
+    private static string? CableTypeFor(int fibres) => TypeCatalog.Current.CableTypes
         .Where(t => t.Medium.Equals("fiber", StringComparison.OrdinalIgnoreCase) && t.ConductorCount >= fibres)
         .OrderBy(t => t.ConductorCount).ThenBy(t => t.Key, StringComparer.Ordinal).FirstOrDefault()?.Key;
 

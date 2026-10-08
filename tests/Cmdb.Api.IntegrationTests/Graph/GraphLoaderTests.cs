@@ -14,7 +14,7 @@ public sealed class GraphLoaderTests(ApiFactory factory)
     public async Task The_graph_loaded_from_Postgres_is_the_generated_network()
     {
         await using var db = await factory.NewDatabaseAsync();
-        var network = NetworkBuilder.Build(1, Scale.Small, TypeCatalog.Embedded);
+        var network = NetworkBuilder.Build(1, Scale.Small, TypeCatalog.Current);
         await Loader.LoadAsync(db, network, reset: false, TextWriter.Null, ct: Ct);
 
         var loaded = await GraphLoader.LoadAsync(db, Ct);

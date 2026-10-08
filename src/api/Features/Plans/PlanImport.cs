@@ -166,7 +166,7 @@ public sealed class PlanImport(RequestDb db, GraphHolder holder, PlanViews views
         long Port(string site, string equipmentRef, string port)
         {
             var e = templated.First(s => s.Code == site).Template!.Equipment.First(x => x.Ref == equipmentRef);
-            var position = PortExpansion.Expand(TypeCatalog.Embedded.Find(e.TypeKey)!).Single(p => p.Name == port).Position;
+            var position = PortExpansion.Expand(TypeCatalog.Current.Find(e.TypeKey)!).Single(p => p.Name == port).Position;
             return Planned.Terminal(equipmentOp[(site, equipmentRef)], position);
         }
         long End(string code) => siteIds.TryGetValue(code, out var id) ? id : existing[code];
@@ -313,7 +313,7 @@ public sealed class PlanImport(RequestDb db, GraphHolder holder, PlanViews views
             var code = cell("code").Trim();
             var name = cell("name").Trim();
             var templateKey = cell("template").Trim();
-            var template = templateKey.Length > 0 ? SiteTemplates.Embedded.Find(templateKey) : null;
+            var template = templateKey.Length > 0 ? SiteTemplates.Current.Find(templateKey) : null;
             var siteType = template?.SiteType ?? cell("siteType").Trim();
             if (code.Length is 0 or > 50 || name.Length is 0 or > 200)
             {
@@ -348,9 +348,9 @@ public sealed class PlanImport(RequestDb db, GraphHolder holder, PlanViews views
                 errors.Add(new(row, "En kabel behöver a och b: två olika sitekoder."));
                 return;
             }
-            if (TypeCatalog.Embedded.CableTypes.All(t => t.Key != typeKey))
+            if (TypeCatalog.Current.CableTypes.All(t => t.Key != typeKey))
             {
-                errors.Add(new(row, $"Kabeltypen {typeKey} finns inte: {string.Join(", ", TypeCatalog.Embedded.CableTypes.Select(t => t.Key))}."));
+                errors.Add(new(row, $"Kabeltypen {typeKey} finns inte: {string.Join(", ", TypeCatalog.Current.CableTypes.Select(t => t.Key))}."));
                 return;
             }
             cables.Add(new CableRow(row, a, b, typeKey, null, false));

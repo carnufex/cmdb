@@ -1,5 +1,4 @@
 using System.Collections.Frozen;
-using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -48,30 +47,30 @@ public sealed class ClassificationCatalog
         UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
     };
 
-    private static readonly Lazy<ClassificationCatalog> EmbeddedCatalog = new(() => Load(typeof(ClassificationCatalog).Assembly));
+    private static readonly Lazy<ClassificationCatalog> CurrentCatalog = new(() => Load(CatalogSource.Current));
 
     private readonly FrozenDictionary<string, ClassificationSchema> _schemas;
 
     private ClassificationCatalog(IEnumerable<ClassificationSchema> schemas) =>
         _schemas = schemas.ToFrozenDictionary(s => s.Key, StringComparer.Ordinal);
 
-    public static ClassificationCatalog Embedded => EmbeddedCatalog.Value;
+    public static ClassificationCatalog Current => CurrentCatalog.Value;
 
     public IReadOnlyCollection<ClassificationSchema> Schemas => _schemas.Values;
 
     public ClassificationSchema? Find(string key) => _schemas.GetValueOrDefault(key);
 
-    public static ClassificationCatalog Load(Assembly assembly)
+    public static ClassificationCatalog Load(CatalogSource source)
     {
         var schemas = new List<ClassificationSchema>();
         var errors = new List<string>();
-        foreach (var name in assembly.GetManifestResourceNames().Where(n => n.StartsWith("classifications/", StringComparison.Ordinal)).Order(StringComparer.Ordinal))
+        foreach (var (file, json) in source.Files("classifications"))
         {
-            using var stream = assembly.GetManifestResourceStream(name)!;
+            var name = "classifications/" + file;
             ClassificationSchema schema;
             try
             {
-                schema = JsonSerializer.Deserialize<ClassificationSchema>(stream, Json) ?? throw new JsonException("empty");
+                schema = JsonSerializer.Deserialize<ClassificationSchema>(json, Json) ?? throw new JsonException("empty");
             }
             catch (JsonException e)
             {
@@ -82,8 +81,14 @@ public sealed class ClassificationCatalog
             schemas.Add(schema);
         }
         errors.AddRange(schemas.GroupBy(s => s.Key).Where(g => g.Count() > 1).Select(g => $"classifications: key {g.Key} is used twice."));
+        // Priority rules and fault analysis ask for criticality by key.
+        if (errors.Count == 0 && schemas.All(s => s.Key != "criticality"))
+        {
+            errors.Add("classifications: a schema with key criticality is required.");
+        }
         return errors.Count > 0
-            ? throw new InvalidOperationException("The classification catalog is invalid:" + Environment.NewLine + string.Join(Environment.NewLine, errors))
+            ? throw new InvalidOperationException("The classification catalog is invalid:" + Environment.NewLine + string.Join(Environment.NewLine, errors)
+                + Environment.NewLine + $"(catalog: {source.Name})")
             : new ClassificationCatalog(schemas);
     }
 

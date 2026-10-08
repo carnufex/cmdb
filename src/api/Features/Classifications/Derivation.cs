@@ -32,7 +32,7 @@ public sealed class ClassificationDerivation(RequestDb db, GraphHolder holder, S
     public async Task<DerivedClassification?> DeriveAsync(UserScope scope, string type, long id, string schemaKey, long? planId, CancellationToken ct)
     {
         var started = System.Diagnostics.Stopwatch.GetTimestamp();
-        if (ClassificationCatalog.Embedded.Find(schemaKey) is not { } schema || !schema.AppliesTo.Contains(type) || holder.Current is not { } production)
+        if (ClassificationCatalog.Current.Find(schemaKey) is not { } schema || !schema.AppliesTo.Contains(type) || holder.Current is not { } production)
         {
             return null;
         }

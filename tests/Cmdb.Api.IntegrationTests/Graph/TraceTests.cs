@@ -11,7 +11,7 @@ namespace Cmdb.Api.IntegrationTests.Graph;
 public sealed class TraceTests(ApiFactory factory)
 {
     /// <summary>The network <see cref="NetworkFixture"/> loads: generation is deterministic.</summary>
-    private static readonly Network Network = NetworkBuilder.Build(1, Scale.Small, TypeCatalog.Embedded);
+    private static readonly Network Network = NetworkBuilder.Build(1, Scale.Small, TypeCatalog.Current);
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 

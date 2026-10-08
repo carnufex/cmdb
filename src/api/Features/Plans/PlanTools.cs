@@ -231,7 +231,7 @@ public sealed class PlanTools(RequestDb db, PlanWrites writes, PlanViews views, 
     [McpServerTool(Name = "list_site_templates", Title = "Sitemallar", ReadOnly = true, Idempotent = true, OpenWorld = false)]
     [Description("Site templates for create_site_from_template: a site type with its equipment and internal cabling.")]
     public IReadOnlyList<TemplateSummary> ListSiteTemplates() =>
-        [.. Cmdb.Catalog.SiteTemplates.Embedded.All.OrderBy(t => t.Name, StringComparer.Ordinal)
+        [.. Cmdb.Catalog.SiteTemplates.Current.All.OrderBy(t => t.Name, StringComparer.Ordinal)
             .Select(t => new TemplateSummary(t.Key, t.Name, t.SiteType, t.Description, t.Equipment.Count, t.Connections.Count))];
 
     [McpServerTool(Name = "create_site_from_template", Title = "Site från mall", Destructive = false, OpenWorld = false)]
@@ -453,7 +453,7 @@ public sealed class PlanTools(RequestDb db, PlanWrites writes, PlanViews views, 
             var chain = await PlanViews.LoadChainAsync(db, planId, ct);
             var op = chain?.Operations.FirstOrDefault(o => o.Kind == "create_equipment" && Planned.ObjectId(o.Id) == id)
                 ?? throw new McpException($"No planned equipment:{id} in plan:{planId}.");
-            var type = Cmdb.Catalog.TypeCatalog.Embedded.Find(op.Payload.GetProperty("typeKey").GetString()!)!;
+            var type = Cmdb.Catalog.TypeCatalog.Current.Find(op.Payload.GetProperty("typeKey").GetString()!)!;
             ports.AddRange(Cmdb.Catalog.PortExpansion.Expand(type).Select(p => (Planned.Terminal(op.Id, p.Position), p.Name, p.Position)));
             return Run(ports, id, start, count);
         }

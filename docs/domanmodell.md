@@ -80,6 +80,22 @@ En fil per modell i [`catalog/equipment-types/`](../catalog/equipment-types/). F
 - **Sitemallar** (`catalog/site-templates/<key>.json`, #26) beskriver en sitetyp med utrustning (modell, namnmönster med `{code}`, rack) och intern kabeldragning (port till port). De valideras mot utrustningstyperna vid laddning och används i planer.
 - Katalogen valideras vid laddning (unika namn, portar inom panelen, inga överlapp, giltigt schema, kända kategorier) och synkas till `equipment_type` i samma steg som migreringarna. Om en portmall ändras genereras inte portarna om på befintlig utrustning.
 
+### Extern katalog
+
+Den syntetiska katalogen i `catalog/` byggs in i API:t och datageneratorn och används som standard. En annan organisations katalog ligger utanför repot (#206, #207): sätt `CMDB_CATALOG_PATH` till en mapp med samma struktur, så läser API:t, datageneratorn och migreringssteget katalogen därifrån i stället.
+
+```
+<mapp>/
+  cable-types.json            krävs
+  equipment-types/<key>.json
+  classifications/<key>.json  criticality.json krävs
+  site-templates/<key>.json
+```
+
+- Valideringen och synken till databasen är densamma oavsett källa. Fel anger katalogens mapp, filen och regeln, och processen startar inte.
+- En satt men saknad mapp är ett fel, inte en tom katalog. Utan variabeln används den inbäddade katalogen.
+- Katalogen läses en gång när processen startar. En ändrad katalog börjar gälla vid nästa utrullning, när migreringssteget synkar den.
+
 ## Livscykel
 
 ```

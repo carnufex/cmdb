@@ -208,7 +208,7 @@ public sealed class ChangeStreamTests(ApiFactory factory)
         await using var db = await SmallNetworkAsync(6);
         await using var first = Api(db);
         await using var second = Api(db);
-        var network = NetworkBuilder.Build(6, Scale.Small, TypeCatalog.Embedded);
+        var network = NetworkBuilder.Build(6, Scale.Small, TypeCatalog.Current);
         var circuit = network.Circuits.First(c => c.Layer == "physical" && c.Lifecycle == "in_service");
         var hops = network.Hops.Where(h => h.CircuitId == circuit.Id).OrderBy(h => h.Seq).Select(h => h.TerminalId).ToArray();
         var (x, y) = (Math.Min(hops[1], hops[2]), Math.Max(hops[1], hops[2]));
@@ -265,7 +265,7 @@ public sealed class ChangeStreamTests(ApiFactory factory)
     private async Task<NpgsqlDataSource> SmallNetworkAsync(int seed)
     {
         var db = await factory.NewDatabaseAsync();
-        await Loader.LoadAsync(db, NetworkBuilder.Build(seed, Scale.Small, TypeCatalog.Embedded), reset: false, TextWriter.Null, ct: Ct);
+        await Loader.LoadAsync(db, NetworkBuilder.Build(seed, Scale.Small, TypeCatalog.Current), reset: false, TextWriter.Null, ct: Ct);
         return db;
     }
 

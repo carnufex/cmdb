@@ -8,7 +8,7 @@ public sealed class SiteTemplateTests
     [Fact]
     public void The_shipped_templates_load_and_hold_equipment_and_cabling()
     {
-        var templates = SiteTemplates.Embedded;
+        var templates = SiteTemplates.Current;
 
         templates.All.Select(t => t.Key).ShouldContain("radiosite-standard");
         templates.All.Select(t => t.Key).ShouldContain("skap-access");
@@ -30,7 +30,7 @@ public sealed class SiteTemplateTests
     {
         var json = $$"""{ "key": "t", "name": "T", "siteType": "radio", "description": "", "equipment": [{{equipment}}], "connections": {{connections}} }""";
 
-        var error = Should.Throw<InvalidOperationException>(() => SiteTemplates.Parse([("t.json", json)], TypeCatalog.Embedded));
+        var error = Should.Throw<InvalidOperationException>(() => SiteTemplates.Parse([("t.json", json)], TypeCatalog.Current));
 
         error.Message.ShouldContain(message);
     }
@@ -40,7 +40,7 @@ public sealed class SiteTemplateTests
     {
         const string json = """{ "key": "t", "name": "T", "siteType": "castle", "description": "", "equipment": [], "connections": [] }""";
 
-        var error = Should.Throw<InvalidOperationException>(() => SiteTemplates.Parse([("other.json", json)], TypeCatalog.Embedded));
+        var error = Should.Throw<InvalidOperationException>(() => SiteTemplates.Parse([("other.json", json)], TypeCatalog.Current));
 
         error.Message.ShouldContain("must match the file name");
         error.Message.ShouldContain("unknown site type 'castle'");
