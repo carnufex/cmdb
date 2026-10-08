@@ -140,6 +140,7 @@ flowchart LR
 ```
 
 - **Ingen öppen port in.** Trafiken kommer via Cloudflare Tunnel till Cilium Gateway, och bara `cmdb-web` är exponerad. API:t och databasen nås bara inifrån klustret.
+- **Nätverk:** CiliumNetworkPolicy i namespacet (`networkpolicy.yaml` i homelabbet, #182) stänger allt som inte är uttryckligen tillåtet, åt båda hållen. `cmdb-web` tar bara emot från Cilium Gateway och pratar bara med `cmdb-api`. `cmdb-api` tar bara emot från `cmdb-web` och når bara databasen och `authentik.rosenvall.se:443` (OIDC-metadata). Databasen tar emot från API:t, datagen-jobbet (`app.kubernetes.io/name: cmdb-datagen`) och CNPG-operatorn. Alla poddar når DNS. Behöver API:t nå en ny tjänst utåt, till exempel en riktig SMS-leverantör, måste den läggas till i policyn.
 - **RBAC i klustret:** poddarna kör som tjänstekontot `cmdb-runtime` med `automountServiceAccountToken: false` och har inga Role eller RoleBinding. Applikationen har alltså ingen åtkomst till Kubernetes-API:t alls. ArgoCD:s AppProject begränsar vilka namespaces den får synka till.
 - **Containrarna** kör som icke-root med `allowPrivilegeEscalation: false`, alla capabilities borttagna och Pod Security `baseline` på namespacet. De är OpenShift-kompatibla och fungerar med godtyckligt UID.
 - **Hemligheter** (databaslösenordet och röstkanalens hemlighet) ligger i Bitwarden Secrets Manager och synkas in med External Secrets. Inget hemligt finns i git.
@@ -152,5 +153,4 @@ flowchart LR
 
 - **ElevenLabs är en tredje part.** Samtalsljud, transkript och verktygssvar behandlas där. Det fungerar för syntetisk data, men en skarp version kräver beslut om EU-residens, avtal och säkerhetsskydd.
 - **Kanalhemligheten är delad** mellan de tre agenterna. Behörigheten sitter i verifieringen, inte i hemligheten, men en läckt hemlighet ger ändå tillgång till de öppna verktygen.
-- **Ingen NetworkPolicy** för namespacet `cmdb` ännu. Poddarna kan i princip nå andra tjänster i klustret. Det är nästa steg för att tighta driften.
 - **SMS är stubbade.** Koder och nummer går till en utkorg i databasen, inte till en telefon.

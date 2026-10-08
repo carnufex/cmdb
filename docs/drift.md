@@ -113,6 +113,7 @@ kubectl -n cmdb logs deploy/cmdb-api                         # API:t
 
 - `ExternalSecret` i `SecretSyncError`: namnrymden saknas i `ClusterSecretStore` eller hemligheten saknas i Bitwarden.
 - Poddar i `ImagePullBackOff`: kontrollera att `cmdb-registry` finns och att taggen pushades.
+- Anslutningar som hänger eller nekas mellan poddar, mot databasen eller mot Authentik: namnrymden har default deny (CiliumNetworkPolicy, #182). Se vad som släpps i `kubectl -n cmdb get cnp` och vad som nekas med `hubble observe -n cmdb --verdict DROPPED`. Nya arbetslaster i namnrymden behöver en egen regel.
 - Inloggningen studsar: redirect-URI:n måste finnas i blueprinten `apps-cmdb.yaml` i homelab-repot.
 
 ## Hemligheter
