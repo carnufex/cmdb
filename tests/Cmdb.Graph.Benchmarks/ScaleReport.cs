@@ -6,10 +6,12 @@ using Cmdb.DataGen;
 namespace Cmdb.Graph.Benchmarks;
 
 /// <summary>
-/// How the graph grows with the network (#81, #119): build time, memory at rest, snapshot size and read time, change
-/// batches as a delta (patches, and an installation: new equipment with 24 patched ports and a circuit over them that
-/// rides on an existing one and carries a service), folding the installation into the arrays, and a rebuild from rows,
-/// with how far the managed heap rises (garbage included) while folding and rebuilding.
+/// How the graph grows with the network (#81, #119, #123): build time, memory at rest, snapshot size and read time,
+/// change batches as a delta (patches, and an installation: new equipment with 24 patched ports and a circuit over them
+/// that rides on an existing one and carries a service), folding the installation into the arrays, and a rebuild from
+/// rows, with how far the managed heap rises (garbage included) while folding and rebuilding. A second table does the
+/// same for a removal and a move: equipment and a cable removed with their connections, and equipment moved to another
+/// site, which renumbers the arrays when folded in.
 /// <c>dotnet run -c Release --project tests/Cmdb.Graph.Benchmarks -- scale full 2x 4x</c>
 /// </summary>
 internal static class ScaleReport
@@ -19,13 +21,18 @@ internal static class ScaleReport
         Console.OutputEncoding = System.Text.Encoding.UTF8;
         Console.WriteLine("| Skala | Terminaler | Kanter | Bygga | Minne i vila | Snapshot | Läsa snapshot | Delta 2 terminaler | Delta 100 terminaler | Delta installation | Kompaktering av delta | Topp | Ombyggnad från rader | Topp |");
         Console.WriteLine("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|");
+        var structure = new List<string>();
         foreach (var scale in scales)
         {
-            Measure(scale);
+            structure.Add(Measure(scale));
         }
+        Console.WriteLine();
+        Console.WriteLine("| Skala | Delta borttag och flytt | Kompaktering av delta | Topp | Ombyggnad från rader | Topp |");
+        Console.WriteLine("|---|---|---|---|---|---|");
+        structure.ForEach(Console.WriteLine);
     }
 
-    private static void Measure(string scaleName)
+    private static string Measure(string scaleName)
     {
         var (data, free) = Generate(scaleName);
         var idle = Heap();
@@ -54,13 +61,89 @@ internal static class ScaleReport
         var deltaInstallation = Median(() => GraphChanges.TryDelta(graph, installation) ?? throw new InvalidOperationException("not a delta"));
 
         var delta = GraphChanges.TryDelta(graph, installation)!;
-        var (flatten, flattenPeak) = Peak(() => GraphChanges.Flatten(delta, [installation]) ?? throw new InvalidOperationException("not appendable"));
+        var (flatten, flattenPeak) = Peak(() => GraphChanges.Flatten(delta, [installation]));
         delta = null;
         var (rebuild, rebuildPeak) = Peak(() => GraphChanges.Compact(graph, [installation]));
-        GC.KeepAlive(graph);
 
         Console.WriteLine(string.Create(CultureInfo.InvariantCulture,
             $"| {scaleName} | {graph.NodeCount / 1e6:0.0} M | {graph.EdgeCount / 1e6:0.0} M | {build.TotalSeconds:0.0} s | {Mb(rest)} | {Mb(snapshotBytes)} | {readTime.TotalSeconds:0.0} s | {deltaSmall:0.00} ms | {deltaLarge:0.00} ms | {deltaInstallation:0.00} ms | {flatten.TotalSeconds:0.00} s | +{Mb(flattenPeak)} | {rebuild.TotalSeconds:0.0} s | +{Mb(rebuildPeak)} |"));
+
+        var removal = RemovalAndMove(graph);
+        var deltaRemoval = Median(() => GraphChanges.TryDelta(graph, removal) ?? throw new InvalidOperationException("not a delta"));
+        var removed = GraphChanges.TryDelta(graph, removal)!;
+        var (flattenRemoval, flattenRemovalPeak) = Peak(() => GraphChanges.Flatten(removed, [removal]));
+        removed = null;
+        var (rebuildRemoval, rebuildRemovalPeak) = Peak(() => GraphChanges.Compact(graph, [removal]));
+        GC.KeepAlive(graph);
+        GC.KeepAlive(removed);
+        return string.Create(CultureInfo.InvariantCulture,
+            $"| {scaleName} | {deltaRemoval:0.00} ms | {flattenRemoval.TotalSeconds:0.00} s | +{Mb(flattenRemovalPeak)} | {rebuildRemoval.TotalSeconds:0.0} s | +{Mb(rebuildRemovalPeak)} |");
+    }
+
+    /// <summary>
+    /// Equipment and a cable that carry no circuits removed with their connections, and equipment moved to the first
+    /// equipment's site, as the change feed would read it (#123).
+    /// </summary>
+    private static GraphChangeBatch RemovalAndMove(Graph graph)
+    {
+        bool Free(ReadOnlySpan<int> nodes)
+        {
+            foreach (var node in nodes)
+            {
+                if (graph.CircuitsThrough(node).Length > 0)
+                {
+                    return false;
+                }
+            }
+            return nodes.Length > 0;
+        }
+        var site = graph.SiteIndexOfEquipment(0);
+        var equipment = Enumerable.Range(0, graph.EquipmentIds.Length).Where(e => Free(graph.PortsOf(e))).Take(2).ToArray();
+        var moved = Enumerable.Range(0, graph.EquipmentIds.Length).First(e => graph.SiteIndexOfEquipment(e) != site && !equipment.Contains(e));
+        var cable = Enumerable.Range(0, graph.CableIds.Length).First(c => Free(graph.EndsOf(c)));
+
+        var keys = new GraphKeys();
+        var rows = new GraphData();
+        keys.Equipment.UnionWith([graph.EquipmentId(equipment[0]), graph.EquipmentId(moved)]);
+        keys.Cables.Add(graph.CableId(cable));
+        rows.EquipmentIds.Add(graph.EquipmentId(moved));
+        rows.EquipmentSites.Add(graph.SiteId(site));
+        foreach (var port in graph.PortsOf(moved))
+        {
+            rows.PortTerminals.Add(graph.TerminalId(port));
+            rows.PortEquipment.Add(graph.EquipmentId(moved));
+        }
+        // The removed terminals' connections go; their other ends keep the rest.
+        var gone = new HashSet<int>([.. graph.PortsOf(equipment[0]), .. graph.EndsOf(cable)]);
+        var others = new HashSet<int>();
+        foreach (var node in gone)
+        {
+            keys.Terminals.Add(graph.TerminalId(node));
+            foreach (var other in graph.Neighbours(node))
+            {
+                if (!gone.Contains(other))
+                {
+                    others.Add(other);
+                }
+            }
+        }
+        foreach (var node in others)
+        {
+            keys.Terminals.Add(graph.TerminalId(node));
+            var targets = graph.Neighbours(node);
+            var kinds = graph.NeighbourKinds(node);
+            for (var i = 0; i < targets.Length; i++)
+            {
+                if (kinds[i] != EdgeKind.Conductor && !gone.Contains(targets[i]) && (node < targets[i] || !others.Contains(targets[i])))
+                {
+                    rows.ConnectionA.Add(graph.TerminalId(node));
+                    rows.ConnectionB.Add(graph.TerminalId(targets[i]));
+                    rows.ConnectionKinds.Add((byte)kinds[i]);
+                    rows.ConnectionLifecycles.Add((byte)Lifecycle.InService);
+                }
+            }
+        }
+        return new GraphChangeBatch("1", false, keys, rows, keys.Count);
     }
 
     /// <summary>How long the work takes and how far the managed heap rose meanwhile, garbage included.</summary>

@@ -18,6 +18,33 @@ public sealed record GraphNewCable(long Id, IReadOnlyList<GraphNewConductor> Con
 
 public sealed record GraphNewConductor(long Id, long EndA, long EndB);
 
+// Structure the change stream removes, moves or rebuilds (#123). Internal: a plan removes and moves objects through
+// their connections (#172, #187) and keeps them in its view until it is applied.
+
+/// <summary>Equipment removed with its ports and their connections.</summary>
+internal sealed record GraphRemoveEquipment(long Id) : GraphChange;
+
+/// <summary>A cable removed with its conductors, their ends and the connections on them.</summary>
+internal sealed record GraphRemoveCable(long Id) : GraphChange;
+
+/// <summary>A port removed from its equipment or an end from its conductor, with its connections.</summary>
+internal sealed record GraphRemoveTerminal(long Terminal) : GraphChange;
+
+/// <summary>A conductor removed from its cable, with its ends and the connections on them.</summary>
+internal sealed record GraphRemoveConductor(long Id) : GraphChange;
+
+/// <summary>Equipment at another site, ports and connections kept.</summary>
+internal sealed record GraphMoveEquipment(long Id, long SiteId) : GraphChange;
+
+/// <summary>New ports on equipment that is in the graph.</summary>
+internal sealed record GraphAddPorts(long EquipmentId, IReadOnlyList<long> Ports) : GraphChange;
+
+/// <summary>A new conductor in a cable that is in the graph.</summary>
+internal sealed record GraphAddConductor(long CableId, GraphNewConductor Conductor) : GraphChange;
+
+/// <summary>New ends on a conductor that is in the graph, joined to the end it kept.</summary>
+internal sealed record GraphAddEnds(long ConductorId, IReadOnlyList<long> Ends) : GraphChange;
+
 /// <summary>Why a change had no effect on the view: the plan says something production no longer allows.</summary>
 public enum GraphChangeProblem
 {
@@ -70,10 +97,28 @@ internal sealed class GraphOverlay
 
     public List<long> ConductorIds { get; init; } = [];
     public List<int> ConductorCables { get; init; } = [];
+    public Dictionary<long, int> ConductorById { get; init; } = [];
 
     public List<long> CableIds { get; init; } = [];
     public List<int[]> CableEnds { get; init; } = [];
     public Dictionary<long, int> CableById { get; init; } = [];
+
+    // What the change stream removed, moved or rebuilt (#123), by index: the arrays' own and the delta's alike. Removed
+    // objects keep their index, so the index spaces only grow until the delta is folded in.
+    public HashSet<int> RemovedNodes { get; init; } = [];
+    public HashSet<int> RemovedEquipment { get; init; } = [];
+    public HashSet<int> RemovedConductors { get; init; } = [];
+    public HashSet<int> RemovedCables { get; init; } = [];
+
+    /// <summary>Sites whose last equipment was removed or moved away: not in the graph, as after a rebuild.</summary>
+    public HashSet<int> RemovedSites { get; init; } = [];
+
+    /// <summary>The site of equipment of the arrays that moved.</summary>
+    public Dictionary<int, int> MovedEquipment { get; init; } = [];
+
+    /// <summary>Ports of equipment of the arrays whose ports changed, and ends of such cables.</summary>
+    public Dictionary<int, int[]> Ports { get; init; } = [];
+    public Dictionary<int, int[]> Ends { get; init; } = [];
 
     /// <summary>Circuits changed by the change stream (#121); null until one is.</summary>
     public CircuitOverlay? Circuits { get; set; }
@@ -95,6 +140,15 @@ internal sealed class GraphOverlay
         SiteEquipment = new(SiteEquipment),
         ConductorIds = [.. ConductorIds],
         ConductorCables = [.. ConductorCables],
+        ConductorById = new(ConductorById),
+        RemovedNodes = [.. RemovedNodes],
+        RemovedEquipment = [.. RemovedEquipment],
+        RemovedConductors = [.. RemovedConductors],
+        RemovedCables = [.. RemovedCables],
+        RemovedSites = [.. RemovedSites],
+        MovedEquipment = new(MovedEquipment),
+        Ports = new(Ports),
+        Ends = new(Ends),
         CableIds = [.. CableIds],
         CableEnds = [.. CableEnds],
         CableById = new(CableById),
@@ -167,7 +221,8 @@ public sealed partial class Graph
 
         int SiteIndex(long siteId)
         {
-            if (view.TryGetSite(siteId, out var site))
+            var site = view.SiteIndex(siteId);
+            if (site >= 0)
             {
                 return site;
             }
@@ -175,6 +230,99 @@ public sealed partial class Graph
             overlay.SiteById[siteId] = overlay.SiteIds.Count;
             overlay.SiteIds.Add(siteId);
             return SiteIds.Length + overlay.SiteIds.Count - 1;
+        }
+
+        void SetSiteEquipment(int site, int[] equipment)
+        {
+            overlay.SiteEquipment[site] = equipment;
+            if (equipment.Length == 0)
+            {
+                overlay.RemovedSites.Add(site);
+            }
+            else
+            {
+                overlay.RemovedSites.Remove(site);
+            }
+        }
+
+        void SetPorts(int equipment, int[] ports)
+        {
+            if (equipment < EquipmentIds.Length)
+            {
+                overlay.Ports[equipment] = ports;
+            }
+            else
+            {
+                overlay.EquipmentPorts[equipment - EquipmentIds.Length] = ports;
+            }
+        }
+
+        void SetEnds(int cable, int[] ends)
+        {
+            if (cable < CableIds.Length)
+            {
+                overlay.Ends[cable] = ends;
+            }
+            else
+            {
+                overlay.CableEnds[cable - CableIds.Length] = ends;
+            }
+        }
+
+        // A conductor and its two ends, joined.
+        int[] AddConductor(int cable, GraphNewConductor conductor)
+        {
+            var owner = ConductorIds.Length + overlay.ConductorIds.Count;
+            overlay.ConductorById[conductor.Id] = overlay.ConductorIds.Count;
+            overlay.ConductorIds.Add(conductor.Id);
+            overlay.ConductorCables.Add(cable);
+            var a = AddNode(conductor.EndA, TerminalKind.ConductorEnd, owner);
+            var b = AddNode(conductor.EndB, TerminalKind.ConductorEnd, owner);
+            working[a].Targets.Add(b);
+            working[a].Kinds.Add(EdgeKind.Conductor);
+            working[b].Targets.Add(a);
+            working[b].Kinds.Add(EdgeKind.Conductor);
+            return [a, b];
+        }
+
+        // A terminal gone (#123): every edge on it goes from both sides, conductors too.
+        void RemoveNode(int node)
+        {
+            var edges = Edit(node);
+            foreach (var other in edges.Targets.Distinct().ToArray())
+            {
+                var back = Edit(other);
+                for (var e = back.Targets.Count - 1; e >= 0; e--)
+                {
+                    if (back.Targets[e] == node)
+                    {
+                        back.Targets.RemoveAt(e);
+                        back.Kinds.RemoveAt(e);
+                    }
+                }
+            }
+            working[node] = ([], []);
+            overlay.RemovedNodes.Add(node);
+            if (node >= TerminalIds.Length)
+            {
+                overlay.NodeById.Remove(view.TerminalId(node));
+            }
+        }
+
+        void RemoveConductor(int conductor)
+        {
+            var cable = view.CableOfConductor(conductor);
+            var ends = view.EndsOf(cable).ToArray();
+            foreach (var end in ends.Where(e => view.OwnerOf(e) == conductor))
+            {
+                RemoveNode(end);
+            }
+            SetEnds(cable, [.. ends.Where(e => view.OwnerOf(e) != conductor)]);
+            overlay.RemovedConductors.Add(conductor);
+            if (conductor >= ConductorIds.Length)
+            {
+                overlay.ConductorById.Remove(view.ConductorId(conductor));
+            }
         }
 
         for (var i = 0; i < changes.Count; i++)
@@ -204,7 +352,7 @@ public sealed partial class Graph
                         overlay.EquipmentIds.Add(equipment.Id);
                         overlay.EquipmentSites.Add(site);
                         overlay.EquipmentPorts.Add([.. equipment.Ports.Select(p => AddNode(p, TerminalKind.Port, index))]);
-                        overlay.SiteEquipment[site] = [.. existing, index];
+                        SetSiteEquipment(site, [.. existing, index]);
                         break;
                     }
 
@@ -222,19 +370,158 @@ public sealed partial class Graph
                         var ends = new List<int>();
                         foreach (var conductor in cable.Conductors)
                         {
-                            var owner = ConductorIds.Length + overlay.ConductorIds.Count;
-                            overlay.ConductorIds.Add(conductor.Id);
-                            overlay.ConductorCables.Add(index);
-                            var a = AddNode(conductor.EndA, TerminalKind.ConductorEnd, owner);
-                            var b = AddNode(conductor.EndB, TerminalKind.ConductorEnd, owner);
-                            working[a].Targets.Add(b);
-                            working[a].Kinds.Add(EdgeKind.Conductor);
-                            working[b].Targets.Add(a);
-                            working[b].Kinds.Add(EdgeKind.Conductor);
-                            ends.Add(a);
-                            ends.Add(b);
+                            ends.AddRange(AddConductor(index, conductor));
                         }
                         overlay.CableEnds.Add([.. ends]);
+                        break;
+                    }
+
+                case GraphRemoveEquipment remove:
+                    {
+                        if (!view.TryGetEquipment(remove.Id, out var equipment))
+                        {
+                            issues.Add(new(i, remove, GraphChangeProblem.InvalidObject));
+                            break;
+                        }
+                        foreach (var port in view.PortsOf(equipment).ToArray())
+                        {
+                            RemoveNode(port);
+                        }
+                        SetPorts(equipment, []);
+                        var site = view.SiteIndexOfEquipment(equipment);
+                        SetSiteEquipment(site, [.. view.EquipmentAt(site).ToArray().Where(e => e != equipment)]);
+                        overlay.RemovedEquipment.Add(equipment);
+                        if (equipment >= EquipmentIds.Length)
+                        {
+                            overlay.EquipmentById.Remove(remove.Id);
+                        }
+                        break;
+                    }
+
+                case GraphRemoveCable remove:
+                    {
+                        if (!view.TryGetCable(remove.Id, out var cable))
+                        {
+                            issues.Add(new(i, remove, GraphChangeProblem.InvalidObject));
+                            break;
+                        }
+                        foreach (var conductor in view.EndsOf(cable).ToArray().Select(view.OwnerOf).Distinct().ToArray())
+                        {
+                            RemoveConductor(conductor);
+                        }
+                        overlay.RemovedCables.Add(cable);
+                        if (cable >= CableIds.Length)
+                        {
+                            overlay.CableById.Remove(remove.Id);
+                        }
+                        break;
+                    }
+
+                case GraphRemoveTerminal remove:
+                    {
+                        if (!view.TryGetNode(remove.Terminal, out var node))
+                        {
+                            issues.Add(new(i, remove, GraphChangeProblem.UnknownTerminal));
+                            break;
+                        }
+                        var owner = view.OwnerOf(node);
+                        RemoveNode(node);
+                        if (view.KindOf(node) == TerminalKind.Port)
+                        {
+                            SetPorts(owner, [.. view.PortsOf(owner).ToArray().Where(p => p != node)]);
+                        }
+                        else
+                        {
+                            var cable = view.CableOfConductor(owner);
+                            SetEnds(cable, [.. view.EndsOf(cable).ToArray().Where(e => e != node)]);
+                        }
+                        break;
+                    }
+
+                case GraphRemoveConductor remove:
+                    if (!view.TryGetConductor(remove.Id, out var removedConductor))
+                    {
+                        issues.Add(new(i, remove, GraphChangeProblem.InvalidObject));
+                        break;
+                    }
+                    RemoveConductor(removedConductor);
+                    break;
+
+                case GraphMoveEquipment move:
+                    {
+                        if (!view.TryGetEquipment(move.Id, out var equipment))
+                        {
+                            issues.Add(new(i, move, GraphChangeProblem.InvalidObject));
+                            break;
+                        }
+                        var from = view.SiteIndexOfEquipment(equipment);
+                        var to = SiteIndex(move.SiteId);
+                        if (from == to)
+                        {
+                            break;
+                        }
+                        SetSiteEquipment(from, [.. view.EquipmentAt(from).ToArray().Where(e => e != equipment)]);
+                        SetSiteEquipment(to, [.. view.EquipmentAt(to).ToArray().Append(equipment).Order()]);
+                        if (equipment < EquipmentIds.Length)
+                        {
+                            overlay.MovedEquipment[equipment] = to;
+                        }
+                        else
+                        {
+                            overlay.EquipmentSites[equipment - EquipmentIds.Length] = to;
+                        }
+                        break;
+                    }
+
+                case GraphAddPorts add:
+                    {
+                        if (!view.TryGetEquipment(add.EquipmentId, out var equipment) || add.Ports.Any(p => view.TryGetNode(p, out _)))
+                        {
+                            issues.Add(new(i, add, GraphChangeProblem.InvalidObject));
+                            break;
+                        }
+                        SetPorts(equipment, [.. view.PortsOf(equipment).ToArray(), .. add.Ports.Select(p => AddNode(p, TerminalKind.Port, equipment))]);
+                        break;
+                    }
+
+                case GraphAddConductor add:
+                    {
+                        if (!view.TryGetCable(add.CableId, out var cable) || view.TryGetConductor(add.Conductor.Id, out _)
+                            || view.TryGetNode(add.Conductor.EndA, out _) || view.TryGetNode(add.Conductor.EndB, out _))
+                        {
+                            issues.Add(new(i, add, GraphChangeProblem.InvalidObject));
+                            break;
+                        }
+                        SetEnds(cable, [.. view.EndsOf(cable).ToArray(), .. AddConductor(cable, add.Conductor)]);
+                        break;
+                    }
+
+                case GraphAddEnds add:
+                    {
+                        if (!view.TryGetConductor(add.ConductorId, out var conductor) || add.Ends.Any(e => view.TryGetNode(e, out _)))
+                        {
+                            issues.Add(new(i, add, GraphChangeProblem.InvalidObject));
+                            break;
+                        }
+                        var cable = view.CableOfConductor(conductor);
+                        var ends = view.EndsOf(cable).ToArray();
+                        // A conductor has two ends (the delta takes no others), so each new end joins the one there.
+                        var joined = ends.Where(e => view.OwnerOf(e) == conductor).ToList();
+                        var added = new List<int>();
+                        foreach (var end in add.Ends)
+                        {
+                            var node = AddNode(end, TerminalKind.ConductorEnd, conductor);
+                            foreach (var other in joined)
+                            {
+                                Edit(node).Targets.Add(other);
+                                Edit(node).Kinds.Add(EdgeKind.Conductor);
+                                Edit(other).Targets.Add(node);
+                                Edit(other).Kinds.Add(EdgeKind.Conductor);
+                            }
+                            joined.Add(node);
+                            added.Add(node);
+                        }
+                        SetEnds(cable, [.. ends, .. added]);
                         break;
                     }
 
@@ -295,6 +582,23 @@ public sealed partial class Graph
             overlay.Edges[node] = ([.. list.Targets], [.. list.Kinds]);
         }
         return (view, issues);
+    }
+
+    /// <summary>Whether a circuit still passes a terminal the delta removed (#123): its rows do not fit together yet.</summary>
+    internal bool CarriesCircuitsOnRemovedNodes()
+    {
+        if (_overlay is null)
+        {
+            return false;
+        }
+        foreach (var node in _overlay.RemovedNodes)
+        {
+            if (CircuitsThrough(node).Length > 0)
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     /// <summary>A connection, not the conductor joining a cable's two ends.</summary>

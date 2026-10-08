@@ -191,7 +191,7 @@ public sealed class GraphCircuitDeltaTests
 
         var built = GraphBuilder.Build(Network(circuits), "60");
         Bytes(GraphChanges.Compact(production, batches)).ShouldBe(Bytes(built));
-        var flat = GraphChanges.Flatten(graph, batches).ShouldNotBeNull();
+        var flat = GraphChanges.Flatten(graph, batches);
         flat.IsOverlay.ShouldBeFalse();
         Bytes(flat).ShouldBe(Bytes(built));
     }

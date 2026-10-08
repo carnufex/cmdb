@@ -197,7 +197,7 @@ public sealed class ChangeStreamTests(ApiFactory factory)
 
         var fresh = GraphBuilder.Build(GraphData.From(await GraphLoader.LoadAsync(db, Ct)), graph.Version);
         Bytes(GraphChanges.Compact(before, batches)).ShouldBe(Bytes(fresh));
-        Bytes(GraphChanges.Flatten(graph, batches).ShouldNotBeNull()).ShouldBe(Bytes(fresh));
+        Bytes(GraphChanges.Flatten(graph, batches)).ShouldBe(Bytes(fresh));
         graph.TryGetNode(a, out var node).ShouldBeTrue();
         graph.Neighbours(node).ToArray().Select(graph.TerminalId).ShouldContain(b);
     }
