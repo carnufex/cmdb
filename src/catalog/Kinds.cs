@@ -34,10 +34,15 @@ public static class CatalogRoles
 }
 
 /// <summary>A site type from <c>catalog/site-types.json</c>.</summary>
-public sealed record CatalogSiteType(string Key, string Name, IReadOnlyList<string> Roles)
+/// <param name="Attributes">Optional JSON Schema for the site's attributes (#211); without one they are free.</param>
+public sealed record CatalogSiteType(string Key, string Name, IReadOnlyList<string> Roles, System.Text.Json.JsonElement? Attributes = null)
 {
     public bool Has(string role) => Roles.Contains(role, StringComparer.Ordinal);
 }
+
+/// <summary>A service type from <c>catalog/service-types.json</c> (#211). The file is optional; service types not in it are free.</summary>
+/// <param name="Attributes">Optional JSON Schema for the service's attributes; without one they are free.</param>
+public sealed record ServiceType(string Key, string Name, System.Text.Json.JsonElement? Attributes = null);
 
 /// <summary>An equipment category from <c>catalog/equipment-categories.json</c>.</summary>
 public sealed record EquipmentCategory(string Key, string Name, IReadOnlyList<string> Roles)

@@ -1,7 +1,132 @@
 [
-  { "key": "hub", "name": "Nav", "roles": ["hub"] },
-  { "key": "aggregation", "name": "Aggregeringsnod", "roles": ["aggregation"] },
-  { "key": "radio", "name": "Radiosite", "roles": ["access"] },
-  { "key": "cabinet", "name": "Teknikskåp", "roles": ["access"] },
-  { "key": "splice", "name": "Skarvpunkt", "roles": ["splice-point"] }
+  {
+    "key": "hub",
+    "name": "Nav",
+    "roles": [
+      "hub"
+    ],
+    "attributes": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "backupHours": {
+          "title": "Reservkraft (timmar)",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 720
+        },
+        "aliases": {
+          "title": "Andra namn",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  {
+    "key": "aggregation",
+    "name": "Aggregeringsnod",
+    "roles": [
+      "aggregation"
+    ],
+    "attributes": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "backupHours": {
+          "title": "Reservkraft (timmar)",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 720
+        },
+        "aliases": {
+          "title": "Andra namn",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  {
+    "key": "radio",
+    "name": "Radiosite",
+    "roles": [
+      "access"
+    ],
+    "attributes": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "backupHours": {
+          "title": "Reservkraft (timmar)",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 720
+        },
+        "aliases": {
+          "title": "Andra namn",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  {
+    "key": "cabinet",
+    "name": "Teknikskåp",
+    "roles": [
+      "access"
+    ],
+    "attributes": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "backupHours": {
+          "title": "Reservkraft (timmar)",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 720
+        },
+        "aliases": {
+          "title": "Andra namn",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  {
+    "key": "splice",
+    "name": "Skarvpunkt",
+    "roles": [
+      "splice-point"
+    ],
+    "attributes": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "backupHours": {
+          "title": "Reservkraft (timmar)",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 720
+        },
+        "aliases": {
+          "title": "Andra namn",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
 ]

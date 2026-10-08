@@ -6,6 +6,7 @@ import { DecimalPipe } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   Component,
+  computed,
   effect,
   inject,
   input,
@@ -58,6 +59,17 @@ import { ObjectLinkComponent } from './object-link';
           <dd><cmdb-link [ref]="c.b" [showName]="true" /></dd>
         </dl>
       </section>
+      @if (attributes().length) {
+        <section>
+          <h3>Attribut</h3>
+          <dl class="facts">
+            @for (a of attributes(); track a[0]) {
+              <dt>{{ a[0] }}</dt>
+              <dd class="mono">{{ a[1] }}</dd>
+            }
+          </dl>
+        </section>
+      }
       @if (c.claims?.length) {
         <section>
           <h3>Anspråk på fibrer ({{ c.claims!.length }})</h3>
@@ -210,6 +222,11 @@ import { ObjectLinkComponent } from './object-link';
 export class CablePanelComponent {
   private readonly panels = inject(PanelStack);
   protected readonly kinds = inject(CatalogKinds);
+  /** The cable's attributes, named from its type's schema (#211). */
+  protected readonly attributes = computed(() => {
+    const c = this.cable.value();
+    return c ? this.kinds.attributes('cable', c.typeKey ?? '', c.attributes) : [];
+  });
   protected readonly plan = inject(ActivePlan);
   private readonly http = inject(HttpClient);
   protected readonly conductor = signal(1);

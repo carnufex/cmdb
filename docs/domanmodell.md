@@ -103,6 +103,29 @@ Sitetyper och utrustningskategorier är katalogdata med nyckel, visningsnamn och
 
 En typ kan ha flera roller eller ingen. Okända roller, dubbla nycklar och sitemallar med okänd sitetyp ger fel vid laddning. Avancerad sökning och MCP `describe_catalog` visar namn och roller, och webben hämtar dem från `GET /api/catalog/kinds`. Datageneratorn bygger fortfarande det syntetiska nätet mot den syntetiska katalogens nycklar.
 
+### Attributscheman för siter, kablar och tjänster (#211)
+
+Sitetyper, kabeltyper och tjänstetyper kan ha ett eget `attributes`, ett JSON Schema (2020-12) som för utrustningsmodeller. Utan schema är attributen fria. Fältens `title` är det namn webben och avancerad sökning visar, så en organisation kan döpa sina fält utan kodändring.
+
+```json
+{
+  "key": "hub", "name": "Nav", "roles": ["hub"],
+  "attributes": {
+    "type": "object",
+    "properties": {
+      "backupHours": { "title": "Reservkraft (timmar)", "type": "integer", "minimum": 0 },
+      "aliases": { "title": "Andra namn", "type": "array", "items": { "type": "string" } }
+    }
+  }
+}
+```
+
+- **Tjänstetyper** står i [`catalog/service-types.json`](../catalog/service-types.json) med nyckel, namn och schema. Filen är valfri. Tjänstetyper som finns i databasen men inte i filen visas med sin nyckel och har fria attribut.
+- **Validering vid skrivning:** `set_attributes` på site, utrustning och kabel, `create_site` och `create_cable` med `attributes`, och import till en plan kontrolleras mot typens schema innan de kommer in i planen. Värden är enkla (text, tal, sant/falskt) eller en lista av enkla värden.
+- **Import:** en kolumn (CSV) eller egenskap (GeoJSON) med samma namn som ett fält i typens schema blir ett attribut, tolkat efter fältets typ. Andra kolumner ignoreras.
+- **Visning:** site-, kabel- och tjänstepanelen visar attributen med schemats namn, i schemats ordning, och övriga attribut efter nyckel.
+- **Sökning:** avancerad sökning och MCP `find_sites` tar `siteAttributes`, upp till fem villkor på sitens egna attribut med samma operatorer som för utrustning. `describe_catalog` och `GET /api/query/fields` listar fälten per site-, kabel- och tjänstetyp. Attribut som användarens omfång döljer går inte att söka på, varken på siten eller på utrustningen.
+
 ### Extern katalog
 
 Den syntetiska katalogen i `catalog/` byggs in i API:t och datageneratorn och används som standard. En annan organisations katalog ligger utanför repot (#206, #207): sätt `CMDB_CATALOG_PATH` till en mapp med samma struktur, så läser API:t, datageneratorn och migreringssteget katalogen därifrån i stället.
@@ -112,6 +135,7 @@ Den syntetiska katalogen i `catalog/` byggs in i API:t och datageneratorn och an
   cable-types.json            krävs
   site-types.json             krävs
   equipment-categories.json   krävs
+  service-types.json          valfri
   equipment-types/<key>.json
   classifications/<key>.json  criticality.json krävs
   site-templates/<key>.json
@@ -230,6 +254,7 @@ Siter och kablar kan importeras i bulk till en plan, från CSV eller GeoJSON. Ex
 - **CSV:** en rubrikrad, kommatecken eller semikolon som avgränsare.
   - Kolumner: `kind` (`site` eller `cable`), `code`, `name`, `template` eller `siteType`, och position som `x`/`y` i SWEREF 99 TM eller `lat`/`lon` i WGS 84.
   - Kablar anges med `a`, `b` (sitekoder) och `cableType`.
+  - Kolumner med samma namn som ett fält i site- eller kabeltypens attributschema blir attribut (#211).
 - **GeoJSON:** punkter blir siter och linjer kablar med sin sträckning, med samma namn som egenskaper. Koordinaterna är i SWEREF 99 TM, eller i WGS 84 när de ser ut så.
 - **Kontroll av varje rad:**
   - Typ, mall och kabeltyp ska finnas.

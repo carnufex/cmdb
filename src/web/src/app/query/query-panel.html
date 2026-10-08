@@ -51,6 +51,54 @@
         </div>
       </fieldset>
 
+      @if (siteAttributes().length) {
+        <fieldset>
+          <legend>Siteattribut</legend>
+          <div class="condition">
+            <div class="row">
+              <label>
+                <span>Attribut</span>
+                <select
+                  [value]="siteAttribute().key"
+                  (change)="updateSiteAttribute({ key: $any($event.target).value })"
+                >
+                  <option value="">Inget</option>
+                  @for (a of siteAttributes(); track a.key) {
+                    <option [value]="a.key" [selected]="a.key === siteAttribute().key">
+                      {{ a.title ?? a.key }}
+                    </option>
+                  }
+                </select>
+              </label>
+              @if (siteAttribute().key) {
+                <label class="op">
+                  <span>Villkor</span>
+                  <select
+                    [value]="siteAttribute().op"
+                    (change)="updateSiteAttribute({ op: $any($event.target).value })"
+                  >
+                    @for (op of siteAttributeOps(); track op) {
+                      <option [value]="op" [selected]="op === siteAttribute().op">
+                        {{ opLabels[op] }}
+                      </option>
+                    }
+                  </select>
+                </label>
+                @if (siteAttribute().op !== 'exists') {
+                  <label>
+                    <span>Värde</span>
+                    <input
+                      [value]="siteAttribute().value"
+                      (input)="updateSiteAttribute({ value: $any($event.target).value })"
+                    />
+                  </label>
+                }
+              }
+            </div>
+          </div>
+        </fieldset>
+      }
+
       <fieldset>
         <legend>Har utrustning</legend>
         @for (e of draft().equipment; track $index; let i = $index) {

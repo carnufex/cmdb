@@ -22,10 +22,10 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx, str
         {
             case "create_site":
                 Ids[Planned.ObjectId(op.Id)] = await ScalarAsync<long>("""
-                    INSERT INTO site (code, name, site_type, geom, lifecycle)
-                    VALUES ($1, $2, $3, ST_SetSRID(ST_MakePoint($4, $5), 3006), 'planned') RETURNING id
+                    INSERT INTO site (code, name, site_type, geom, lifecycle, attributes)
+                    VALUES ($1, $2, $3, ST_SetSRID(ST_MakePoint($4, $5), 3006), 'planned', $6::jsonb) RETURNING id
                     """, ct, p.GetProperty("code").GetString()!, p.GetProperty("name").GetString()!, p.GetProperty("siteType").GetString()!,
-                    p.GetProperty("x").GetDouble(), p.GetProperty("y").GetDouble());
+                    p.GetProperty("x").GetDouble(), p.GetProperty("y").GetDouble(), Attributes(p));
                 return true;
 
             case "create_equipment":
@@ -229,8 +229,8 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx, str
         // A route given with the cable (an import, #170) is kept between the two sites; otherwise a straight line.
         var route = p.TryGetProperty("line", out var line) && line.ValueKind == JsonValueKind.Array ? line.EnumerateArray().ToList() : [];
         var cable = await ScalarAsync<long>("""
-            INSERT INTO cable (cable_type_id, code, a_site_id, b_site_id, geom)
-            SELECT t.id, 'NY-' || gen_random_uuid(), a.id, b.id, g
+            INSERT INTO cable (cable_type_id, code, a_site_id, b_site_id, geom, attributes)
+            SELECT t.id, 'NY-' || gen_random_uuid(), a.id, b.id, g, $6::jsonb
             FROM cable_type t, site a, site b,
                  LATERAL (SELECT CASE WHEN cardinality($4::float8[]) >= 2
                      THEN ST_MakeLine(ARRAY[ST_PointOnSurface(a.geom)]
@@ -240,7 +240,7 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx, str
             WHERE t.key = $1 AND a.id = $2 AND b.id = $3
             RETURNING id
             """, ct, typeKey, p.GetProperty("a").GetInt64(), p.GetProperty("b").GetInt64(),
-            route.Select(pt => pt[0].GetDouble()).ToArray(), route.Select(pt => pt[1].GetDouble()).ToArray());
+            route.Select(pt => pt[0].GetDouble()).ToArray(), route.Select(pt => pt[1].GetDouble()).ToArray(), Attributes(p));
         await ExecuteAsync("UPDATE cable SET code = 'KP-' || lpad(id::text, 6, '0') WHERE id = $1", ct, cable);
         Ids[Planned.ObjectId(op.Id)] = cable;
 
@@ -510,6 +510,10 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx, str
         ids.Sort();
         return [.. ids];
     }
+
+    /// <summary>The attributes a create operation gives the new object (#211), or none.</summary>
+    private static string Attributes(JsonElement p) =>
+        p.TryGetProperty("attributes", out var a) && a.ValueKind == JsonValueKind.Object ? a.GetRawText() : "{}";
 
     private static string Table(JsonElement p) => p.GetProperty("type").GetString() switch
     {

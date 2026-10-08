@@ -54,4 +54,5 @@ public sealed record SlotTemplate(string Name, IReadOnlyList<string> Accepts);
 public sealed record Port(string Name, string Type, string? Group, int Position, int Row, int Column);
 
 /// <summary>A cable model from <c>catalog/cable-types.json</c>. Medium is fiber, copper, coax or power.</summary>
-public sealed record CableType(string Key, string Name, string Medium, int ConductorCount, string? ColorCode = null);
+/// <param name="Attributes">Optional JSON Schema for the cable's attributes (#211); without one they are free.</param>
+public sealed record CableType(string Key, string Name, string Medium, int ConductorCount, string? ColorCode = null, JsonElement? Attributes = null);

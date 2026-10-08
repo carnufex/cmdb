@@ -52,6 +52,17 @@ import { ObjectLinkComponent } from './object-link';
       </header>
       <cmdb-classification type="site" [objectId]="s.id" />
       <cmdb-plan-remove type="site" [objectId]="s.id" />
+      @if (attributes().length) {
+        <section>
+          <h3>Attribut</h3>
+          <dl class="facts">
+            @for (a of attributes(); track a[0]) {
+              <dt>{{ a[0] }}</dt>
+              <dd class="mono">{{ a[1] }}</dd>
+            }
+          </dl>
+        </section>
+      }
 
       @for (location of racks(); track location.id) {
         <section>
@@ -189,6 +200,11 @@ export class SitePanelComponent {
   readonly id = input.required<string>();
 
   protected readonly kinds = inject(CatalogKinds);
+  /** The site's attributes, named from its type's schema (#211). */
+  protected readonly attributes = computed(() => {
+    const s = this.site.value();
+    return s ? this.kinds.attributes('site', s.siteType, s.attributes) : [];
+  });
   protected readonly url = computed(() => `/api/${apiPath.site}/${this.id()}`);
   protected readonly site = httpResource<SiteDetail>(() => this.url());
   /** Loaded after the site itself: impact analysis has its own, larger budget. */

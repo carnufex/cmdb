@@ -1,5 +1,6 @@
 import { httpResource } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, effect, inject, input } from '@angular/core';
+import { CatalogKinds } from '../shell/catalog-kinds';
 import { PanelStack } from '../shell/panels';
 import { StatusComponent } from '../shell/status';
 import { apiPath, ServiceDetail } from './models';
@@ -13,7 +14,7 @@ import { traceId } from './trace-model';
   template: `
     @if (service.value(); as s) {
       <header class="header">
-        <div class="kind">Tjänst · {{ s.serviceType }}</div>
+        <div class="kind">Tjänst · {{ kinds.serviceTypeName(s.serviceType) }}</div>
         <div class="code mono">{{ s.code }}</div>
         <div class="title">{{ s.name }}</div>
         <div class="meta">
@@ -71,9 +72,12 @@ export class ServicePanelComponent {
   protected readonly service = httpResource<ServiceDetail>(
     () => `/api/${apiPath.service}/${this.id()}`,
   );
-  protected readonly attributes = computed(() =>
-    Object.entries(this.service.value()?.attributes ?? {}).map(([k, v]) => [k, String(v)] as const),
-  );
+  protected readonly kinds = inject(CatalogKinds);
+  /** The service's attributes, named from its type's schema (#211). */
+  protected readonly attributes = computed(() => {
+    const s = this.service.value();
+    return s ? this.kinds.attributes('service', s.serviceType, s.attributes) : [];
+  });
 
   protected trace(id: number): void {
     this.panels.open({ type: 'trace', id: traceId({ by: 'service', id }) });
