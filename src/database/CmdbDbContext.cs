@@ -51,6 +51,7 @@ public sealed class CmdbDbContext(DbContextOptions<CmdbDbContext> options) : DbC
     public DbSet<ServiceRequest> ServiceRequests => Set<ServiceRequest>();
     public DbSet<Classification> Classifications => Set<Classification>();
     public DbSet<SourceRecord> SourceRecords => Set<SourceRecord>();
+    public DbSet<Reconciliation> Reconciliations => Set<Reconciliation>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

@@ -16,6 +16,7 @@
     <EmbeddedResource Include="..\..\catalog\equipment-categories.json" LogicalName="equipment-categories.json" />
     <EmbeddedResource Include="..\..\catalog\service-types.json" LogicalName="service-types.json" />
     <EmbeddedResource Include="..\..\catalog\source-priority.json" LogicalName="source-priority.json" />
+    <EmbeddedResource Include="..\..\catalog\source-matching.json" LogicalName="source-matching.json" />
     <EmbeddedResource Include="..\..\catalog\classifications\*.json" LogicalName="classifications/%(Filename)%(Extension)" />
     <EmbeddedResource Include="..\..\catalog\site-templates\*.json" LogicalName="site-templates/%(Filename)%(Extension)" />
     <EmbeddedResource Include="..\..\catalog\equipment-images\*.svg;..\..\catalog\equipment-images\*.png" LogicalName="equipment-images/%(Filename)%(Extension)" />

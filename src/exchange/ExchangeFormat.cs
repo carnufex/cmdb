@@ -2,54 +2,53 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Cmdb.Catalog;
-using Cmdb.DataGen.Geo;
 
-namespace Cmdb.DataGen.Exchange;
+namespace Cmdb.Exchange;
 
 // The exchange format for importing an existing network into production (#210): one CSV per kind of object, in a
 // folder. Objects refer to each other by their id in the source system ("id" columns), never by cmdb's ids, so the
 // same files can be imported again and match what is already there. See docs/import.md.
 
 /// <summary>A problem with one row of one file, reported before anything is written.</summary>
-internal sealed record ImportError(string File, int Row, string Object, string Message)
+public sealed record ImportError(string File, int Row, string ObjectId, string Message)
 {
-    public override string ToString() => Row > 0 ? $"{File}:{Row} {Object}: {Message}" : $"{File}: {Message}";
+    public override string ToString() => Row > 0 ? $"{File}:{Row} {ObjectId}: {Message}" : $"{File}: {Message}";
 }
 
-internal sealed record XSite(int Row, string Id, string Code, string Name, string SiteType, double X, double Y, string Lifecycle, string Attributes);
+public sealed record XSite(int Row, string Id, string Code, string Name, string SiteType, double X, double Y, string Lifecycle, string Attributes);
 
-internal sealed record XLocation(int Row, string Id, string Site, string? Parent, string Kind, string Name, short? RackUnits);
+public sealed record XLocation(int Row, string Id, string Site, string? Parent, string Kind, string Name, short? RackUnits);
 
-internal sealed record XEquipment(int Row, string Id, string Site, string? Location, string? Parent, string? Slot, string Name, string Type,
+public sealed record XEquipment(int Row, string Id, string Site, string? Location, string? Parent, string? Slot, string Name, string Type,
     string Lifecycle, short? RackPosition, string Attributes);
 
-internal sealed record XPort(int Row, string Equipment, string Name);
+public sealed record XPort(int Row, string Equipment, string Name);
 
 /// <param name="Route">The cable's route in SWEREF 99 TM as x, y pairs; null runs it straight between its sites.</param>
-internal sealed record XCable(int Row, string Id, string Code, string Type, string A, string B, string Lifecycle, double[]? Route, string Attributes);
+public sealed record XCable(int Row, string Id, string Code, string Type, string A, string B, string Lifecycle, double[]? Route, string Attributes);
 
 /// <summary>A terminal: a port on equipment, or one end of a conductor in a cable.</summary>
-internal readonly record struct XTerminal(string? Equipment, string? Port, string? Cable, int Conductor, char Side)
+public readonly record struct XTerminal(string? Equipment, string? Port, string? Cable, int Conductor, char Side)
 {
     public bool IsPort => Equipment is not null;
 
     public override string ToString() => IsPort ? $"{Equipment} {Port}" : $"{Cable} ledare {Conductor} {Side}";
 }
 
-internal sealed record XConnection(int Row, XTerminal A, XTerminal B, string Kind, string Lifecycle);
+public sealed record XConnection(int Row, XTerminal A, XTerminal B, string Kind, string Lifecycle);
 
-internal sealed record XCircuit(int Row, string Id, string Code, string Layer, string Lifecycle);
+public sealed record XCircuit(int Row, string Id, string Code, string Layer, string Lifecycle);
 
-internal sealed record XHop(int Row, string Circuit, int Seq, XTerminal Terminal, string? ChannelKind, int? ChannelNumber);
+public sealed record XHop(int Row, string Circuit, int Seq, XTerminal Terminal, string? ChannelKind, int? ChannelNumber);
 
-internal sealed record XDependency(int Row, string Circuit, string Carrier);
+public sealed record XDependency(int Row, string Circuit, string Carrier);
 
-internal sealed record XService(int Row, string Id, string Code, string Name, string Type, string Lifecycle, string Attributes);
+public sealed record XService(int Row, string Id, string Code, string Name, string Type, string Lifecycle, string Attributes);
 
-internal sealed record XServiceCircuit(int Row, string Service, string Circuit);
+public sealed record XServiceCircuit(int Row, string Service, string Circuit);
 
 /// <summary>Everything in an exchange folder.</summary>
-internal sealed class ExchangeData
+public sealed class ExchangeData
 {
     /// <summary>The files the folder has. A links file that is there, even empty, is the whole truth for those links.</summary>
     public HashSet<string> Files { get; } = new(StringComparer.Ordinal);
@@ -67,7 +66,7 @@ internal sealed class ExchangeData
     public List<XServiceCircuit> ServiceCircuits { get; } = [];
 }
 
-internal static class ExchangeFormat
+public static class ExchangeFormat
 {
     public const string Sites = "sites.csv";
     public const string Locations = "locations.csv";

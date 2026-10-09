@@ -1,6 +1,6 @@
 [
   { "object": "equipment", "attribute": "placement", "sources": ["acme-nms", "planering"] },
-  { "object": "equipment", "attribute": "attributes.*", "sources": ["acme-nms", "planering"] },
+  { "object": "equipment", "attribute": "attributes.*", "sources": ["acme-nms", "planering"], "autoApply": ["acme-nms"] },
   { "object": "site", "attribute": "position", "sources": ["planering"] },
   { "object": "cable", "attribute": "route", "sources": ["planering"] },
   { "object": "*", "attribute": "lifecycle", "sources": ["planering", "acme-nms", "acme-monitor"] }

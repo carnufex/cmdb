@@ -20,6 +20,12 @@ public class SourceRecord
     public DateTimeOffset ConfirmedAt { get; set; }
 
     /// <summary>
+    /// When a reconciliation (#216) first ran without the source reporting the object; null while it does. The object
+    /// is never removed for it, only reported.
+    /// </summary>
+    public DateTimeOffset? MissingSince { get; set; }
+
+    /// <summary>
     /// The value per attribute as the source reported it: <c>name</c>, <c>lifecycle</c>, <c>position</c> and so on, and
     /// <c>attributes.&lt;key&gt;</c> for the object's own attributes. Geometries that are lines are kept as a hash.
     /// </summary>

@@ -41,6 +41,7 @@ builder.Services.AddDbContext<CmdbDbContext>((sp, o) => o.UseCmdb(sp.GetRequired
 builder.Services.AddSingleton(TypeCatalog.Current);
 // Checked at start like the type catalog, so a broken rule stops the process instead of a later sync (#215).
 builder.Services.AddSingleton(SourcePriority.Current);
+builder.Services.AddSingleton(SourceMatching.Current);
 builder.Services.AddSingleton(new Cmdb.Api.Features.Catalog.CatalogImages(CatalogSource.Current));
 builder.Services.AddCmdbAuthentication(builder.Configuration);
 builder.Services.AddFastEndpoints();
@@ -54,6 +55,8 @@ builder.Services.AddSingleton<Cmdb.Api.Features.Plans.PlanViews>();
 builder.Services.AddScoped<Cmdb.Api.Features.Plans.PlanWrites>();
 builder.Services.AddScoped<Cmdb.Api.Features.Plans.PlanPatterns>();
 builder.Services.AddScoped<Cmdb.Api.Features.Plans.PlanImport>();
+builder.Services.AddScoped<Cmdb.Api.Features.Plans.PlanApplication>();
+builder.Services.AddScoped<Cmdb.Api.Features.Reconciliation.Reconciler>();
 builder.Services.AddScoped<Cmdb.Api.Features.Plans.RoutePlanner>();
 builder.Services.AddScoped<Cmdb.Api.Features.Classifications.ClassificationDerivation>();
 builder.Services.AddScoped<Cmdb.Api.Features.Classifications.ClassificationRules>();

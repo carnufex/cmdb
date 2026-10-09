@@ -26,6 +26,7 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx, str
                     VALUES ($1, $2, $3, ST_SetSRID(ST_MakePoint($4, $5), 3006), 'planned', $6::jsonb) RETURNING id
                     """, ct, p.GetProperty("code").GetString()!, p.GetProperty("name").GetString()!, p.GetProperty("siteType").GetString()!,
                     p.GetProperty("x").GetDouble(), p.GetProperty("y").GetDouble(), Attributes(p));
+                await FromSourceAsync("site", Ids[Planned.ObjectId(op.Id)], p, ct);
                 return true;
 
             case "create_equipment":
@@ -209,6 +210,11 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx, str
             FROM equipment_type t WHERE t.key = $4 RETURNING id
             """, ct, site, location, p.GetProperty("name").GetString()!, typeKey, position);
         Ids[Planned.ObjectId(op.Id)] = equipment;
+        if (p.TryGetProperty("attributes", out var attributes) && attributes.ValueKind == JsonValueKind.Object)
+        {
+            await ExecuteAsync("UPDATE equipment SET attributes = $2::jsonb WHERE id = $1", ct, equipment, attributes.GetRawText());
+        }
+        await FromSourceAsync("equipment", equipment, p, ct);
 
         var ports = PortExpansion.Expand(type);
         var terminals = await NewTerminalsAsync("port", ports.Count, ct);
@@ -220,6 +226,24 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx, str
         for (var i = 0; i < ports.Count; i++)
         {
             Ids[Planned.Terminal(op.Id, ports[i].Position)] = terminals[i];
+        }
+    }
+
+    /// <summary>
+    /// An object reconciliation (#216) creates keeps its source's lifecycle and id, so that the next run matches it on the
+    /// source and id instead of creating it again. Objects planned by hand start as planned, with no source.
+    /// </summary>
+    private async Task FromSourceAsync(string table, long id, JsonElement p, CancellationToken ct)
+    {
+        if (p.TryGetProperty("lifecycle", out var lifecycle) && lifecycle.ValueKind == JsonValueKind.String)
+        {
+            await ExecuteAsync($"UPDATE {table} SET lifecycle = $2::lifecycle_state WHERE id = $1", ct, id, lifecycle.GetString()!);
+        }
+        if (p.TryGetProperty("source", out var source) && source.ValueKind == JsonValueKind.String
+            && p.TryGetProperty("externalId", out var externalId) && externalId.ValueKind == JsonValueKind.String)
+        {
+            await ExecuteAsync($"UPDATE {table} SET source_system = $2, external_id = $3, last_confirmed_at = now() WHERE id = $1", ct,
+                id, source.GetString()!, externalId.GetString()!);
         }
     }
 
@@ -241,8 +265,11 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx, str
             RETURNING id
             """, ct, typeKey, p.GetProperty("a").GetInt64(), p.GetProperty("b").GetInt64(),
             route.Select(pt => pt[0].GetDouble()).ToArray(), route.Select(pt => pt[1].GetDouble()).ToArray(), Attributes(p));
-        await ExecuteAsync("UPDATE cable SET code = 'KP-' || lpad(id::text, 6, '0') WHERE id = $1", ct, cable);
+        // The source's code when reconciliation (#216) creates it, otherwise one of cmdb's own.
+        await ExecuteAsync("UPDATE cable SET code = coalesce($2, 'KP-' || lpad(id::text, 6, '0')) WHERE id = $1", ct, cable,
+            p.TryGetProperty("code", out var code) && code.ValueKind == JsonValueKind.String ? code.GetString()! : DBNull.Value);
         Ids[Planned.ObjectId(op.Id)] = cable;
+        await FromSourceAsync("cable", cable, p, ct);
 
         var count = Planned.ConductorCount(typeKey);
         var conductors = new List<long>();

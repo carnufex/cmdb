@@ -1,11 +1,11 @@
-namespace Cmdb.DataGen.Geo;
+namespace Cmdb.Exchange;
 
 /// <summary>
 /// WGS 84 / ETRS89 latitude and longitude to SWEREF 99 TM (EPSG:3006): transverse Mercator on GRS80,
 /// central meridian 15°E, scale 0.9996, false easting 500 000 m. Gauss–Krüger series as published by
 /// Lantmäteriet; accurate to well under a millimetre within Sweden.
 /// </summary>
-internal static class SwerefTm
+public static class SwerefTm
 {
     private const double A = 6378137.0;
     private const double F = 1 / 298.257222101;

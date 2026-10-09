@@ -6,6 +6,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\catalog\Cmdb.Catalog.csproj" />
+    <ProjectReference Include="..\exchange\Cmdb.Exchange.csproj" />
     <ProjectReference Include="..\database\Cmdb.Database.csproj" />
     <ProjectReference Include="..\graph\Cmdb.Graph.csproj" />
   </ItemGroup>

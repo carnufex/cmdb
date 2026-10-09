@@ -1,3 +1,5 @@
+using Cmdb.Exchange;
+
 namespace Cmdb.DataGen.Geo;
 
 /// <summary>

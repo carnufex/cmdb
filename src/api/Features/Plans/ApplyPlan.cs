@@ -13,78 +13,62 @@ public sealed record ApplyResult(PlanSummary Plan, IReadOnlyList<PlanSummary> Fl
 /// Brings a plan into production (#24, ADR-0005 rule 3): its operations run in one transaction, the change stream (#11)
 /// carries them into the graph, and draft plans building on it are checked against the new production. Those whose
 /// operations no longer fit are flagged. Every dependency must be in production first, and every operation must fit.
+/// Shared by the endpoint and reconciliation (#216), so a trusted source's changes pass the same checks as a person's.
 /// </summary>
-public sealed partial class ApplyPlanEndpoint(RequestDb db, GraphHolder holder, PlanViews views, TrustedApplications trust,
-    Classifications.PlanClassification classification, ILogger<ApplyPlanEndpoint> logger)
-    : Endpoint<PlanIdRequest, ApplyResult>
+public sealed partial class PlanApplication(RequestDb db, GraphHolder holder, PlanViews views, TrustedApplications trust,
+    Classifications.PlanClassification classification, ILogger<PlanApplication> logger)
 {
-    public override void Configure()
-    {
-        Post("/plans/{id}/apply");
-        Roles("cmdb-full");
-    }
-
-    public override async Task HandleAsync(PlanIdRequest req, CancellationToken ct)
+    /// <param name="exception">Why requirements of a classification level may go unmet (#179), or null.</param>
+    public async Task<PlanWrite<ApplyResult>> ApplyAsync(ClaimsPrincipal user, UserScope scope, long planId, string? exception,
+        CancellationToken ct)
     {
         // Agents propose, people decide (#64, ADR-0011): no agent client may bring a plan into production.
-        if (User.FindFirstValue(CmdbClaims.Client) is { } client && trust.AgentClients.Contains(client))
+        if (user.FindFirstValue(CmdbClaims.Client) is { } client && trust.AgentClients.Contains(client))
         {
-            await Send.ResultAsync(TypedResults.Problem("Agenter kan inte föra in planer. En människa granskar och för in dem.",
-                statusCode: StatusCodes.Status403Forbidden));
-            return;
+            return PlanWrite.Fail<ApplyResult>(PlanWriteFailure.Forbidden, "Agenter kan inte föra in planer. En människa granskar och för in dem.");
         }
-        var scope = HttpContext.Scope();
         var graph = holder.Require();
-        if (await views.GetAsync(graph, req.Id, scope, ct) is not { } view)
+        if (await views.GetAsync(graph, planId, scope, ct) is not { } view)
         {
-            await Send.NotFoundAsync(ct);
-            return;
+            return PlanWrite.Fail<ApplyResult>(PlanWriteFailure.NotFound, $"Plan {planId} finns inte.");
         }
         var plan = view.Chain.Plan;
         if (plan.Status != "draft")
         {
-            await PlanSql.ConflictAsync(HttpContext, "Planen är redan införd eller avbruten.", ct);
-            return;
+            return PlanWrite.Fail<ApplyResult>(PlanWriteFailure.Conflict, "Planen är redan införd eller avbruten.");
         }
         var pending = view.Chain.Plans.Where(p => p.Id != plan.Id).Select(p => p.Name).ToList();
         if (pending.Count > 0)
         {
-            await PlanSql.ConflictAsync(HttpContext, $"Beroendena måste föras in först: {string.Join(", ", pending)}.", ct);
-            return;
+            return PlanWrite.Fail<ApplyResult>(PlanWriteFailure.Conflict, $"Beroendena måste föras in först: {string.Join(", ", pending)}.");
         }
         if (view.Problems.Count > 0)
         {
-            await PlanSql.ConflictAsync(HttpContext, $"{view.Problems.Count} operationer passar inte produktion. Åtgärda dem först.", ct);
-            return;
+            return PlanWrite.Fail<ApplyResult>(PlanWriteFailure.Conflict, $"{view.Problems.Count} operationer passar inte produktion. Åtgärda dem först.");
         }
         var blocked = (await ClaimsSql.ConflictsAsync(db, [plan.Id], ct)).Where(c => c.Blocking).ToList();
         if (blocked.Count > 0)
         {
-            await PlanSql.ConflictAsync(HttpContext,
-                $"{blocked.Select(c => c.OperationId).Distinct().Count()} operationer använder resurser som andra har reserverat. {blocked[0].Message(scope)}", ct);
-            return;
+            return PlanWrite.Fail<ApplyResult>(PlanWriteFailure.Conflict,
+                $"{blocked.Select(c => c.OperationId).Distinct().Count()} operationer använder resurser som andra har reserverat. {blocked[0].Message(scope)}");
         }
 
         // A plan that makes requirements of a classification level unmet (a new level-5 switch on a site without the cables or reserve
         // power) is applied only with an explicit exception and a reason, which is kept (#179). Only what the plan itself breaks counts.
-        // Given as a query parameter, so that applying still takes no body (#179).
-        var given = Query<string?>("exception", isRequired: false);
-        var exception = string.IsNullOrWhiteSpace(given) ? null : given.Trim();
         if (exception is { Length: > 500 })
         {
-            await PlanSql.ConflictAsync(HttpContext, "Motiveringen får vara högst 500 tecken.", ct);
-            return;
+            return PlanWrite.Fail<ApplyResult>(PlanWriteFailure.Conflict, "Motiveringen får vara högst 500 tecken.");
         }
         if (await classification.ReportAsync(scope, plan.Id, ct) is { Introduced: > 0 } unmet && exception is null)
         {
             var what = string.Join("; ", unmet.Findings.Where(f => f.Introduced.Count > 0)
                 .Select(f => $"{f.Site.Code} (nivå {f.After}): {string.Join(", ", f.Unmet.Where(r => f.Introduced.Contains(r.Rule)).Select(r => r.Requirement))}"));
-            await PlanSql.ConflictAsync(HttpContext,
-                $"Planen gör {unmet.Introduced} krav ouppfyllda: {what}. Åtgärda dem, eller för in planen med ett undantag och en motivering.", ct);
-            return;
+            return PlanWrite.Fail<ApplyResult>(PlanWriteFailure.Conflict,
+                $"Planen gör {unmet.Introduced} krav ouppfyllda: {what}. Åtgärda dem, eller för in planen med ett undantag och en motivering.");
         }
 
         var operations = view.Chain.Operations;
+        var actor = PlanSql.Actor(user);
         PlanApply run;
         await using (var conn = await db.OpenConnectionAsync(ct))
         await using (var tx = await conn.BeginTransactionAsync(ct))
@@ -97,19 +81,16 @@ public sealed partial class ApplyPlanEndpoint(RequestDb db, GraphHolder holder, 
                 await reader.ReadAsync(ct);
                 if (reader.GetString(0) != "draft" || reader.GetInt32(1) != plan.Version)
                 {
-                    await reader.DisposeAsync();
-                    await PlanSql.ConflictAsync(HttpContext, "Planen ändrades under tiden. Försök igen.", ct);
-                    return;
+                    return PlanWrite.Fail<ApplyResult>(PlanWriteFailure.Conflict, "Planen ändrades under tiden. Försök igen.");
                 }
             }
-            run = new PlanApply(conn, tx, PlanSql.Actor(User));
+            run = new PlanApply(conn, tx, actor);
             foreach (var op in operations)
             {
                 if (!await run.RunAsync(op, ct))
                 {
                     await tx.RollbackAsync(ct);
-                    await PlanSql.ConflictAsync(HttpContext, $"Operation {op.Seq} passar inte längre produktion. Inget har ändrats.", ct);
-                    return;
+                    return PlanWrite.Fail<ApplyResult>(PlanWriteFailure.Conflict, $"Operation {op.Seq} passar inte längre produktion. Inget har ändrats.");
                 }
             }
             await using (var cmd = new NpgsqlCommand("""
@@ -119,7 +100,7 @@ public sealed partial class ApplyPlanEndpoint(RequestDb db, GraphHolder holder, 
                 """, conn, tx))
             {
                 cmd.Parameters.Add(new() { Value = plan.Id });
-                cmd.Parameters.Add(new() { Value = PlanSql.Actor(User) });
+                cmd.Parameters.Add(new() { Value = actor });
                 cmd.Parameters.Add(new() { Value = (object?)exception ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text });
                 await cmd.ExecuteNonQueryAsync(ct);
             }
@@ -129,13 +110,12 @@ public sealed partial class ApplyPlanEndpoint(RequestDb db, GraphHolder holder, 
             await run.RewriteDependentsAsync(await PlanSql.DependentsAsync(db, plan.Id, ct), ct);
             await tx.CommitAsync(ct);
         }
-        var actor = PlanSql.Actor(User);
         Applied(logger, plan.Id, operations.Count, actor);
 
         // Production as it will be once the change stream has caught up: the graph plus this plan's connections.
         var (after, _) = PlanViews.Build(graph, operations, run.Production);
         var flagged = await FlagDependentsAsync(db, views, after, plan, ct);
-        await Send.OkAsync(new ApplyResult((await PlanSql.SummariesAsync(db, [plan.Id], ct)).Single(), flagged), ct);
+        return new(new ApplyResult((await PlanSql.SummariesAsync(db, [plan.Id], ct)).Single(), flagged));
     }
 
     /// <summary>Re-checks every draft plan that builds on the applied one, directly or not, and flags those that no longer fit.</summary>
@@ -163,6 +143,38 @@ public sealed partial class ApplyPlanEndpoint(RequestDb db, GraphHolder holder, 
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Plan {Plan} applied: {Operations} operation(s) by {Actor}")]
     private static partial void Applied(ILogger logger, long plan, int operations, string actor);
+}
+
+/// <summary>Brings a plan into production (#24); see <see cref="PlanApplication"/>.</summary>
+public sealed class ApplyPlanEndpoint(PlanApplication application) : Endpoint<PlanIdRequest, ApplyResult>
+{
+    public override void Configure()
+    {
+        Post("/plans/{id}/apply");
+        Roles("cmdb-full");
+    }
+
+    public override async Task HandleAsync(PlanIdRequest req, CancellationToken ct)
+    {
+        // Given as a query parameter, so that applying still takes no body (#179).
+        var given = Query<string?>("exception", isRequired: false);
+        var result = await application.ApplyAsync(User, HttpContext.Scope(), req.Id, string.IsNullOrWhiteSpace(given) ? null : given.Trim(), ct);
+        switch (result.Failure)
+        {
+            case PlanWriteFailure.Forbidden:
+                await Send.ResultAsync(TypedResults.Problem(result.Error, statusCode: StatusCodes.Status403Forbidden));
+                return;
+            case PlanWriteFailure.NotFound:
+                await Send.NotFoundAsync(ct);
+                return;
+            case PlanWriteFailure.None:
+                await Send.OkAsync(result.Value!, ct);
+                return;
+            default:
+                await PlanSql.ConflictAsync(HttpContext, result.Error!, ct);
+                return;
+        }
+    }
 }
 
 /// <summary>Cancels a draft plan (ADR-0005 rule 4): every draft plan building on it, directly or not, is flagged.</summary>
