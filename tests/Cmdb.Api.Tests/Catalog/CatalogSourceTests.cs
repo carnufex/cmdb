@@ -39,6 +39,46 @@ public sealed class CatalogSourceTests : IDisposable
     }
 
     [Fact]
+    public void Panel_images_come_from_the_folder_and_must_be_there()
+    {
+        CopyEmbedded();
+        var source = CatalogSource.FromPath(_folder);
+        source.Image("acme-odf-96-front.svg").ShouldBe(CatalogSource.Embedded.Image("acme-odf-96-front.svg"));
+
+        File.Delete(Path.Combine(_folder, CatalogSource.ImageFolder, "acme-pp-24-front.svg"));
+
+        Should.Throw<InvalidOperationException>(() => TypeCatalog.Load(CatalogSource.FromPath(_folder)))
+            .Message.ShouldContain("acme-pp-24.json: front image 'acme-pp-24-front.svg' is missing from equipment-images/");
+    }
+
+    [Theory]
+    [InlineData("../cable-types.json")]
+    [InlineData("..%2Fcable-types.json")]
+    [InlineData("equipment-types/acme-ix-8.json")]
+    [InlineData("/etc/passwd")]
+    [InlineData("acme-odf-96-front.SVG")]
+    [InlineData("nope.svg")]
+    public void Only_plain_image_names_in_the_image_folder_are_read(string file)
+    {
+        CopyEmbedded();
+        File.WriteAllText(Path.Combine(_folder, "secret.svg"), "<svg/>");
+
+        CatalogSource.FromPath(_folder).Image(file).ShouldBeNull();
+        CatalogSource.Embedded.Image(file).ShouldBeNull();
+    }
+
+    [Fact]
+    public void Every_embedded_image_is_used_by_a_model()
+    {
+        var used = TypeCatalog.Load(CatalogSource.Embedded).Types
+            .SelectMany(t => new[] { t.Panel.Images?.Front, t.Panel.Images?.Back })
+            .OfType<PanelImage>().Select(i => i.File).ToHashSet();
+
+        EmbeddedImages.ShouldNotBeEmpty();
+        EmbeddedImages.ShouldAllBe(f => used.Contains(f));
+    }
+
+    [Fact]
     public void A_missing_folder_is_an_error_naming_the_variable()
     {
         var missing = Path.Combine(_folder, "nope");
@@ -82,5 +122,15 @@ public sealed class CatalogSourceTests : IDisposable
         {
             File.WriteAllText(Path.Combine(_folder, file), CatalogSource.Embedded.Read(file));
         }
+        Directory.CreateDirectory(Path.Combine(_folder, CatalogSource.ImageFolder));
+        foreach (var file in EmbeddedImages)
+        {
+            File.WriteAllBytes(Path.Combine(_folder, CatalogSource.ImageFolder, file), CatalogSource.Embedded.Image(file)!);
+        }
     }
+
+    private static IEnumerable<string> EmbeddedImages =>
+        typeof(CatalogSource).Assembly.GetManifestResourceNames()
+            .Where(n => n.StartsWith(CatalogSource.ImageFolder + "/", StringComparison.Ordinal))
+            .Select(n => n[(CatalogSource.ImageFolder.Length + 1)..]);
 }

@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { PanelPort, portInDirection, portRange, portStatus } from './front-panel-model';
+import {
+  drawsImage,
+  imageSides,
+  PanelPort,
+  portInDirection,
+  portRange,
+  portStatus,
+} from './front-panel-model';
 
 function port(
   id: number,
@@ -103,5 +110,35 @@ describe('portInDirection', () => {
     expect(portInDirection(ports, ports[3], 'ArrowUp')?.terminalId).toBe(2);
     expect(portInDirection(ports, ports[0], 'ArrowLeft')).toBeNull();
     expect(portInDirection(ports, ports[0], 'Enter')).toBeNull();
+  });
+});
+
+describe('panel pictures (#214)', () => {
+  const boxed = (id: number, x: number, y: number, side: 'front' | 'back' = 'front') => ({
+    ...port(id, 0, 0),
+    box: { side, x, y, width: 26, height: 20 },
+  });
+  // A switch in zigzag: odd ports on top, even below, 30 px apart.
+  const sw = [boxed(1, 60, 18), boxed(2, 60, 44), boxed(3, 90, 18), boxed(4, 90, 44)];
+  const front = { file: 'f.svg', width: 960, height: 88 };
+
+  it('draws the picture only when every port is placed on a side that has one', () => {
+    expect(imageSides({ front, back: null })).toEqual(['front']);
+    expect(drawsImage({ front }, sw)).toBe(true);
+    expect(drawsImage(null, sw)).toBe(false);
+    expect(drawsImage({ front }, [...sw, port(5, 0, 0)])).toBe(false);
+    expect(drawsImage({ front }, [...sw, boxed(5, 0, 0, 'back')])).toBe(false);
+  });
+
+  it('moves by the centres of the areas, staying on the row before changing it', () => {
+    expect(portInDirection(sw, sw[0], 'ArrowRight', true)?.terminalId).toBe(3);
+    expect(portInDirection(sw, sw[0], 'ArrowDown', true)?.terminalId).toBe(2);
+    expect(portInDirection(sw, sw[3], 'ArrowLeft', true)?.terminalId).toBe(2);
+    expect(portInDirection(sw, sw[2], 'ArrowRight', true)).toBeNull();
+  });
+
+  it('does not cross to the other side', () => {
+    const ports = [...sw, boxed(9, 200, 18, 'back')];
+    expect(portInDirection(ports, sw[2], 'ArrowRight', true)).toBeNull();
   });
 });

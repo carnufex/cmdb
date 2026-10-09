@@ -1,4 +1,4 @@
-import { EquipmentDetail } from './models';
+import { EquipmentDetail, PanelImages, PanelSide } from './models';
 
 export type PanelPort = EquipmentDetail['ports'][number];
 
@@ -57,28 +57,60 @@ const steps: Record<string, [number, number]> = {
   ArrowDown: [1, 0],
 };
 
-/** The nearest port in the arrow's direction on the panel grid, or null at the edge. */
+/** The sides that have a picture, front first; empty when the panel is drawn as a grid. */
+export function imageSides(images: PanelImages | null | undefined): PanelSide[] {
+  return (['front', 'back'] as const).filter((s) => images?.[s]);
+}
+
+/** Whether the panel can be drawn as its picture (#214): there is one and every port is placed on it. */
+export function drawsImage(
+  images: PanelImages | null | undefined,
+  ports: readonly PanelPort[],
+): boolean {
+  return imageSides(images).length > 0 && ports.every((p) => p.box && images?.[p.box.side]);
+}
+
+/** Where a port sits for arrow keys: its grid cell, or the centre of its area on the picture. */
+function place(p: PanelPort, image: boolean): [number, number] {
+  return image && p.box
+    ? [p.box.y + p.box.height / 2, p.box.x + p.box.width / 2]
+    : [p.row, p.column];
+}
+
+/**
+ * The nearest port in the arrow's direction, or null at the edge: on the panel grid, or on the picture (#214) among
+ * the ports on the same side.
+ */
 export function portInDirection(
   ports: readonly PanelPort[],
   from: PanelPort,
   key: string,
+  image = false,
 ): PanelPort | null {
   const step = steps[key];
   if (!step) {
     return null;
   }
   const [dr, dc] = step;
+  const [fromY, fromX] = place(from, image);
+  // On the grid the nearest row or column wins outright; on the picture a pixel along the arrow weighs four across it.
+  const along = image ? 4 : 100;
   let best: PanelPort | null = null;
   let bestDistance = Infinity;
   for (const p of ports) {
-    const r = p.row - from.row;
-    const c = p.column - from.column;
+    if (image && p.box?.side !== from.box?.side) {
+      continue;
+    }
+    const [y, x] = place(p, image);
+    const r = y - fromY;
+    const c = x - fromX;
     // Ahead in the direction, preferring the same row or column.
     const ahead = dr !== 0 ? Math.sign(r) === dr : Math.sign(c) === dc;
     if (!ahead) {
       continue;
     }
-    const distance = dr !== 0 ? Math.abs(r) * 100 + Math.abs(c) : Math.abs(c) * 100 + Math.abs(r);
+    const distance =
+      dr !== 0 ? Math.abs(r) * along + Math.abs(c) : Math.abs(c) * along + Math.abs(r);
     if (distance < bestDistance) {
       best = p;
       bestDistance = distance;

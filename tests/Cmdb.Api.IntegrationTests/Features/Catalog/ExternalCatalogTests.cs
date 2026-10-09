@@ -39,6 +39,18 @@ public sealed class ExternalCatalogTests(ApiFactory factory)
     }
 
     [Fact]
+    public void Panel_images_come_from_the_same_folder()
+    {
+        var source = CatalogSource.FromPath(Folder);
+        var type = TypeCatalog.Load(source).Find("globex-sw-4")!;
+
+        type.Panel.Images!.Front!.File.ShouldBe("globex-sw-4-front.png");
+        source.Image("globex-sw-4-front.png")!.Take(4).ShouldBe(new byte[] { 0x89, (byte)'P', (byte)'N', (byte)'G' });
+        CatalogSource.Embedded.Image("globex-sw-4-front.png").ShouldBeNull();
+        PortExpansion.Expand(type).Select(p => p.Box!.X).ShouldBe([20, 60, 100, 140]);
+    }
+
+    [Fact]
     public void Site_types_and_categories_with_other_names_keep_their_roles()
     {
         var catalog = TypeCatalog.Load(CatalogSource.FromPath(Folder));

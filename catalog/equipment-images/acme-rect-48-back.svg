@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 176" width="960" height="176">
+<!-- Fictional Acme equipment for the synthetic catalog (#214). -->
+<rect x="0" y="0" width="960" height="176" rx="4" fill="#3b4048"/>
+<rect x="22" y="2" width="916" height="172" rx="3" fill="#4a5059" stroke="#2a2e34"/>
+<circle cx="11" cy="52.8" r="4" fill="#23272c"/>
+<circle cx="11" cy="123.19999999999999" r="4" fill="#23272c"/>
+<circle cx="949" cy="52.8" r="4" fill="#23272c"/>
+<circle cx="949" cy="123.19999999999999" r="4" fill="#23272c"/>
+<text x="32" y="16" font-family="Arial, sans-serif" font-size="10" font-weight="bold" fill="#e7eaee">ACME POWER</text>
+<text x="32" y="28" font-family="Arial, sans-serif" font-size="8" fill="#b9c0c8">RECT-48 · baksida</text>
+<rect x="40" y="60" width="60" height="50" rx="4" fill="#1b1e22" stroke="#7d858f"/>
+<text x="70" y="124" font-family="Arial, sans-serif" font-size="7" text-anchor="middle" fill="#c9d0d7">AC IN</text>
+<rect x="180" y="66" width="50" height="40" rx="3" fill="#1b1e22" stroke="#7d858f"/>
+<circle cx="195" cy="86" r="7" fill="#b33a3a"/>
+<circle cx="215" cy="86" r="7" fill="#1c1c1c" stroke="#7d858f"/>
+<text x="205" y="120" font-family="Arial, sans-serif" font-size="7" text-anchor="middle" fill="#c9d0d7">OUT 1</text>
+<rect x="260" y="66" width="50" height="40" rx="3" fill="#1b1e22" stroke="#7d858f"/>
+<circle cx="275" cy="86" r="7" fill="#b33a3a"/>
+<circle cx="295" cy="86" r="7" fill="#1c1c1c" stroke="#7d858f"/>
+<text x="285" y="120" font-family="Arial, sans-serif" font-size="7" text-anchor="middle" fill="#c9d0d7">OUT 2</text>
+<rect x="340" y="66" width="50" height="40" rx="3" fill="#1b1e22" stroke="#7d858f"/>
+<circle cx="355" cy="86" r="7" fill="#b33a3a"/>
+<circle cx="375" cy="86" r="7" fill="#1c1c1c" stroke="#7d858f"/>
+<text x="365" y="120" font-family="Arial, sans-serif" font-size="7" text-anchor="middle" fill="#c9d0d7">OUT 3</text>
+<rect x="420" y="66" width="50" height="40" rx="3" fill="#1b1e22" stroke="#7d858f"/>
+<circle cx="435" cy="86" r="7" fill="#b33a3a"/>
+<circle cx="455" cy="86" r="7" fill="#1c1c1c" stroke="#7d858f"/>
+<text x="445" y="120" font-family="Arial, sans-serif" font-size="7" text-anchor="middle" fill="#c9d0d7">OUT 4</text>
+<rect x="500" y="66" width="50" height="40" rx="3" fill="#1b1e22" stroke="#7d858f"/>
+<circle cx="515" cy="86" r="7" fill="#b33a3a"/>
+<circle cx="535" cy="86" r="7" fill="#1c1c1c" stroke="#7d858f"/>
+<text x="525" y="120" font-family="Arial, sans-serif" font-size="7" text-anchor="middle" fill="#c9d0d7">OUT 5</text>
+<rect x="580" y="66" width="50" height="40" rx="3" fill="#1b1e22" stroke="#7d858f"/>
+<circle cx="595" cy="86" r="7" fill="#b33a3a"/>
+<circle cx="615" cy="86" r="7" fill="#1c1c1c" stroke="#7d858f"/>
+<text x="605" y="120" font-family="Arial, sans-serif" font-size="7" text-anchor="middle" fill="#c9d0d7">OUT 6</text>
+<rect x="660" y="66" width="50" height="40" rx="3" fill="#1b1e22" stroke="#7d858f"/>
+<circle cx="675" cy="86" r="7" fill="#b33a3a"/>
+<circle cx="695" cy="86" r="7" fill="#1c1c1c" stroke="#7d858f"/>
+<text x="685" y="120" font-family="Arial, sans-serif" font-size="7" text-anchor="middle" fill="#c9d0d7">OUT 7</text>
+<rect x="740" y="66" width="50" height="40" rx="3" fill="#1b1e22" stroke="#7d858f"/>
+<circle cx="755" cy="86" r="7" fill="#b33a3a"/>
+<circle cx="775" cy="86" r="7" fill="#1c1c1c" stroke="#7d858f"/>
+<text x="765" y="120" font-family="Arial, sans-serif" font-size="7" text-anchor="middle" fill="#c9d0d7">OUT 8</text>
+</svg>

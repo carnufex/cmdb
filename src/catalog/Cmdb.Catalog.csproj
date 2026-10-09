@@ -17,5 +17,6 @@
     <EmbeddedResource Include="..\..\catalog\service-types.json" LogicalName="service-types.json" />
     <EmbeddedResource Include="..\..\catalog\classifications\*.json" LogicalName="classifications/%(Filename)%(Extension)" />
     <EmbeddedResource Include="..\..\catalog\site-templates\*.json" LogicalName="site-templates/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="..\..\catalog\equipment-images\*.svg;..\..\catalog\equipment-images\*.png" LogicalName="equipment-images/%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

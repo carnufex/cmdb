@@ -131,8 +131,9 @@ public sealed class TypeCatalog
     /// <param name="siteTypesJson">site-types.json; null takes the embedded one.</param>
     /// <param name="categoriesJson">equipment-categories.json; null takes the embedded one.</param>
     /// <param name="serviceTypesJson">service-types.json; null takes the embedded one, <c>[]</c> is none.</param>
+    /// <param name="imageExists">Whether a panel image is in the catalog's <c>equipment-images/</c> (#214); null skips the check.</param>
     public static TypeCatalog Parse(IEnumerable<(string File, string Json)> files, string cableTypesJson = "[]",
-        string? siteTypesJson = null, string? categoriesJson = null, string? serviceTypesJson = null)
+        string? siteTypesJson = null, string? categoriesJson = null, string? serviceTypesJson = null, Func<string, bool>? imageExists = null)
     {
         var types = new List<EquipmentType>();
         var schemas = new Dictionary<string, JsonSchema>(StringComparer.Ordinal);
@@ -168,7 +169,7 @@ public sealed class TypeCatalog
             }
 
             var before = errors.Count;
-            CatalogRules.Check(file, type, categoryByKey, errors);
+            CatalogRules.Check(file, type, categoryByKey, errors, imageExists);
             if (errors.Count == before)
             {
                 try
@@ -248,7 +249,7 @@ public sealed class TypeCatalog
             string Required(string file) =>
                 source.Read(file) ?? throw new InvalidOperationException("Invalid type catalog:" + Environment.NewLine + $"{file}: missing");
             return Parse(source.Files("equipment-types"), Required("cable-types.json"), Required("site-types.json"), Required("equipment-categories.json"),
-                source.Read("service-types.json") ?? "[]");
+                source.Read("service-types.json") ?? "[]", file => source.Image(file) is not null);
         }
         catch (InvalidOperationException ex)
         {

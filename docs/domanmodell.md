@@ -80,6 +80,27 @@ En fil per modell i [`catalog/equipment-types/`](../catalog/equipment-types/). F
 - **Sitemallar** (`catalog/site-templates/<key>.json`, #26) beskriver en sitetyp med utrustning (modell, namnmönster med `{code}`, rack) och intern kabeldragning (port till port). De valideras mot utrustningstyperna vid laddning och används i planer.
 - Katalogen valideras vid laddning (unika namn, portar inom panelen, inga överlapp, giltigt schema, kända kategorier) och synkas till `equipment_type` i samma steg som migreringarna. Om en portmall ändras genereras inte portarna om på befintlig utrustning.
 
+### Bild per modell (#214)
+
+En modell kan ha en bild av framsidan och, om portar sitter där, av baksidan. Portarna placeras då på bilden som klickbara ytor. Utan bild ritas panelen som rutnätet ovan.
+
+```json
+"panel": {
+  "rows": 2, "columns": 26,
+  "images": { "front": { "file": "acme-ax-48-front.svg", "width": 960, "height": 88 } }
+},
+"ports": [
+  { "name": "ge-0/0/{n}", "range": [1, 48], "type": "RJ45", "group": "access", "at": [0, 0], "layout": "zigzag",
+    "image": { "side": "front", "at": [60, 18], "size": [26, 20], "step": [30, 26] } }
+]
+```
+
+- **Bilderna** ligger i `equipment-images/` i katalogen och följer med den, inbyggda eller från `CMDB_CATALOG_PATH`. Filnamnet ska vara gemener och sluta på `.svg` eller `.png`. Mappar är inte tillåtna. `width` och `height` är koordinatsystemet som portarna placeras i, och bilden skalas till det.
+- **Portens yta** är `at` (övre vänstra hörnet, `[x, y]`) och `size` på sidan `front` eller `back`. I ett intervall stegar porten med `step` (`[dx, dy]`) i samma `layout` som i rutnätet: en kolumn är ett steg åt höger, en rad ett steg nedåt. Rutnätet (`at` i celler) finns kvar och används när bilden inte kan ritas.
+- **Validering:** har modellen bild ska varje port ha en yta på en sida som har bild. Ytan ska ligga inom bilden och får inte överlappa någon annan port på samma sida. Bildfilen ska finnas i katalogen.
+- **API:** `GET /api/equipment/{id}` har bilderna i `panel.images` och portens yta i `box`. Bilden hämtas från `GET /api/catalog/images/{fil}`, som kräver inloggning som resten av API:t. SVG skickas med en Content-Security-Policy som inte kör skript.
+- Den syntetiska katalogen har fiktiva Acme-bilder för AX-48, PP-24, ODF-96 och RECT-48. RECT-48 har ström in och ut på baksidan. Tillverkarnas egna bilder hör hemma i organisationens egen katalog, aldrig i det här repot.
+
 ### Sitetyper, kategorier och roller
 
 Sitetyper och utrustningskategorier är katalogdata med nyckel, visningsnamn och **roller** (#208). Koden frågar efter roller, aldrig efter typnamn. En organisation kan därför kalla sina siter och kategorier vad den vill och ändå få planer, risker, klassningsförslag, ruttförslag, karta och graf som hittar nav och aggregeringsnoder.
@@ -137,6 +158,7 @@ Den syntetiska katalogen i `catalog/` byggs in i API:t och datageneratorn och an
   equipment-categories.json   krävs
   service-types.json          valfri
   equipment-types/<key>.json
+  equipment-images/<fil>      valfri, bilder som modellerna pekar ut (#214)
   classifications/<key>.json  criticality.json krävs
   site-templates/<key>.json
 ```

@@ -3,9 +3,28 @@
   "manufacturer": "Globex Networks",
   "model": "SW-4",
   "category": "vaxel",
-  "panel": { "rows": 1, "columns": 4 },
+  "panel": {
+    "rows": 1,
+    "columns": 4,
+    "images": {
+      "front": { "file": "globex-sw-4-front.png", "width": 200, "height": 40 }
+    }
+  },
   "ports": [
-    { "name": "p{n}", "range": [1, 4], "type": "SFP", "group": "access", "at": [0, 0], "layout": "row" }
+    {
+      "name": "p{n}",
+      "range": [1, 4],
+      "type": "SFP",
+      "group": "access",
+      "at": [0, 0],
+      "layout": "row",
+      "image": {
+        "side": "front",
+        "at": [20, 10],
+        "size": [30, 20],
+        "step": [40, 0]
+      }
+    }
   ],
   "attributes": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",

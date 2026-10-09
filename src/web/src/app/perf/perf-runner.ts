@@ -1,6 +1,7 @@
 import { inject, Injectable } from '@angular/core';
 import { Auth } from '../auth/auth';
 import { GraphView } from '../graph/graph-view';
+import { FrontPanelView } from '../objects/front-panel-view';
 import { GRID, HOME_EXTENT } from '../map/map-grid';
 import { MapView } from '../map/map-view';
 import { examples, QueryFields, toRequest } from '../query/query-model';
@@ -34,6 +35,7 @@ export class PerfRunner {
   private readonly auth = inject(Auth);
   private readonly mapView = inject(MapView);
   private readonly graphView = inject(GraphView);
+  private readonly frontPanelView = inject(FrontPanelView);
 
   async run(onProgress: (p: Progress) => void, signal: AbortSignal): Promise<Measurement[]> {
     const results: Measurement[] = [];
@@ -144,6 +146,22 @@ export class PerfRunner {
         summarize(
           'graph',
           `Grannskapsgraf (bildtid, ${nodes} siter)`,
+          frames.map((f) => ({ server: null, browser: f })),
+          33,
+          'mål ≥ 30 fps, ej i budgeten',
+        ),
+      );
+    }
+
+    // A front panel drawn as its picture (#214), when one is shown: a moving range marked every frame.
+    const panel = this.frontPanelView.renderBenchmark;
+    if (panel) {
+      onProgress({ label: 'Frontpanel med bild: markerar portintervall', done: 0, total: 1 });
+      const { model, ports, frames } = await panel(signal);
+      results.push(
+        summarize(
+          'panel',
+          `Frontpanel med bild (bildtid, ${model}, ${ports} portar)`,
           frames.map((f) => ({ server: null, browser: f })),
           33,
           'mål ≥ 30 fps, ej i budgeten',

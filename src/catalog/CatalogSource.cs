@@ -41,6 +41,16 @@ public abstract class CatalogSource
     /// <summary>The file at <paramref name="file"/> (e.g. <c>cable-types.json</c>), or null when it is missing.</summary>
     public abstract string? Read(string file);
 
+    /// <summary>
+    /// The panel image <paramref name="file"/> in <c>equipment-images/</c> (#214), or null when it is missing or the name is
+    /// not a plain image file name.
+    /// </summary>
+    public byte[]? Image(string file) => CatalogRules.ImageFile().IsMatch(file) ? ReadBytes(ImageFolder + "/" + file) : null;
+
+    public const string ImageFolder = "equipment-images";
+
+    protected abstract byte[]? ReadBytes(string file);
+
     public override string ToString() => Name;
 
     private sealed class EmbeddedSource(Assembly assembly) : CatalogSource
@@ -66,6 +76,18 @@ public abstract class CatalogSource
             using var reader = new StreamReader(stream);
             return reader.ReadToEnd();
         }
+
+        protected override byte[]? ReadBytes(string file)
+        {
+            using var stream = assembly.GetManifestResourceStream(file);
+            if (stream is null)
+            {
+                return null;
+            }
+            using var copy = new MemoryStream();
+            stream.CopyTo(copy);
+            return copy.ToArray();
+        }
     }
 
     private sealed class DirectorySource(string root) : CatalogSource
@@ -87,6 +109,12 @@ public abstract class CatalogSource
         {
             var path = System.IO.Path.Combine(root, file);
             return File.Exists(path) ? File.ReadAllText(path) : null;
+        }
+
+        protected override byte[]? ReadBytes(string file)
+        {
+            var path = System.IO.Path.Combine(root, file);
+            return File.Exists(path) ? File.ReadAllBytes(path) : null;
         }
     }
 }
