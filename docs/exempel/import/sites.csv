@@ -1,0 +1,3 @@
+id,code,name,siteType,lat,lon,lifecycle,backupHours
+ex-site-1,EX-NAV-1,Exempelnav,hub,63.8258,20.2630,in_service,24
+ex-site-2,EX-RAD-1,Exempelradio,radio,63.8400,20.3000,in_service,4

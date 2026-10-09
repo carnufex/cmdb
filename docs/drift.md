@@ -91,6 +91,18 @@ Skriptet kör datagen som ett Job i namnrymden `cmdb` med imagen `cmdb-datagen` 
 
 Använd inte `kubectl port-forward` för att ladda full skala: tunneln tappar anslutningen mitt i en stor `COPY`.
 
+### Import av ett befintligt nät
+
+Ett nät i utbytesformatet ([import.md](import.md), #210) läses in med datagen-imagen som ett Job, precis som laddningen ovan men med argumenten:
+
+```yaml
+args: ["import", "--from", "/import", "--source", "<källsystem>"]
+```
+
+- **Mappen** monteras skrivskyddat på `/import`, och samma katalog som API:t monteras med `CMDB_CATALOG_PATH`. Riktig data ligger i den organisationens egna repo eller volym, aldrig här (ADR-0018).
+- **Prova först med `--dry-run`.** Den kontrollerar varje rad och rapporterar fel per fil och rad utan att skriva.
+- **Utan `--reset`:** importen skriver över ingenting. Den skapar och uppdaterar objekt från källsystemet och kan köras igen. Grafen laddas om av sig själv via ändringsströmmen, så API:t behöver inte startas om.
+
 ## Prestandamätning
 
 `scripts/perf.sh` mäter prestandabudgeten ([plan.md](plan.md#prestandabudget)) med k6 (#13), med stickprov ur det laddade nätet och serverns p95 (`Server-Timing`) mot budgeten. GitHub Actions är avstängt, så det här är det manuella jobbet.

@@ -1,0 +1,6 @@
+id,site,location,parent,slot,name,type,lifecycle,rackPosition,serialNumber,attributes
+ex-e1,ex-site-1,ex-k1,,,EX-NAV-1 CR-8 1,acme-cr-8,in_service,1,SN-EX-0001,"{""asNumber"": 64512}"
+ex-e2,ex-site-1,,ex-e1,1,EX-NAV-1 LC-24X 1,acme-lc-24x,in_service,,SN-EX-0002,
+ex-e3,ex-site-1,ex-k1,,,EX-NAV-1 ODF-24 1,acme-odf-24,in_service,,,
+ex-e4,ex-site-2,ex-k2,,,EX-RAD-1 ODF-24 1,acme-odf-24,in_service,,,
+ex-e5,ex-site-2,ex-k2,,,EX-RAD-1 AX-24 1,acme-ax-24,in_service,,SN-EX-0005,"{""managementIp"": ""10.0.0.5""}"

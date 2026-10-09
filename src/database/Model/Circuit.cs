@@ -101,6 +101,8 @@ internal sealed class ServiceConfiguration : IEntityTypeConfiguration<Service>
         e.HasIndex(x => x.Code, "ix_service_code_pattern").HasOperators("text_pattern_ops").HasDatabaseName("ix_service_code_pattern");
         e.HasIndex(x => x.Code, "ix_service_code_trgm").HasMethod("gin").HasOperators("gin_trgm_ops").HasDatabaseName("ix_service_code_trgm");
         e.HasIndex(x => x.Name, "ix_service_name_trgm").HasMethod("gin").HasOperators("gin_trgm_ops").HasDatabaseName("ix_service_name_trgm");
+        // Imports match objects on their source system and id there (#210).
+        e.HasIndex(x => new { x.SourceSystem, x.ExternalId }).IsUnique().HasFilter("external_id IS NOT NULL");
         e.Property(x => x.Attributes).HasColumnType("jsonb").HasDefaultValueSql("'{}'");
     }
 }
@@ -114,6 +116,8 @@ internal sealed class CircuitConfiguration : IEntityTypeConfiguration<Circuit>
         e.HasIndex(x => x.Code).IsUnique();
         e.HasIndex(x => x.Code, "ix_circuit_code_pattern").HasOperators("text_pattern_ops").HasDatabaseName("ix_circuit_code_pattern");
         e.HasIndex(x => x.Code, "ix_circuit_code_trgm").HasMethod("gin").HasOperators("gin_trgm_ops").HasDatabaseName("ix_circuit_code_trgm");
+        // Imports match objects on their source system and id there (#210).
+        e.HasIndex(x => new { x.SourceSystem, x.ExternalId }).IsUnique().HasFilter("external_id IS NOT NULL");
         e.HasOne(x => x.ATerminal).WithMany().HasForeignKey(x => x.ATerminalId).OnDelete(DeleteBehavior.Restrict);
         e.HasOne(x => x.BTerminal).WithMany().HasForeignKey(x => x.BTerminalId).OnDelete(DeleteBehavior.Restrict);
     }

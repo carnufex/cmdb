@@ -15,6 +15,10 @@ internal static class Cli
 {
     public static async Task<int> Main(string[] args)
     {
+        if (args.Length > 0 && args[0] is "import" or "export")
+        {
+            return await Exchange.ExchangeCli.RunAsync(args);
+        }
         var seed = 1;
         var scale = Scale.Small;
         var reset = false;

@@ -1,0 +1,5 @@
+id,site,parent,kind,name,rackUnits
+ex-b1,ex-site-1,,building,Byggnad A,
+ex-r1,ex-site-1,ex-b1,room,Nodrum,
+ex-k1,ex-site-1,ex-r1,rack,Rack 1,42
+ex-k2,ex-site-2,,rack,Skåp,12
