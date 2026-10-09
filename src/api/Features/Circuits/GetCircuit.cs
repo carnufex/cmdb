@@ -17,7 +17,8 @@ public sealed record CircuitDetail(
     IReadOnlyList<CircuitHop> Hops,
     IReadOnlyList<ObjectRef> Carriers,
     IReadOnlyList<ObjectRef> Carried,
-    IReadOnlyList<ObjectRef> Services);
+    IReadOnlyList<ObjectRef> Services,
+    IReadOnlyList<ObjectSource>? Sources = null);
 
 /// <summary>A circuit's path hop by hop, the circuits it rides on, the ones riding on it and its services.</summary>
 public sealed class GetCircuitEndpoint(RequestDb db) : Endpoint<CircuitRequest, CircuitDetail>
@@ -97,6 +98,7 @@ public sealed class GetCircuitEndpoint(RequestDb db) : Endpoint<CircuitRequest, 
             Carriers = [.. related.Where(r => r.Kind == "carrier").Select(r => r.Ref)],
             Carried = [.. related.Where(r => r.Kind == "carried").Select(r => r.Ref)],
             Services = [.. related.Where(r => r.Kind == "service").Select(r => r.Ref)],
+            Sources = await Sources.LoadAsync(conn, "circuit", id, scope, ct),
         };
     }
 }

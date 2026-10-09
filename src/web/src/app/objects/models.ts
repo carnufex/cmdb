@@ -12,6 +12,27 @@ export interface ObjectRef {
   lifecycle?: Lifecycle | string | null;
 }
 
+/** What one source system says about an object (#215, ADR-0019). */
+export interface ObjectSource {
+  source: string;
+  externalId: string;
+  confirmedAt: string;
+  /** The source that created the object. */
+  origin: boolean;
+  values: SourceValue[];
+}
+
+export interface SourceValue {
+  /** A recorded attribute (name, lifecycle, position …) or one of the object's own as attributes.<key>. */
+  attribute: string;
+  /** Null for links to other objects and a cable's route, which are compared but not shown. */
+  value?: unknown;
+  /** False when the object changed after the source confirmed the value. */
+  current: boolean;
+  /** Whether the source owns the attribute by the catalog's source priority. */
+  owner: boolean;
+}
+
 export interface TerminalRef {
   terminalId: number;
   label: string;
@@ -59,6 +80,8 @@ export interface SiteDetail {
     lifecycle: Lifecycle;
     otherEnd: ObjectRef;
   }[];
+  /** The sources that reported the object (#215); empty when none has. */
+  sources?: ObjectSource[];
 }
 
 export interface EquipmentDetail {
@@ -93,6 +116,8 @@ export interface EquipmentDetail {
     /** The port's area on the panel image (#214); null when the model has none. */
     box?: PortBox | null;
   }[];
+  /** The sources that reported the object (#215); empty when none has. */
+  sources?: ObjectSource[];
 }
 
 export type PanelSide = 'front' | 'back';
@@ -134,6 +159,8 @@ export interface CableDetail {
   circuits: ObjectRef[];
   /** Fibres that are reserved or wanted by plans (#25). */
   claims?: { conductorId: number; number: number; claims: ResourceClaims }[] | null;
+  /** The sources that reported the object (#215); empty when none has. */
+  sources?: ObjectSource[];
 }
 
 /** What depends on a cable, equipment or site (GET /api/{cables|equipment|sites}/{id}/impact, #10). */
@@ -155,6 +182,8 @@ export interface ServiceDetail {
   lifecycle: Lifecycle;
   attributes: Record<string, unknown>;
   circuits: { circuit: ObjectRef; a: TerminalRef | null; b: TerminalRef | null }[];
+  /** The sources that reported the object (#215); empty when none has. */
+  sources?: ObjectSource[];
 }
 
 export interface CircuitDetail {
@@ -166,6 +195,8 @@ export interface CircuitDetail {
   carriers: ObjectRef[];
   carried: ObjectRef[];
   services: ObjectRef[];
+  /** The sources that reported the object (#215); empty when none has. */
+  sources?: ObjectSource[];
 }
 
 export interface ObjectSummary {

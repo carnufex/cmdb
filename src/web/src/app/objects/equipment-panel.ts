@@ -23,6 +23,7 @@ import { PanelPort, portRange, portStatus, portStatusLabels } from './front-pane
 import { ImpactListComponent } from './impact-list';
 import { apiPath, EquipmentDetail, Impact } from './models';
 import { ObjectLinkComponent } from './object-link';
+import { SourcesComponent } from './sources';
 import { traceId, TraceResult } from './trace-model';
 
 type Port = EquipmentDetail['ports'][number];
@@ -30,6 +31,7 @@ type Port = EquipmentDetail['ports'][number];
 @Component({
   selector: 'cmdb-equipment-panel',
   imports: [
+    SourcesComponent,
     ClassificationComponent,
     PlanMoveComponent,
     PlanRemoveComponent,
@@ -310,6 +312,7 @@ type Port = EquipmentDetail['ports'][number];
           </dl>
         </section>
       }
+      <cmdb-sources [sources]="e.sources" />
     } @else if (equipment.error()) {
       <p class="error">Utrustningen kunde inte hämtas.</p>
     } @else {

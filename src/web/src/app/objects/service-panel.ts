@@ -6,11 +6,12 @@ import { StatusComponent } from '../shell/status';
 import { apiPath, ServiceDetail } from './models';
 import { ClassificationComponent } from './classification';
 import { ObjectLinkComponent } from './object-link';
+import { SourcesComponent } from './sources';
 import { traceId } from './trace-model';
 
 @Component({
   selector: 'cmdb-service-panel',
-  imports: [ClassificationComponent, ObjectLinkComponent, StatusComponent],
+  imports: [SourcesComponent, ClassificationComponent, ObjectLinkComponent, StatusComponent],
   template: `
     @if (service.value(); as s) {
       <header class="header">
@@ -55,6 +56,7 @@ import { traceId } from './trace-model';
           </dl>
         </section>
       }
+      <cmdb-sources [sources]="s.sources" />
     } @else if (service.error()) {
       <p class="error">Tjänsten kunde inte hämtas.</p>
     } @else {

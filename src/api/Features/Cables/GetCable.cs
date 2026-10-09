@@ -22,7 +22,8 @@ public sealed record CableDetail(
     ObjectRef B,
     IReadOnlyList<ObjectRef> Circuits,
     IReadOnlyList<ConductorClaims>? Claims = null,
-    string? TypeKey = null);
+    string? TypeKey = null,
+    IReadOnlyList<ObjectSource>? Sources = null);
 
 /// <summary>A conductor (fibre) that is reserved or wanted by a plan (#25).</summary>
 public sealed record ConductorClaims(long ConductorId, int Number, Cmdb.Api.Features.Reservations.ResourceClaims Claims);
@@ -127,6 +128,7 @@ public sealed class GetCableEndpoint(RequestDb db) : Endpoint<CableRequest, Cabl
             ConductorsInUse = inUse,
             Circuits = circuits,
             Claims = [.. claims.OrderBy(c => numbers[c.Key]).Select(c => new ConductorClaims(c.Key, numbers[c.Key], c.Value))],
+            Sources = await Sources.LoadAsync(conn, "cable", id, scope, ct),
         };
     }
 }

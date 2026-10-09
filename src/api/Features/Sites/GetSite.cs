@@ -27,7 +27,8 @@ public sealed record SiteDetail(
     double? Y,
     JsonElement Attributes,
     IReadOnlyList<SiteLocation> Locations,
-    IReadOnlyList<SiteCable> Cables);
+    IReadOnlyList<SiteCable> Cables,
+    IReadOnlyList<ObjectSource>? Sources = null);
 
 /// <summary>A site with what is on it and what it connects to. Cards are counted under their chassis.</summary>
 public sealed class GetSiteEndpoint(RequestDb db) : Endpoint<SiteRequest, SiteDetail>
@@ -126,8 +127,9 @@ public sealed class GetSiteEndpoint(RequestDb db) : Endpoint<SiteRequest, SiteDe
                     : ObjectRef.Hidden("site")));
         }
 
+        await reader.DisposeAsync();
         return new SiteDetail(siteId, code, name, type, lifecycle, x, y, Terminals.Json(scope.MaskAttributes(attributes)),
             [.. locations.Select(l => new SiteLocation(l.Id, l.Parent, l.Kind, l.Name, equipment.GetValueOrDefault(l.Id) ?? [], l.Units))],
-            cables);
+            cables, await Sources.LoadAsync(conn, "site", siteId, scope, ct));
     }
 }

@@ -66,7 +66,7 @@ Objekten matchas på källsystem (`--source`) och id. En import kan därför kö
 - **Objekt som bara finns i databasen** räknas i rapporten men tas inte bort. Att avveckla dem är en plan (#216).
 - **Går inte i en import:** byte av modell på utrustning, byte av kabeltyp och flytt av kabeländar. De rapporteras som fel och görs i en plan.
 
-Allt skrivs i en transaktion med `COPY` till temporära tabeller och mängdbaserade satser. Objekten får `source_system`, `external_id` och `last_confirmed_at`. Efteråt läggs en `reload` i ändringsströmmen, så att grafen laddas om, och omfångens synlighet räknas om.
+Allt skrivs i en transaktion med `COPY` till temporära tabeller och mängdbaserade satser. Objekten får `source_system`, `external_id` och `last_confirmed_at`. Varje objekt i filerna får också en källpost med det källan rapporterade per attribut (#215, se [domanmodell.md](domanmodell.md#ursprung-per-attribut-215-adr-0019)). Efteråt läggs en `reload` i ändringsströmmen, så att grafen laddas om, och omfångens synlighet räknas om.
 
 ## Behörighet
 
@@ -87,5 +87,7 @@ Det syntetiska nätet i full skala (seed 1) exporterat och importerat till en to
 | Kretsar och hopp | 117 025 och 1,1 M | 64 s | 25 s |
 | Beroenden, tjänster och tjänstekretsar | 262 724 | 8 s | 3 s |
 | **Totalt** | | **7,3 min** | **2,1 min** |
+
+Källposterna (#215) är en rad per objekt: 611 786 rader och 488 MB i full skala. De tar 13,5 s av första körningen (totalt 8,5 min i samma miljö) och 20 s av en omkörning (totalt 2,7 min). Att läsa ett objekts källor tar under 1 ms.
 
 Grafen laddar det importerade nätet som det genererade: 7,6 M terminaler och 4,3 M kanter på 17 s. Främmande nycklar kontrolleras per rad under importen, till skillnad från datageneratorns snabbväg, eftersom importen skriver i en databas som redan används.

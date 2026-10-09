@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using Cmdb.Catalog;
 using Cmdb.Database;
+using Cmdb.Database.Provenance;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -414,6 +415,7 @@ internal static class NetworkImport
 
             // Rack positions (#173) for equipment the files did not place.
             await Exec(conn, Cmdb.Database.RackStacking.Backfill, ct);
+            await SourceRecordsAsync();
             await Exec(conn, "SET LOCAL cmdb.bulk = 'off'", ct);
             await Exec(conn, "INSERT INTO graph_change (kind, key) VALUES ('reload', 0)", ct);
             await tx.CommitAsync(ct);
@@ -928,10 +930,39 @@ internal static class NetworkImport
                 r => errors.Add(new ImportError(file, r.GetInt32(0), "", message)), ct);
         }
 
+        /// <summary>The object types written, with their temporary tables, for the source records.</summary>
+        private readonly List<(string Table, string Temp)> _confirmed = [];
+
         /// <summary>Marks every object the files name as confirmed by the source now.</summary>
-        private async Task Confirm(string table, string temp) => await Exec(conn, $"""
-            UPDATE {table} t SET last_confirmed_at = now() FROM {temp} x WHERE t.source_system = $1 AND t.external_id = x.ext
-            """, ct, source);
+        private async Task Confirm(string table, string temp)
+        {
+            _confirmed.Add((table, temp));
+            await Exec(conn, $"""
+                UPDATE {table} t SET last_confirmed_at = now() FROM {temp} x WHERE t.source_system = $1 AND t.external_id = x.ext
+                """, ct, source);
+        }
+
+        /// <summary>
+        /// What the source said about each object it names (#215, ADR-0019): its id, now as the time it confirmed it,
+        /// and the values as written, once everything (circuit ends, rack positions) is in place.
+        /// </summary>
+        private async Task SourceRecordsAsync()
+        {
+            var sw = Stopwatch.StartNew();
+            var rows = 0L;
+            foreach (var (table, temp) in _confirmed)
+            {
+                rows += await Exec(conn, $"""
+                    INSERT INTO source_record (object_type, object_id, source_system, external_id, confirmed_at, reported)
+                    SELECT '{table}', t.id, $1, t.external_id, now(), {ReportedValues.Sql(table, "t")}
+                    FROM {table} t JOIN {temp} x ON t.source_system = $1 AND t.external_id = x.ext
+                    ON CONFLICT (object_type, object_id, source_system) DO UPDATE
+                        SET external_id = excluded.external_id, confirmed_at = excluded.confirmed_at, reported = excluded.reported
+                    """, ct, source);
+            }
+            log.WriteLine(string.Create(CultureInfo.InvariantCulture,
+                $"  {"source records",-22} {rows,10:N0} rows {sw.Elapsed.TotalSeconds,6:0.0} s"));
+        }
 
         private async Task<long[]> NextIdsAsync(string table, int count)
         {

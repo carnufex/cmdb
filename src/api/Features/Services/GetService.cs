@@ -17,7 +17,8 @@ public sealed record ServiceDetail(
     string ServiceType,
     string Lifecycle,
     JsonElement Attributes,
-    IReadOnlyList<ServiceCircuit> Circuits);
+    IReadOnlyList<ServiceCircuit> Circuits,
+    IReadOnlyList<ObjectSource>? Sources = null);
 
 /// <summary>A service and the circuits carrying it, with where each one starts and ends.</summary>
 public sealed class GetServiceEndpoint(RequestDb db) : Endpoint<ServiceRequest, ServiceDetail>
@@ -78,6 +79,7 @@ public sealed class GetServiceEndpoint(RequestDb db) : Endpoint<ServiceRequest, 
         return service with
         {
             Circuits = [.. circuits.Select(c => new ServiceCircuit(c.Ref, terminals.GetValueOrDefault(c.A), terminals.GetValueOrDefault(c.B)))],
+            Sources = await Sources.LoadAsync(conn, "service", id, scope, ct),
         };
     }
 }

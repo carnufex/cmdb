@@ -22,10 +22,12 @@ import { StatusComponent } from '../shell/status';
 import { ImpactListComponent } from './impact-list';
 import { apiPath, CableDetail, Impact } from './models';
 import { ObjectLinkComponent } from './object-link';
+import { SourcesComponent } from './sources';
 
 @Component({
   selector: 'cmdb-cable-panel',
   imports: [
+    SourcesComponent,
     ClassificationComponent,
     PlanMoveComponent,
     PlanRemoveComponent,
@@ -179,6 +181,7 @@ import { ObjectLinkComponent } from './object-link';
           }
         </ul>
       </section>
+      <cmdb-sources [sources]="c.sources" />
     } @else if (cable.error()) {
       <p class="error">Kabeln kunde inte hämtas.</p>
     } @else {

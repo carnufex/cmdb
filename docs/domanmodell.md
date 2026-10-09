@@ -157,6 +157,7 @@ Den syntetiska katalogen i `catalog/` byggs in i API:t och datageneratorn och an
   site-types.json             krävs
   equipment-categories.json   krävs
   service-types.json          valfri
+  source-priority.json        valfri, vilken källa som äger vilket attribut (#215)
   equipment-types/<key>.json
   equipment-images/<fil>      valfri, bilder som modellerna pekar ut (#214)
   classifications/<key>.json  criticality.json krävs
@@ -291,6 +292,14 @@ Siter och kablar kan importeras i bulk till en plan, från CSV eller GeoJSON. Ex
 ### Import till produktion (#210)
 
 Ett befintligt nät från ett källsystem läses in i produktion med ett utbytesformat, en CSV per slags objekt, som matchas på källsystem och id i källan. Importen kan därför köras igen, och objekten får `source_system`, `external_id` och `last_confirmed_at`. Se [import.md](import.md).
+
+### Ursprung per attribut (#215, ADR-0019)
+
+Varje källa som rapporterar ett objekt får en **källpost** (`source_record`) per objekt och källa: källans id, när den senast bekräftade objektet och värdet per attribut som källan rapporterade det. Attributen är objektets fält (`name`, `lifecycle`, `position`, `placement` …) och dess egna attribut som `attributes.<nyckel>`. Importen skriver källposterna i samma transaktion som objekten.
+
+- **Nuvarande värde jämförs vid läsning.** Objektets panel, API och MCP:s `get_object` visar under *Källor* vad varje källa sa, och om objektet ändrats i cmdb sedan dess. Ingen skrivväg behöver veta om källposterna, så de kan inte glida isär.
+- **Vem äger vad** är katalogdata: `source-priority.json` i katalogen anger per objekttyp och attribut vilka källor som får skriva, i prioritetsordning. Den mest specifika regeln gäller (`attributes.serialNumber` före `attributes.*` före `*`, objekttyp före `*`). Utan regel äger den källa som bekräftade senast. Avstämningen (#216) använder samma regler.
+- **Behörighet:** källposterna maskas som objektets attribut. Dolda attribut och, när omfånget döljer koordinater, `position` och `route` visas inte. Länkar till andra objekt (`placement`, `ends`) och kabelns sträckning jämförs men visas aldrig som värden, eftersom de är interna id:n som kan peka på objekt utanför omfånget. Tabellen ingår inte i den direkta databasåtkomsten (ADR-0012).
 
 ### Ta bort en site, utrustning eller kabel (#172)
 
