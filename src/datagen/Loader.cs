@@ -39,7 +39,7 @@ internal static class Loader
         if (reset)
         {
             // Plans (#24) and reservations (#25) refer to terminals and objects by id, so they go with the network.
-            await Exec(conn, $"TRUNCATE {string.Join(", ", NetworkTables)}, graph_change, reservation, plan_operation, plan_dependency, plan, incident, planned_work, voice_session, voice_challenge, voice_sms, voice_tool_call RESTART IDENTITY", ct);
+            await Exec(conn, $"TRUNCATE {string.Join(", ", NetworkTables)}, graph_change, reservation, plan_operation, plan_dependency, reconciliation, plan, incident, planned_work, voice_session, voice_challenge, voice_sms, voice_tool_call RESTART IDENTITY", ct);
         }
         else if (await Scalar<bool>(conn, "SELECT EXISTS (SELECT 1 FROM site)", ct))
         {

@@ -77,4 +77,12 @@ Varje körning sparas i `reconciliation` och returneras:
 
 ## Mätning
 
-Mätningen i full skala (224 707 utrustningar) läggs till här när den är gjord.
+Det syntetiska nätet i full skala (seed 1) exporterat och importerat som `acme-nms`, och sedan stämt av med siter, locations, utrustning, kablar och tjänster (373 159 objekt, 120 MB), lokalt i Postgres 17 med PostGIS:
+
+| Körning | Tid |
+|---|---|
+| Provkörning, inget ändrat | 35 s |
+| Inget ändrat (bekräftar 373 159 källposter) | 64 s |
+| 1 216 ändrade serienummer och 2 247 ändrade namn på utrustning | 72 s |
+
+I den sista körningen fördes serienumren in direkt i den betrodda planen, och namnen lades som 2 247 `rename` i planen för granskning. Skillnaden mellan provkörningen och körningen är att källposterna bekräftas.
