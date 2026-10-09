@@ -35,5 +35,7 @@ internal sealed class LocationConfiguration : IEntityTypeConfiguration<Location>
         e.HasOne(x => x.Parent).WithMany().OnDelete(DeleteBehavior.Restrict);
         e.Property(x => x.Attributes).HasColumnType("jsonb").HasDefaultValueSql("'{}'");
         e.HasIndex(x => new { x.SiteId, x.ParentId, x.Name }).IsUnique().AreNullsDistinct(false);
+        // Imports match objects on their source system and id there (#210).
+        e.HasIndex(x => new { x.SourceSystem, x.ExternalId }).IsUnique().HasFilter("external_id IS NOT NULL");
     }
 }

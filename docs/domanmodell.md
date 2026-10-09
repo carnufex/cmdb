@@ -266,6 +266,10 @@ Siter och kablar kan importeras i bulk till en plan, från CSV eller GeoJSON. Ex
 - **Skrivning:** operationerna skrivs i bulk och planens vy byggs en gång. 10 000 siter med mall tar cirka 9 sekunder.
 - **Planens vy för en stor plan** listar de första 200 operationerna per plan och alla med problem eller konflikter, och räknar resten (`counts`). Hela listan fås med `?all=true`. För 10 000 importerade siter tar vyn cirka 1,6 sekunder och 1,3 MB, mot över 10 minuter och 124 MB innan namnen, urvalet och anspråken optimerades (#170).
 
+### Import till produktion (#210)
+
+Ett befintligt nät från ett källsystem läses in i produktion med ett utbytesformat, en CSV per slags objekt, som matchas på källsystem och id i källan. Importen kan därför köras igen, och objekten får `source_system`, `external_id` och `last_confirmed_at`. Se [import.md](import.md).
+
 ### Ta bort en site, utrustning eller kabel (#172)
 
 Operationen `remove` sätter livscykeln borttagen och avslutar varje koppling på objektets portar och ledarändar. Raden ligger kvar, och grafen ändras bara genom kopplingar. En site tar med sig sin utrustning och kablarna som slutar där. Ett objekt som bär en krets kan inte tas bort, eftersom tjänsterna då skulle brytas utan att någon beslutat det. Kretsarna måste flyttas först. Kartans planlager visar det som tas bort, och den kabel en kapning ersätter, överstruket.

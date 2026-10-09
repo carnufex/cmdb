@@ -80,6 +80,8 @@ internal sealed class EquipmentConfiguration : IEntityTypeConfiguration<Equipmen
         e.HasOne(x => x.Parent).WithMany().OnDelete(DeleteBehavior.Restrict);
         e.Property(x => x.Attributes).HasColumnType("jsonb").HasDefaultValueSql("'{}'");
         e.HasIndex(x => new { x.ParentId, x.Slot }).IsUnique().HasFilter("parent_id IS NOT NULL");
+        // Imports match objects on their source system and id there (#210).
+        e.HasIndex(x => new { x.SourceSystem, x.ExternalId }).IsUnique().HasFilter("external_id IS NOT NULL");
         e.HasIndex(x => x.Name, "ix_equipment_name_trgm").HasMethod("gin").HasOperators("gin_trgm_ops").HasDatabaseName("ix_equipment_name_trgm");
         // Attribute equality in advanced search (#55) is a jsonb containment test.
         e.HasIndex(x => x.Attributes, "ix_equipment_attributes_path").HasMethod("gin").HasOperators("jsonb_path_ops").HasDatabaseName("ix_equipment_attributes_path");

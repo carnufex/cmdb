@@ -1,0 +1,9 @@
+circuit,seq,equipment,port,cable,conductor,side,channel
+ex-k-fys-1,0,ex-e2,xe-1/0/1,,,,
+ex-k-fys-1,1,ex-e3,1,,,,
+ex-k-fys-1,2,,,ex-c1,1,A,
+ex-k-fys-1,3,,,ex-c1,1,B,
+ex-k-fys-1,4,ex-e4,1,,,,
+ex-k-fys-1,5,ex-e5,xe-0/1/1,,,,
+ex-k-log-1,0,ex-e2,xe-1/0/1,,,,vlan:100
+ex-k-log-1,1,ex-e5,xe-0/1/1,,,,vlan:100
