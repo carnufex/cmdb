@@ -1,6 +1,6 @@
 # ADR-0014: Kanalisation: trasé, dukt, subdukt och beläggning
 
-**Status:** Föreslagen · **Datum:** 2026-09-30 · **Beslut:** #103 · **Issue:** #92
+**Status:** Accepterad · **Datum:** 2026-09-30 · **Beslut:** #103 · **Issue:** #92
 
 ## Kontext
 En kabel går i dag direkt mellan två siter som en LineString. I verkligheten ligger kablar i subdukter i multidukter, som ligger i trasé mellan brunnar och noder. Kanalisationen är en stor del av dokumentationen: vad ligger i vilket rör, var finns ledig kapacitet, och vad drabbas vid en grävskada på en sträcka. Svartfiber kan i dag bara uttryckas som en tjänst. Våglängder (WDM) finns redan som kanaler och transmissionskretsar och berörs inte.

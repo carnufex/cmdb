@@ -1,6 +1,6 @@
 # ADR-0013: Lagring av historik, operationslogg och läslogg
 
-**Status:** Föreslagen · **Datum:** 2026-09-29 · **Beslut:** #101 · **Preciserar:** ADR-0006
+**Status:** Accepterad · **Datum:** 2026-09-29 · **Beslut:** #101 · **Preciserar:** ADR-0006
 
 ## Kontext
 ADR-0006 säger att en oföränderlig operationslogg skrivs i samma transaktion som bitemporala tillståndstabeller och att läsningar loggas. Utredningen #84 ([docs/utredningar/84-datatillvaxt.md](../utredningar/84-datatillvaxt.md)) mätte lagringen på full skala med 5 och 10 års syntetisk historik:
