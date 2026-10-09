@@ -13,10 +13,12 @@ import { EditHeaderComponent } from './edit-header';
 import { ImpactListComponent } from './impact-list';
 import { apiPath, Impact, SiteDetail } from './models';
 import { ObjectLinkComponent } from './object-link';
+import { SourcesComponent } from './sources';
 
 @Component({
   selector: 'cmdb-site-panel',
   imports: [
+    SourcesComponent,
     ClassificationComponent,
     PlanRemoveComponent,
     RackViewComponent,
@@ -151,6 +153,7 @@ import { ObjectLinkComponent } from './object-link';
           none="Inga tjänster går genom siten."
         />
       </section>
+      <cmdb-sources [sources]="s.sources" />
     } @else if (site.error()) {
       <p class="error">Siten kunde inte hämtas.</p>
     } @else {

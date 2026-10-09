@@ -39,6 +39,8 @@ builder.Services.AddSingleton(_ => new Cmdb.Api.Auth.SystemDb(dataSource));
 builder.Services.AddSingleton(new Cmdb.Api.Auth.RequestDb(dataSource));
 builder.Services.AddDbContext<CmdbDbContext>((sp, o) => o.UseCmdb(sp.GetRequiredService<Cmdb.Api.Auth.RequestDb>().Source));
 builder.Services.AddSingleton(TypeCatalog.Current);
+// Checked at start like the type catalog, so a broken rule stops the process instead of a later sync (#215).
+builder.Services.AddSingleton(SourcePriority.Current);
 builder.Services.AddSingleton(new Cmdb.Api.Features.Catalog.CatalogImages(CatalogSource.Current));
 builder.Services.AddCmdbAuthentication(builder.Configuration);
 builder.Services.AddFastEndpoints();

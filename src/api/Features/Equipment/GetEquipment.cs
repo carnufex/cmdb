@@ -34,7 +34,8 @@ public sealed record EquipmentDetail(
     string? Slot,
     IReadOnlyList<string> FreeSlots,
     IReadOnlyList<EquipmentCard> Cards,
-    IReadOnlyList<EquipmentPort> Ports);
+    IReadOnlyList<EquipmentPort> Ports,
+    IReadOnlyList<ObjectSource>? Sources = null);
 
 /// <summary>Equipment with its ports and what each port is connected to; the front panel is drawn from this.</summary>
 public sealed class GetEquipmentEndpoint(RequestDb db) : Endpoint<EquipmentRequest, EquipmentDetail>
@@ -153,6 +154,7 @@ public sealed class GetEquipmentEndpoint(RequestDb db) : Endpoint<EquipmentReque
                     [.. byPort[p.Terminal].Where(c => peers.ContainsKey(c.Peer)).Select(c => new PortConnection(c.Kind, c.Lifecycle, peers[c.Peer]))],
                     p.Circuits, claims.GetValueOrDefault(p.Terminal), cell?.Box);
             })],
+            Sources = await Sources.LoadAsync(conn, "equipment", id, scope, ct),
         };
     }
 

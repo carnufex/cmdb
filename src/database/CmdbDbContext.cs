@@ -50,6 +50,7 @@ public sealed class CmdbDbContext(DbContextOptions<CmdbDbContext> options) : DbC
     public DbSet<PlannedWork> PlannedWorks => Set<PlannedWork>();
     public DbSet<ServiceRequest> ServiceRequests => Set<ServiceRequest>();
     public DbSet<Classification> Classifications => Set<Classification>();
+    public DbSet<SourceRecord> SourceRecords => Set<SourceRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
