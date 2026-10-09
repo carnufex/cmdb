@@ -1,6 +1,6 @@
 # ADR-0019: Ursprung per attribut som källposter per objekt och källa
 
-**Status:** Föreslagen · **Datum:** 2026-10-09 (#215)
+**Status:** Accepterad · **Datum:** 2026-10-09 · **Beslut:** #225 · **Issue:** #215
 
 ## Kontext
 Objekten har i dag ursprung på objektnivå: `source_system`, `external_id` och `last_confirmed_at` (ADR-0009, `Tracked`). När ett 40-tal källsystem ska läsas in (Fas 9) äger olika system olika attribut på samma objekt. En nätverkshanterare äger kort och portar, övervakningen bekräftar att utrustningen lever och planeringen äger positionen. Samma utrustning finns dessutom i flera system med olika id:n. Avstämningen (#216) behöver kunna veta vem som sa vad och när, och vilken källa som får skriva vilket attribut.

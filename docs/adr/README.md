@@ -22,4 +22,4 @@ Nya beslut: kopiera närmaste ADR, öka numret och sätt status **Föreslagen**.
 | [0016](0016-rostvaxel-med-flera-agenter.md) | Röstväxel: service desk lämnar över till IT-självhjälp och NOC-agent (#151) |
 | [0017](0017-klassningar-och-regler.md) | Klassningar och regler som modul vid sidan av kärnmodellen (#175) |
 | [0018](0018-egen-datamodell-i-demo.md) | Egen datamodell i ett separat repo med cmdb som uppströms (#206) |
-| [0019](0019-ursprung-per-attribut.md) | Ursprung per attribut som källposter per objekt och källa (**Föreslagen**, #215) |
+| [0019](0019-ursprung-per-attribut.md) | Ursprung per attribut som källposter per objekt och källa (#225) |
