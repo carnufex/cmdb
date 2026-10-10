@@ -28,6 +28,8 @@ public sealed class LoaderTests(ApiFactory factory)
         (await Count(db, "service")).ShouldBe(network.Services.Count);
         await using var conn = await db.OpenConnectionAsync(Ct);
         (await IntegrityCheck.RunAsync(conn, TextWriter.Null, Ct)).ShouldBeEmpty();
+        // The search indexes are rebuilt after the bulk rows (#245), and none is left invalid.
+        (await Count(db, "pg_index WHERE NOT indisvalid")).ShouldBe(0);
     }
 
     [Fact]

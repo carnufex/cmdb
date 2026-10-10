@@ -90,4 +90,4 @@ Det syntetiska nätet i full skala (seed 1) exporterat och importerat till en to
 
 Källposterna (#215) är en rad per objekt: 611 786 rader och 488 MB i full skala. De tar 13,5 s av första körningen (totalt 8,5 min i samma miljö) och 20 s av en omkörning (totalt 2,7 min). Att läsa ett objekts källor tar under 1 ms.
 
-Grafen laddar det importerade nätet som det genererade: 7,6 M terminaler och 4,3 M kanter på 17 s. Främmande nycklar kontrolleras per rad under importen, till skillnad från datageneratorns snabbväg, eftersom importen skriver i en databas som redan används.
+Efter importen byggs sökningens GIN-index om utan att låsa tabellerna, eftersom rader som skrivs i bulk lämnar dem glest packade och gör snabbsöket långsammare (#245). Grafen laddar det importerade nätet som det genererade: 7,6 M terminaler och 4,3 M kanter på 17 s. Främmande nycklar kontrolleras per rad under importen, till skillnad från datageneratorns snabbväg, eftersom importen skriver i en databas som redan används.
