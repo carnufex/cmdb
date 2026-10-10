@@ -86,6 +86,7 @@ Generatorn bygger kanalisationen på ungefär 0,2 s av totalt 2,0 s, och hela la
 | Spåra tjänst ände till ände | < 50 ms |
 | Påverkansanalys för en kabelsträcka | < 200 ms |
 | Påverkan av grävning på en trasésträcka (#237) | < 200 ms |
+| Fiberritning för en trasésträcka (#254) | < 200 ms |
 | Kartplatta per omfång | < 100 ms |
 | Kanalisationsplatta per omfång (#236) | < 100 ms |
 | Växla vy mellan produktion och plan | < 100 ms |

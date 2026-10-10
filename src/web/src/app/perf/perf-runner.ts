@@ -126,6 +126,11 @@ export class PerfRunner {
             this.request(`/api/route-segments/${segments[i % segments.length]}/impact`, signal),
         ),
       );
+      results.push(
+        await this.measure('fibre', 'Fiberritning, trasé', 200, RUNS, onProgress, signal, (i) =>
+          this.request(`/api/fibre/route-segments/${segments[i % segments.length]}`, signal),
+        ),
+      );
     }
     results.push(
       await this.measure('trace', 'Spåra tjänst', 50, RUNS, onProgress, signal, (i) =>

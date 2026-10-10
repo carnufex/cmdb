@@ -60,6 +60,7 @@ builder.Services.AddScoped<Cmdb.Api.Features.Plans.PlanApplication>();
 builder.Services.AddScoped<Cmdb.Api.Features.Reconciliation.Reconciler>();
 builder.Services.AddScoped<Cmdb.Api.Features.Plans.RoutePlanner>();
 builder.Services.AddScoped<Cmdb.Api.Features.Classifications.ClassificationDerivation>();
+builder.Services.AddScoped<Cmdb.Api.Features.Fibre.FibreDrawings>();
 builder.Services.AddScoped<Cmdb.Api.Features.Classifications.ClassificationRules>();
 builder.Services.AddScoped<Cmdb.Api.Features.Classifications.PlanClassification>();
 builder.Services.AddSingleton<Cmdb.Api.Auth.ScopeRefreshService>();

@@ -39,6 +39,7 @@ interface SelectionImpact {
         <button type="button" (click)="massEdit()" [disabled]="!s.siteIds.length">
           Massredigera
         </button>
+        <button type="button" (click)="fibre()">Fiberritning</button>
         <button type="button" (click)="impact()" [disabled]="busy()">
           Påverkan om urvalet faller
         </button>
@@ -252,6 +253,15 @@ export class SelectionBarComponent implements OnDestroy {
         run: () => this.impact(),
       },
       {
+        id: 'selection.fibre',
+        label: 'Fiberritning för urvalet',
+        hint: 'Urval',
+        keywords: ['fiber', 'skarv', 'tekniker', 'odf'],
+        contextual: true,
+        when: some,
+        run: () => this.fibre(),
+      },
+      {
         id: 'selection.export',
         label: 'Exportera urvalet (CSV)',
         hint: 'Urval',
@@ -302,6 +312,11 @@ export class SelectionBarComponent implements OnDestroy {
     if (this.tools.open() !== 'grid') {
       this.tools.toggle('grid');
     }
+  }
+
+  /** The selection's fibre drawing (#254), as the workspace. */
+  protected fibre(): void {
+    this.tools.show('fibre', { fibre: 'selection' });
   }
 
   protected clear(): void {

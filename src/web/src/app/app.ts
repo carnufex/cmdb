@@ -18,6 +18,7 @@ import { ChangelogPanelComponent, ChangelogStore } from './changelog/changelog';
 import { VoiceCallComponent } from './voice/voice-call';
 import { VoicePanelComponent } from './voice/voice-panel';
 import { RackPanelComponent } from './objects/rack-panel';
+import { FibrePanelComponent } from './objects/fibre-panel';
 
 /** The user as the API sees them (GET /api/me). */
 export interface Me {
@@ -46,6 +47,7 @@ export interface Me {
     VoicePanelComponent,
     VoiceCallComponent,
     RackPanelComponent,
+    FibrePanelComponent,
   ],
   templateUrl: './app.html',
   styleUrl: './app.scss',
