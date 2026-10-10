@@ -22,10 +22,15 @@ import {
   equipmentChildren,
   find,
   flatten,
+  groupChildren,
   navigate,
+  networkTree,
   pathTo,
+  rangeFor,
   siteTree,
+  TreeGroupContent,
   TreeNode,
+  TreeRoot,
   TreeRow,
 } from './tree-model';
 import { ToolSizeComponent } from '../shell/tool-size';
@@ -33,9 +38,10 @@ import { ToolSizeComponent } from '../shell/tool-size';
 const ROW_HEIGHT = 26;
 
 /**
- * The content tree (#17): site → location → equipment → card → port for the site in the panel stack, with ports
- * and cards fetched as equipment is expanded. Rows are virtualised (Angular CDK), so thousands stay smooth; the
- * tree follows the panel stack and keyboard navigation follows the WAI-ARIA tree view.
+ * The content tree (#17, #250): the whole network inside the caller's scopes, from the country down to the port:
+ * site types, ranges of codes for large types, sites, locations, equipment, cards and ports, each level fetched when it
+ * is expanded. Rows are virtualised (Angular CDK), so the whole network stays smooth; the tree follows the panel stack,
+ * opening the way to the open object, and keyboard navigation follows the WAI-ARIA tree view.
  */
 @Component({
   selector: 'cmdb-tree-panel',
@@ -56,8 +62,14 @@ const ROW_HEIGHT = 26;
     @if (root(); as r) {
       <div class="bar">
         <span class="muted">{{ rows().length }} rader</span>
-        <button type="button" class="action" [disabled]="loading() > 0" (click)="expandAll()">
-          Expandera allt
+        <button
+          type="button"
+          class="action"
+          [disabled]="loading() > 0 || !openSite()"
+          [title]="openSite() ? 'Expandera allt i ' + openSite()!.label : 'Öppna en site först'"
+          (click)="expandAll()"
+        >
+          Expandera siten
         </button>
         <button type="button" class="action" (click)="collapseAll()">Fäll ihop</button>
         @if (loading() > 0) {
@@ -107,8 +119,8 @@ const ROW_HEIGHT = 26;
           }
         </div>
       </cdk-virtual-scroll-viewport>
-    } @else if (siteId() === null) {
-      <p class="empty">Öppna en site eller utrustning för att se dess innehåll.</p>
+    } @else if (network.error()) {
+      <p class="empty">Nätet gick inte att hämta.</p>
     } @else {
       <p class="empty">Hämtar…</p>
     }
@@ -249,15 +261,22 @@ export class TreePanelComponent {
   protected readonly labels = portStatusLabels;
   private readonly catalog = inject(CatalogKinds);
   protected readonly kinds: Record<TreeNode['kind'], string> = {
+    network: 'Nätet',
+    group: 'Sitetyp',
+    range: 'Siter',
     site: 'Site',
     location: 'Plats',
     equipment: 'Utrustning',
     port: 'Port',
   };
 
-  /** The row's icon (#249): the site type's, the location kind's, the category's or a card's. */
+  /** The row's icon (#249): the network, the site type's, the location kind's, the category's or a card's. */
   protected icon(node: TreeNode): string {
     switch (node.kind) {
+      case 'network':
+        return 'network';
+      case 'group':
+      case 'range':
       case 'site':
         return this.catalog.siteIcon(node.typeKey);
       case 'location':
@@ -278,12 +297,15 @@ export class TreePanelComponent {
           ? this.catalog.siteTypeName(node.typeKey ?? '')
           : node.kind === 'equipment'
             ? this.catalog.categoryName(node.typeKey ?? '')
-            : node.kind === 'location'
-              ? ''
-              : 'Port';
+            : node.kind === 'port'
+              ? 'Port'
+              : '';
     const status = node.portStatus ? this.labels[node.portStatus] : null;
     return [type, node.label, node.detail, status].filter(Boolean).join(', ');
   }
+
+  /** The whole network inside the caller's scopes is the root (#250); each level loads when it is expanded. */
+  protected readonly network = httpResource<TreeRoot>(() => '/api/tree');
 
   /** Equipment on top of the stack tells us its site; other panels keep the last site. */
   private readonly topEquipment = httpResource<EquipmentDetail>(() => {
@@ -316,7 +338,26 @@ export class TreePanelComponent {
     return top ? `${top.type}:${top.id}` : null;
   });
 
+  /** The open site's node, the part "Expandera siten" works on: never the whole network. */
+  protected readonly openSite = computed(() => {
+    this.version();
+    const id = this.siteId();
+    const root = this.root();
+    return id !== null && root ? find(root, `site:${id}`) : null;
+  });
+
   constructor() {
+    effect(() => {
+      const network = this.network.value();
+      untracked(() => {
+        if (network && !this.root()) {
+          const root = networkTree(network);
+          this.root.set(root);
+          this.expanded.set(new Set([root.key]));
+          this.active.set(0);
+        }
+      });
+    });
     effect(() => {
       const top = this.panels.top();
       const equipment = this.topEquipment.value();
@@ -328,24 +369,14 @@ export class TreePanelComponent {
         }
       });
     });
+    // Follow the panel stack: open the way from the root to the site, then reveal the open object.
     effect(() => {
       const site = this.site.value();
-      untracked(() => {
-        if (site && this.root()?.key !== `site:${site.id}`) {
-          const root = siteTree(site);
-          this.root.set(root);
-          this.expanded.set(new Set([root.key, ...root.children.map((c) => c.key)]));
-          this.active.set(0);
-        }
-      });
-    });
-    // Follow the panel stack: reveal the open equipment and make it the active row.
-    effect(() => {
       const key = this.currentKey();
       const root = this.root();
       untracked(() => {
-        if (key && root) {
-          void this.reveal(key);
+        if (site && root) {
+          void this.revealSite(site).then(() => (key ? this.reveal(key) : undefined));
         }
       });
     });
@@ -366,20 +397,46 @@ export class TreePanelComponent {
     this.expanded.update((s) => new Set(s).add(row.node.key));
   }
 
+  /** Fetches a node's children the first time it is expanded: a site type, a range, a site or equipment. */
   private async load(node: TreeNode): Promise<void> {
-    if (!node.lazy || node.kind !== 'equipment' || !node.ref) {
+    if (!node.lazy) {
       return;
     }
     this.loading.update((n) => n + 1);
     try {
-      const detail = await firstValueFrom(
-        this.http.get<EquipmentDetail>(`/api/equipment/${node.ref.id}`),
-      );
-      node.children = equipmentChildren(detail);
+      node.children = await this.children(node);
       node.lazy = false;
       this.version.update((v) => v + 1);
     } finally {
       this.loading.update((n) => n - 1);
+    }
+  }
+
+  private async children(node: TreeNode): Promise<TreeNode[]> {
+    const type = encodeURIComponent(node.typeKey ?? '');
+    switch (node.kind) {
+      case 'group':
+        return groupChildren(
+          node.typeKey!,
+          await firstValueFrom(this.http.get<TreeGroupContent>(`/api/tree/${type}`)),
+        );
+      case 'range': {
+        const params = { from: node.range!.from, to: node.range!.to };
+        const content = await firstValueFrom(
+          this.http.get<TreeGroupContent>(`/api/tree/${type}`, { params }),
+        );
+        return groupChildren(node.typeKey!, content);
+      }
+      case 'site':
+        return siteTree(
+          await firstValueFrom(this.http.get<SiteDetail>(`/api/sites/${node.ref!.id}`)),
+        ).children;
+      case 'equipment':
+        return equipmentChildren(
+          await firstValueFrom(this.http.get<EquipmentDetail>(`/api/equipment/${node.ref!.id}`)),
+        );
+      default:
+        return node.children;
     }
   }
 
@@ -416,14 +473,14 @@ export class TreePanelComponent {
     this.viewport()?.scrollToIndex(Math.max(0, move.index - 3));
   }
 
-  /** Expands every location and equipment, loading ports and cards eight at a time. */
+  /** Expands every location and equipment of the open site, loading ports and cards eight at a time. */
   protected async expandAll(): Promise<void> {
-    const root = this.root();
-    if (!root) {
+    const site = this.openSite();
+    if (!site) {
       return;
     }
     const keys = new Set(this.expanded());
-    const queue: TreeNode[] = [root];
+    const queue: TreeNode[] = [site];
     while (queue.length) {
       const batch = queue.splice(0, 8);
       await Promise.all(batch.map((n) => this.load(n)));
@@ -443,6 +500,37 @@ export class TreePanelComponent {
     this.active.set(0);
   }
 
+  /** Loads the way from the root to the site: its type, the range holding its code, and the site itself. */
+  private async revealSite(site: SiteDetail): Promise<void> {
+    const root = this.root();
+    const group = root ? find(root, `group:${site.siteType}`) : null;
+    if (!root || !group) {
+      return;
+    }
+    await this.load(group);
+    const range = rangeFor(group, site.code);
+    if (range) {
+      await this.load(range);
+    }
+    const node = find(range ?? group, `site:${site.id}`);
+    if (!node) {
+      return;
+    }
+    if (node.lazy) {
+      node.children = siteTree(site).children;
+      node.lazy = false;
+      this.version.update((v) => v + 1);
+    }
+    const path = pathTo(root, node.key)!;
+    this.expanded.update((s) => {
+      const next = new Set(s);
+      path.forEach((k) => next.add(k));
+      // The site's own rooms and racks, as when it was the root.
+      node.children.forEach((c) => next.add(c.key));
+      return next;
+    });
+  }
+
   private async reveal(key: string): Promise<void> {
     const root = this.root();
     if (!root || !find(root, key)) {
@@ -457,7 +545,12 @@ export class TreePanelComponent {
     const index = this.rows().findIndex((r) => r.node.key === key);
     if (index >= 0) {
       this.active.set(index);
-      queueMicrotask(() => this.viewport()?.scrollToIndex(Math.max(0, index - 3)));
+      // After the virtual list has taken the new rows, or it scrolls within the old ones.
+      setTimeout(() => {
+        const viewport = this.viewport();
+        viewport?.checkViewportSize();
+        viewport?.scrollToIndex(Math.max(0, index - 3));
+      });
     }
   }
 }
