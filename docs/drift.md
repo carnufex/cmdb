@@ -103,6 +103,55 @@ args: ["import", "--from", "/import", "--source", "<källsystem>"]
 - **Prova först med `--dry-run`.** Den kontrollerar varje rad och rapporterar fel per fil och rad utan att skriva.
 - **Utan `--reset`:** importen skriver över ingenting. Den skapar och uppdaterar objekt från källsystemet och kan köras igen. Grafen laddas om av sig själv via ändringsströmmen, så API:t behöver inte startas om.
 
+### Avstämning mot källsystem
+
+Varje integration körs som ett CronJob med imagen `cmdb-cli` (#217, [adaptrar.md](adaptrar.md)). Imagen byggs och pushas av `scripts/deploy.sh` med samma tagg som API:t, och CronJobbet pinnas i homelab-repot som API:t. Exempel för referensadaptern:
+
+```yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cmdb-sync-acme-monitor
+  namespace: cmdb
+spec:
+  schedule: "15 * * * *"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      template:
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+          containers:
+            - name: sync
+              image: registry.rosenvall.se/carnufex/cmdb-cli:sha-<commit>@sha256:<digest>
+              args: ["sync", "acme-monitor"]
+              env:
+                - name: CMDB_URL
+                  value: http://cmdb-api.cmdb.svc:8080   # API:ts Service i klustret, som i homelab-manifestet
+                - name: CMDB_SYNC_CONFIG
+                  value: /config/acme-monitor.json
+              envFrom:
+                - secretRef:
+                    name: cmdb-sync-acme-monitor   # CMDB_CLIENT_ID, CMDB_USERNAME, CMDB_PASSWORD, CMDB_SYNC_ACME_MONITOR_URL, CMDB_SYNC_ACME_MONITOR_TOKEN
+              volumeMounts:
+                - { name: config, mountPath: /config, readOnly: true }
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: { drop: ["ALL"] }
+          volumes:
+            - name: config
+              configMap: { name: cmdb-sync-acme-monitor }
+```
+
+- **Kontot** är integrationens eget, medlem i `cmdb-integration` och i integrationens omfångsgrupp, aldrig i `cmdb-full` (ADR-0021).
+- **Anropet går inom klustret** till API:t, inte via Cloudflare, så att stora arkiv inte stoppas av gränsen för uppladdningar där.
+- **Hemligheterna** kommer från en Secret eller ExternalSecret. Konfigurationen, med tabellerna för modeller och tillstånd, ligger i en ConfigMap.
+- **Prova först** med `kubectl create job --from=cronjob/cmdb-sync-acme-monitor prova` och argumenten `["sync", "acme-monitor", "--dry-run"]`.
+- **Resultatet** syns under *Avstämningar* i appen och med `cmdb reconciliations`. Ett Job som misslyckas har felkod 4 och felet i loggen.
+
 ## Prestandamätning
 
 `scripts/perf.sh` mäter prestandabudgeten ([plan.md](plan.md#prestandabudget)) med k6 (#13), med stickprov ur det laddade nätet och serverns p95 (`Server-Timing`) mot budgeten. GitHub Actions är avstängt, så det här är det manuella jobbet.

@@ -47,6 +47,8 @@ Inget verktyg ändrar produktion. Agenter föreslår ändringar som planer, och 
 | `neighbourhood` | Siter inom 1–3 kabelhopp från en site |
 | `describe_catalog` | Sitetyper, livscykler, tjänstetyper, kategorier med attribut och alla modeller |
 | `list_plans` | Planer du kan se, med status, antal ändringar, konflikter och vem som gjort dem |
+| `list_reconciliations` | Avstämningar mot källsystem (#216): dina egna, eller alla med obegränsat omfång |
+| `get_reconciliation` | En avstämnings rapport: räknare per objekttyp, avvikelser med källans och cmdb:s värde, fel och planerna |
 | `create_plan` | Skapar ett utkast. Planen märks med agentens identitet och `createdVia: mcp`. |
 | `add_to_plan` | Lägger till ändringar i ordning: koppla, koppla bort, livscykel, namnbyte, ny site, ny utrustning, ny kabel, att sätta in en site i en befintlig kabel (`split_cable`, #168), att ta bort en site, utrustning eller kabel som inte bär kretsar (`remove`, #172) och att sätta en klassning (`set_classification`, #176). Klassningsscheman och ett objekts klassningar läses med `describe_classifications` och `get_classification`, och `check_plan_classification` visar vad en plan gör med nivåer och krav: höjda siter, ouppfyllda krav, åtgärdsutkast och alternativa siter. Ett nytt objekt får en planerad referens (`target`, till exempel `site:-12`) som senare ändringar använder. Varje ändring kontrolleras mot planens vy, och svaret visar det som inte passar produktion och konflikter med andra planers anspråk eller reservationer. |
 | `connect_ports` | Ett portintervall mot ett annat i frontpanelens ordning, till exempel "patcha port 1–24 på SW-1 mot ODF-3". Fungerar också mot planerad utrustning (`equipment:-12`). |
@@ -92,6 +94,8 @@ Kodagenter i en terminal (Claude Code, Codex) och skript använder med fördel k
 | `cmdb catalog` | `describe_catalog` |
 | `cmdb plans`, `cmdb plan plan:ID` | `list_plans`, `preview_plan` |
 | `cmdb whoami` | `/api/me` |
+| `cmdb reconciliations`, `cmdb reconciliation ID` | `list_reconciliations`, `get_reconciliation` |
+| `cmdb sync <adapter> [--dry-run]` | Läser ett källsystem och stämmer av det, se [adaptrar.md](adaptrar.md) |
 
 **Utdata och felkoder:**
 - Utdata är kompakt text, en rad per objekt med referens, kod, namn och länk till webben. `--json` ger API:ts svar oförändrat.

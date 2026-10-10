@@ -13,7 +13,7 @@ curl https://<cmdb>/api/reconciliations
 curl https://<cmdb>/api/reconciliations/<id>
 ```
 
-`cmdb sync` (#217) kör en adapter och skickar filerna på det här sättet.
+`cmdb sync <adapter>` (#217) läser ett källsystem med en adapter och skickar filerna på det här sättet, med integrationens eget konto. Se [adaptrar.md](adaptrar.md). Körningarna och rapporterna visas under *Avstämningar* i appen, med `cmdb reconciliations` och via MCP (`list_reconciliations`, `get_reconciliation`).
 
 ## Vad som stäms av
 
@@ -62,7 +62,7 @@ Varje attribut som källan rapporterar jämförs med objektet. Vem som äger att
 
 ## Behörighet
 
-- Avstämningen kräver rollen `cmdb-full`, som andra planskrivningar, och körs inom anroparens omfång. Objekt utanför omfånget matchas inte, ändras inte och nämns inte. En rad som pekar dit räknas bara (`outsideScope`).
+- Avstämningen kräver rollen `cmdb-full`, som andra planskrivningar, eller `cmdb-integration` för ett integrationskonto (ADR-0021). Den körs inom anroparens omfång, och ett integrationskonto får sitt omfång från integrationens egen grupp. Objekt utanför omfånget matchas inte, ändras inte och nämns inte. En rad som pekar dit räknas bara (`outsideScope`).
 - Automatiskt införande kräver dessutom att katalogen litar på källan för attributet. Katalogen ändras bara genom en utrullning.
 - En agent får aldrig föra in en plan (#64). Integrationer är konton, inte agenter.
 - Rapporterna listas för den som körde dem, och alla för den med obegränsat omfång.

@@ -100,7 +100,7 @@ Datan antas vara högt klassad, och en CMDB är en aggregeringsmaskin. Behörigh
 - Planer och projekt
 - Tid (slutdatum, kräver förnyelse)
 
-Grundregeln är att allt är nekat tills något uttryckligen beviljas. Omfång beviljas med motivering och godkännande av en andra person. Integrationer är konsumenter med egna omfång, precis som människor.
+Grundregeln är att allt är nekat tills något uttryckligen beviljas. Omfång beviljas med motivering och godkännande av en andra person. Integrationer är konsumenter med egna omfång, precis som människor. Ett integrationskonto har rollen `cmdb-integration`, som bara får stämma av (#217, ADR-0021), och sitt omfång från integrationens egen grupp, aldrig från `cmdb-full`.
 
 **Genomförande:**
 
@@ -112,7 +112,7 @@ Grundregeln är att allt är nekat tills något uttryckligen beviljas. Omfång b
 
 **Så är det byggt (#22, steg 1):**
 
-- `access_scope` (EF-modell) har område (MultiPolygon, EPSG:3006; tomt = hela nätet), sitetyper, dolda attribut, planer (för #24), gränsläge (`whole`/`clip`), giltig till och grupper. Motivering, beviljad av och godkänd av finns också, och en check constraint kräver två olika personer. Demoomfången är syntetiska och synkas vid migrering, som typkatalogen: *Hela nätet* för `cmdb-full` och `cmdb-agents`, *Region Nord* för `cmdb-region-nord` och *Projekt A* för `cmdb-projekt-a`. Projekt A omfattar ett område på västkusten, bara radiositer och skåp, och döljer serienummer.
+- `access_scope` (EF-modell) har område (MultiPolygon, EPSG:3006; tomt = hela nätet), sitetyper, dolda attribut, planer (för #24), gränsläge (`whole`/`clip`), giltig till och grupper. Motivering, beviljad av och godkänd av finns också, och en check constraint kräver två olika personer. Demoomfången är syntetiska och synkas vid migrering, som typkatalogen: *Hela nätet* för `cmdb-full` och `cmdb-agents`, *Region Nord* för `cmdb-region-nord`, *Projekt A* för `cmdb-projekt-a` och *Övervakning Nord* för referensadapterns integrationskonto (`cmdb-integration-acme-monitor`, samma område som Region Nord). Projekt A omfattar ett område på västkusten, bara radiositer och skåp, och döljer serienummer.
 - Vad varje omfång visar materialiseras i `scope_site`, `scope_cable`, `scope_circuit` och `scope_service`. Kablar följer gränsläget. Kretsar följer sina två ändar (port → utrustningens site, ledarände → kabelns site på den sidan) och tjänster sina kretsar. Utrustning och portar följer sin site. Omräkningen sker i en transaktion (4,5 s i full skala) vid migrering, vid start, var femte minut och efter ändringar från ändringsflödet. Nya siter, kablar och kretsar är dolda tills dess, vilket är säkert eftersom grundregeln är att neka.
 - Varje förfrågan får sina omfång från token-grupperna (`UserScope`). Alla SQL-ytor filtrerar på omfångsnycklarna: sök, sitevy, utrustning, kabel, tjänst, krets, hovringskort, avancerad sökning, grannskap, grannskapsgraf och kartplattor. Ett objekt utanför omfånget ger 404, inte 403. Dolda attribut tas bort ur svaren.
 - Grafmotorn får synlighetsmasker (bool per site, kabel, krets och tjänst), byggda ur samma tabeller och cachade per grafinstans och omfångskombination. Spårningen stannar vid gränsen (`TraceEnd.Boundary`) och visar en neutral platshållare utan id eller namn. Påverkan och spårning räknar kretsar och tjänster utanför omfånget (`hiddenServices`, `hidden`) utan att nämna dem.
