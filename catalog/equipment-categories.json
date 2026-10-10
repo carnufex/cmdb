@@ -1,11 +1,11 @@
 [
-  { "key": "switch", "name": "Switch", "roles": [] },
-  { "key": "router", "name": "Router", "roles": [] },
+  { "key": "switch", "name": "Switch", "roles": [], "icon": "switch" },
+  { "key": "router", "name": "Router", "roles": [], "icon": "router" },
   { "key": "card", "name": "Kort", "roles": ["card"] },
-  { "key": "radio", "name": "Radio", "roles": [] },
-  { "key": "antenna", "name": "Antenn", "roles": [] },
-  { "key": "transmission", "name": "Transmission", "roles": [] },
+  { "key": "radio", "name": "Radio", "roles": [], "icon": "radio" },
+  { "key": "antenna", "name": "Antenn", "roles": [], "icon": "antenna" },
+  { "key": "transmission", "name": "Transmission", "roles": [], "icon": "transmission" },
   { "key": "odf", "name": "ODF", "roles": ["termination"] },
-  { "key": "patch", "name": "Patchpanel", "roles": [] },
+  { "key": "patch", "name": "Patchpanel", "roles": [], "icon": "patch" },
   { "key": "power", "name": "Kraft", "roles": ["power"] }
 ]

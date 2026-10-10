@@ -28,9 +28,13 @@ import { traceId, TraceResult } from './trace-model';
 
 type Port = EquipmentDetail['ports'][number];
 
+import { CatalogKinds } from '../shell/catalog-kinds';
+import { IconComponent } from '../shell/icons';
+
 @Component({
   selector: 'cmdb-equipment-panel',
   imports: [
+    IconComponent,
     SourcesComponent,
     ClassificationComponent,
     PlanMoveComponent,
@@ -44,7 +48,12 @@ type Port = EquipmentDetail['ports'][number];
   template: `
     @if (equipment.value(); as e) {
       <header class="header">
-        <div class="kind">Utrustning · {{ e.category }}</div>
+        <div class="kind">
+          <cmdb-icon [name]="e.parent ? 'card' : catalog.categoryIcon(e.category)" />{{
+            e.parent ? 'Kort' : 'Utrustning'
+          }}
+          · {{ catalog.categoryName(e.category) }}
+        </div>
         <div class="code mono">{{ e.manufacturer }} {{ e.model }}</div>
         <cmdb-edit-header
           [url]="url()"
@@ -342,6 +351,7 @@ type Port = EquipmentDetail['ports'][number];
 })
 export class EquipmentPanelComponent {
   private readonly panels = inject(PanelStack);
+  protected readonly catalog = inject(CatalogKinds);
   private readonly commands = inject(CommandRegistry);
   private readonly http = inject(HttpClient);
   protected readonly plan = inject(ActivePlan);

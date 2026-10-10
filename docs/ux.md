@@ -21,6 +21,16 @@ Minsta stödda storlek är **1280×720 CSS-pixlar**, vilket motsvarar 1080p med 
 
 Status visas alltid med **prick och text**, aldrig bara med färg (WCAG 2.1 AA).
 
+## Ikoner
+
+Varje objekttyp har en ikon, så att man ser vad något är utan att läsa (#249). Ikonerna är inline-SVG på 16 px med tunn linje i `currentColor`, i samma stil som appens övriga ikoner, och finns i `src/web/src/app/shell/icons.ts` (`<cmdb-icon name="rack" />`).
+
+- **Uppsättningen:** hela nätet (`network`), område (`area`), site (`site`), byggnad, rum, rack och position, utrustning, kort, port, kabel, ledare, trasésträcka (`route-segment`), dukt, krets, tjänst och plan, plus `action` för åtgärder i paletten.
+- **Per sitetyp och kategori:** katalogen anger ikonen (`icon` i `site-types.json` och `equipment-categories.json`), annars gäller rollens (se [domanmodell.md](domanmodell.md#sitetyper-kategorier-och-roller)). Webben läser dem från `GET /api/catalog/kinds`, så en annan katalog får sina ikoner utan kodändring. Nav, aggregeringsnoder, skåp, radiotorn, skarvpunkter och brunnar har egna ikoner, liksom switchar, routrar, kort, radio, antenner, transmission, ODF:er, patchpaneler och kraft.
+- **Var:** innehållsträdet, snabbsöket och kommandopaletten, panelrubriker, brödsmulor, hover-kort och objektlänkar. Kartans punkter har sin egen stil per sitetyp och inga ikoner.
+- **Alltid bredvid text.** Ikonen är dekorativ (`aria-hidden`); typen står i texten eller i radens tillgängliga namn. Status visas fortfarande med prick och text, aldrig med ikonen.
+- **Typnamn på svenska.** Innehållsträdet visar platsens typ som *Byggnad*, *Rum*, *Rack*, aldrig nyckeln.
+
 ## Få klick
 
 - **Allt är en länk.** Varje objektreferens öppnas i en sidopanel. Panelerna staplas som en brödsmulestig och varje vy har en URL.

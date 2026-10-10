@@ -14,6 +14,8 @@ import { firstValueFrom } from 'rxjs';
 import { portStatusLabels } from '../objects/front-panel-model';
 import { EquipmentDetail, SiteDetail } from '../objects/models';
 import { traceId } from '../objects/trace-model';
+import { CatalogKinds } from '../shell/catalog-kinds';
+import { IconComponent, locationIcon } from '../shell/icons';
 import { PanelStack } from '../shell/panels';
 import { Tools } from '../shell/tools';
 import {
@@ -36,7 +38,7 @@ const ROW_HEIGHT = 26;
  */
 @Component({
   selector: 'cmdb-tree-panel',
-  imports: [ScrollingModule],
+  imports: [ScrollingModule, IconComponent],
   template: `
     <header class="head">
       <h2>Innehåll</h2>
@@ -77,6 +79,7 @@ const ROW_HEIGHT = 26;
           [attr.aria-level]="row.depth + 1"
           [attr.aria-expanded]="row.expandable ? row.expanded : null"
           [attr.aria-selected]="i === active()"
+          [attr.aria-label]="ariaLabel(row.node)"
           [class.active]="i === active()"
           [class.current]="row.node.key === currentKey()"
           [style.padding-left.px]="8 + row.depth * 14"
@@ -92,10 +95,9 @@ const ROW_HEIGHT = 26;
           >
             {{ row.expanded ? '▾' : '▸' }}
           </button>
+          <cmdb-icon class="icon" [name]="icon(row.node)" [title]="kinds[row.node.kind]" />
           @if (row.node.portStatus; as s) {
             <span [class]="'dot ' + s" [title]="labels[s]"></span>
-          } @else {
-            <span class="kind">{{ kinds[row.node.kind] }}</span>
           }
           <span class="label mono">{{ row.node.label }}</span>
           @if (row.node.detail) {
@@ -200,9 +202,7 @@ const ROW_HEIGHT = 26;
         visibility: hidden;
       }
     }
-    .kind {
-      min-width: 24px;
-      font-size: var(--text-xs);
+    .icon {
       color: var(--text-muted);
     }
     .detail,
@@ -214,7 +214,7 @@ const ROW_HEIGHT = 26;
     .dot {
       width: 8px;
       height: 8px;
-      margin: 0 8px;
+      margin: 0 2px;
       border-radius: 50%;
       border: 1px solid var(--border-strong);
       &.connected {
@@ -245,12 +245,43 @@ export class TreePanelComponent {
 
   protected readonly rowHeight = ROW_HEIGHT;
   protected readonly labels = portStatusLabels;
+  private readonly catalog = inject(CatalogKinds);
   protected readonly kinds: Record<TreeNode['kind'], string> = {
     site: 'Site',
     location: 'Plats',
-    equipment: 'Utr.',
+    equipment: 'Utrustning',
     port: 'Port',
   };
+
+  /** The row's icon (#249): the site type's, the location kind's, the category's or a card's. */
+  protected icon(node: TreeNode): string {
+    switch (node.kind) {
+      case 'site':
+        return this.catalog.siteIcon(node.typeKey);
+      case 'location':
+        return locationIcon(node.typeKey ?? '');
+      case 'equipment':
+        return node.typeKey === 'card' ? 'card' : this.catalog.categoryIcon(node.typeKey);
+      default:
+        return 'port';
+    }
+  }
+
+  /** What the row is, in words, since its icon is only decoration. */
+  protected ariaLabel(node: TreeNode): string {
+    const type =
+      node.kind === 'equipment' && node.typeKey === 'card'
+        ? 'Kort'
+        : node.kind === 'site'
+          ? this.catalog.siteTypeName(node.typeKey ?? '')
+          : node.kind === 'equipment'
+            ? this.catalog.categoryName(node.typeKey ?? '')
+            : node.kind === 'location'
+              ? ''
+              : 'Port';
+    const status = node.portStatus ? this.labels[node.portStatus] : null;
+    return [type, node.label, node.detail, status].filter(Boolean).join(', ');
+  }
 
   /** Equipment on top of the stack tells us its site; other panels keep the last site. */
   private readonly topEquipment = httpResource<EquipmentDetail>(() => {

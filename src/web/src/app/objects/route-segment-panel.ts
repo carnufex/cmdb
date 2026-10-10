@@ -1,6 +1,7 @@
 import { httpResource } from '@angular/common/http';
 import { DecimalPipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
+import { IconComponent } from '../shell/icons';
 import { StatusComponent } from '../shell/status';
 import { ImpactListComponent } from './impact-list';
 import { asLifecycle, Impact, ObjectRef } from './models';
@@ -87,12 +88,14 @@ export function crossSection(count: number, size = 120): { x: number; y: number;
  */
 @Component({
   selector: 'cmdb-route-segment-panel',
-  imports: [DecimalPipe, ObjectLinkComponent, StatusComponent, ImpactListComponent],
+  imports: [IconComponent, DecimalPipe, ObjectLinkComponent, StatusComponent, ImpactListComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (segment.value(); as s) {
       <header class="header">
-        <div class="kind">Trasé · {{ construction(s.construction) }}</div>
+        <div class="kind">
+          <cmdb-icon name="route-segment" />Trasé · {{ construction(s.construction) }}
+        </div>
         <div class="code mono">{{ s.code }}</div>
         <div class="meta">
           <cmdb-status [value]="asLifecycle(s.lifecycle)" />

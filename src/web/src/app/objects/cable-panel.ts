@@ -18,6 +18,7 @@ import { ClaimsComponent } from './claims';
 import { ActivePlan } from '../plans/active-plan';
 import { CatalogKinds } from '../shell/catalog-kinds';
 import { PanelStack } from '../shell/panels';
+import { IconComponent } from '../shell/icons';
 import { StatusComponent } from '../shell/status';
 import { ImpactListComponent } from './impact-list';
 import { apiPath, CableDetail, Impact, ObjectRef } from './models';
@@ -27,6 +28,7 @@ import { SourcesComponent } from './sources';
 @Component({
   selector: 'cmdb-cable-panel',
   imports: [
+    IconComponent,
     SourcesComponent,
     ClassificationComponent,
     PlanMoveComponent,
@@ -40,7 +42,7 @@ import { SourcesComponent } from './sources';
   template: `
     @if (cable.value(); as c) {
       <header class="header">
-        <div class="kind">Kabel · {{ c.medium }}</div>
+        <div class="kind"><cmdb-icon name="cable" />Kabel · {{ c.medium }}</div>
         <div class="code mono">{{ c.code }}</div>
         <div class="title">{{ c.typeName }}</div>
         <div class="meta">

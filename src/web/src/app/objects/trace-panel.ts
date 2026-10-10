@@ -19,14 +19,16 @@ import {
  * as a vertical circuit diagram. Every step is a link, and the route is drawn in the map while the trace is in
  * the panel stack.
  */
+import { IconComponent } from '../shell/icons';
+
 @Component({
   selector: 'cmdb-trace-panel',
-  imports: [ObjectLinkComponent],
+  imports: [IconComponent, ObjectLinkComponent],
   template: `
     @if (start(); as s) {
       @if (trace.value(); as t) {
         <header class="header">
-          <div class="kind">Spårning · {{ kinds[s.by] }}</div>
+          <div class="kind"><cmdb-icon name="circuit" />Spårning · {{ kinds[s.by] }}</div>
           <div class="code mono">{{ title() }}</div>
           @if (t.service?.name) {
             <div class="title">{{ t.service?.name }}</div>

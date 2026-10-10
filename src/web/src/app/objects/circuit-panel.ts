@@ -1,6 +1,7 @@
 import { httpResource } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, effect, inject, input } from '@angular/core';
 import { PanelStack } from '../shell/panels';
+import { IconComponent } from '../shell/icons';
 import { StatusComponent } from '../shell/status';
 import { apiPath, CircuitDetail } from './models';
 import { ObjectLinkComponent } from './object-link';
@@ -9,11 +10,11 @@ import { traceId } from './trace-model';
 
 @Component({
   selector: 'cmdb-circuit-panel',
-  imports: [SourcesComponent, ObjectLinkComponent, StatusComponent],
+  imports: [IconComponent, SourcesComponent, ObjectLinkComponent, StatusComponent],
   template: `
     @if (circuit.value(); as c) {
       <header class="header">
-        <div class="kind">Krets · {{ layers[c.layer] ?? c.layer }}</div>
+        <div class="kind"><cmdb-icon name="circuit" />Krets · {{ layers[c.layer] ?? c.layer }}</div>
         <div class="code mono">{{ c.code }}</div>
         <div class="meta">
           <cmdb-status [value]="c.lifecycle" /><span>{{ c.hops.length }} hopp</span>

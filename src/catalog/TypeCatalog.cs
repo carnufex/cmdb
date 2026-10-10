@@ -149,8 +149,10 @@ public sealed class TypeCatalog
 
         var siteTypes = Kinds<CatalogSiteType>("site-types.json", siteTypesJson, errors);
         KindRules.Check("site-types.json", [.. siteTypes.Select(t => (t.Key, t.Name, t.Roles))], CatalogRoles.SiteRoles, errors);
+        KindRules.CheckIcons("site-types.json", siteTypes.Select(t => (t.Key, t.Icon)), errors);
         var categories = Kinds<EquipmentCategory>("equipment-categories.json", categoriesJson, errors);
         KindRules.Check("equipment-categories.json", [.. categories.Select(c => (c.Key, c.Name, c.Roles))], CatalogRoles.CategoryRoles, errors);
+        KindRules.CheckIcons("equipment-categories.json", categories.Select(c => (c.Key, c.Icon)), errors);
         var serviceTypes = Kinds<ServiceType>("service-types.json", serviceTypesJson, errors);
         KindRules.Check("service-types.json", [.. serviceTypes.Select(t => (t.Key, t.Name, (IReadOnlyList<string>)[]))], CatalogRoles.SiteRoles, errors);
         if (errors.Count > 0)

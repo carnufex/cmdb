@@ -8,6 +8,7 @@ import { MapView } from '../map/map-view';
 import { ActivePlan } from '../plans/active-plan';
 import { CatalogKinds } from '../shell/catalog-kinds';
 import { PanelStack } from '../shell/panels';
+import { IconComponent } from '../shell/icons';
 import { StatusComponent } from '../shell/status';
 import { EditHeaderComponent } from './edit-header';
 import { ImpactListComponent } from './impact-list';
@@ -18,6 +19,7 @@ import { SourcesComponent } from './sources';
 @Component({
   selector: 'cmdb-site-panel',
   imports: [
+    IconComponent,
     SourcesComponent,
     ClassificationComponent,
     PlanRemoveComponent,
@@ -31,7 +33,10 @@ import { SourcesComponent } from './sources';
   template: `
     @if (site.value(); as s) {
       <header class="header">
-        <div class="kind">Site · {{ kinds.siteTypeName(s.siteType) }}</div>
+        <div class="kind">
+          <cmdb-icon [name]="kinds.siteIcon(s.siteType)" />Site ·
+          {{ kinds.siteTypeName(s.siteType) }}
+        </div>
         <div class="code mono">{{ s.code }}</div>
         <cmdb-edit-header
           [url]="url()"

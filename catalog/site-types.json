@@ -54,6 +54,7 @@
   {
     "key": "radio",
     "name": "Radiosite",
+    "icon": "tower",
     "roles": [
       "access"
     ],
@@ -132,6 +133,7 @@
   {
     "key": "manhole",
     "name": "Brunn",
+    "icon": "manhole",
     "roles": [],
     "attributes": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
