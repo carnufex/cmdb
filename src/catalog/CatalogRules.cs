@@ -5,6 +5,57 @@ namespace Cmdb.Catalog;
 /// <summary>Consistency rules for catalog entries, so a broken file fails at load rather than at use.</summary>
 internal static partial class CatalogRules
 {
+    /// <summary>Duct types (ADR-0014): one file per key, a name, a positive size and at least one subduct.</summary>
+    public static List<DuctType> DuctTypes(IEnumerable<(string File, string Json)> files, List<string> errors)
+    {
+        var types = new List<DuctType>();
+        foreach (var (file, json) in files)
+        {
+            DuctType? type;
+            try
+            {
+                type = System.Text.Json.JsonSerializer.Deserialize<DuctType>(json, TypeCatalog.Json);
+            }
+            catch (System.Text.Json.JsonException ex)
+            {
+                errors.Add($"duct-types/{file}: {ex.Message}");
+                continue;
+            }
+            void Error(string message) => errors.Add($"duct-types/{file}: {message}");
+            if (type?.Key is null || type.Name is null || type.Manufacturer is null || type.Model is null || type.Subducts is null)
+            {
+                Error("key, name, manufacturer, model and subducts are required");
+                continue;
+            }
+            var before = errors.Count;
+            if (file != $"{type.Key}.json")
+            {
+                Error($"file name must be '{type.Key}.json'");
+            }
+            if (type.OuterDiameterMm < 1)
+            {
+                Error("outerDiameterMm must be at least 1");
+            }
+            if (type.Subducts.Count is < 1 or > 1000)
+            {
+                Error("subducts.count is 1–1000");
+            }
+            if (type.Subducts.InnerDiameterMm < 1 || type.Subducts.InnerDiameterMm >= type.OuterDiameterMm)
+            {
+                Error("subducts.innerDiameterMm must be at least 1 and less than the outer diameter");
+            }
+            if (errors.Count == before)
+            {
+                types.Add(type);
+            }
+        }
+        foreach (var duplicate in types.GroupBy(t => t.Key).Where(g => g.Count() > 1))
+        {
+            errors.Add($"duct-types: key '{duplicate.Key}' is used by more than one file");
+        }
+        return types;
+    }
+
     /// <summary>A file in <c>equipment-images/</c>: a plain name, SVG or PNG, so it cannot point anywhere else.</summary>
     [GeneratedRegex("^[a-z0-9][a-z0-9._-]*\\.(svg|png)$")]
     public static partial Regex ImageFile();

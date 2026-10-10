@@ -44,6 +44,12 @@ public class Conductor
     public Cable Cable { get; set; } = null!;
     public int Number { get; set; }
     public string? Color { get; set; }
+
+    /// <summary>
+    /// dark, dark_fibre (leased, lit by the customer) or spare (ADR-0014); null when nothing is said. Lit is not stored: a
+    /// conductor in an active circuit is lit.
+    /// </summary>
+    public string? Usage { get; set; }
 }
 
 internal sealed class CableTypeConfiguration : IEntityTypeConfiguration<CableType>
@@ -82,6 +88,7 @@ internal sealed class ConductorConfiguration : IEntityTypeConfiguration<Conducto
 {
     public void Configure(EntityTypeBuilder<Conductor> e)
     {
+        e.ToTable(t => t.HasCheckConstraint("ck_conductor_usage", "usage IS NULL OR usage IN ('dark', 'dark_fibre', 'spare')"));
         e.ToTable("conductor", t => t.HasCheckConstraint("ck_conductor_number", "number > 0"));
         e.Property(x => x.Id).UseIdentityAlwaysColumn();
         e.HasOne(x => x.Cable).WithMany().OnDelete(DeleteBehavior.Restrict);

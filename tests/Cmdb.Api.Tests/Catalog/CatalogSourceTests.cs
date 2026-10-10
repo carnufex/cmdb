@@ -100,6 +100,34 @@ public sealed class CatalogSourceTests : IDisposable
     }
 
     [Fact]
+    public void Duct_types_are_optional_and_checked_like_the_other_types()
+    {
+        CopyEmbedded();
+        TypeCatalog.Load(CatalogSource.FromPath(_folder)).DuctTypes.ShouldBeEmpty();
+
+        var embedded = TypeCatalog.Load(CatalogSource.Embedded);
+        embedded.DuctTypes.Select(t => t.Key).Order().ShouldBe(["acme-md-24x7", "acme-md-7x16", "acme-sd-40"]);
+        embedded.FindDuct("acme-md-7x16")!.Subducts.ShouldBe(new SubductTemplate(7, 12, "IEC 60304"));
+        embedded.FindSiteType("manhole")!.Name.ShouldBe("Brunn");
+
+        var ducts = Directory.CreateDirectory(Path.Combine(_folder, "duct-types")).FullName;
+        File.WriteAllText(Path.Combine(ducts, "globex-md-4x10.json"), """
+            { "key": "globex-md-4x10", "name": "Multidukt 4×10", "manufacturer": "Globex", "model": "MD-4x10", "outerDiameterMm": 30,
+              "subducts": { "count": 4, "innerDiameterMm": 8 } }
+            """);
+        TypeCatalog.Load(CatalogSource.FromPath(_folder)).FindDuct("globex-md-4x10")!.Subducts.Count.ShouldBe(4);
+
+        File.WriteAllText(Path.Combine(ducts, "globex-bad.json"), """
+            { "key": "globex-other", "name": "Fel", "manufacturer": "Globex", "model": "X", "outerDiameterMm": 10,
+              "subducts": { "count": 0, "innerDiameterMm": 12 } }
+            """);
+        var message = Should.Throw<InvalidOperationException>(() => TypeCatalog.Load(CatalogSource.FromPath(_folder))).Message;
+        message.ShouldContain("duct-types/globex-bad.json: file name must be 'globex-other.json'");
+        message.ShouldContain("subducts.count is 1–1000");
+        message.ShouldContain("less than the outer diameter");
+    }
+
+    [Fact]
     public void Cable_types_and_criticality_are_required()
     {
         Directory.CreateDirectory(Path.Combine(_folder, "equipment-types"));

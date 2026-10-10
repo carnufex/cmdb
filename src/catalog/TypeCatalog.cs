@@ -25,6 +25,7 @@ public sealed class TypeCatalog
     private readonly FrozenDictionary<string, EquipmentType> _types;
     private readonly FrozenDictionary<string, JsonSchema> _schemas;
     private readonly FrozenDictionary<string, CableType> _cableTypes;
+    private readonly FrozenDictionary<string, DuctType> _ductTypes;
     private readonly IReadOnlyList<CatalogSiteType> _siteTypes;
     private readonly FrozenDictionary<string, CatalogSiteType> _siteTypesByKey;
     private readonly IReadOnlyList<EquipmentCategory> _categories;
@@ -34,8 +35,9 @@ public sealed class TypeCatalog
 
     private TypeCatalog(IEnumerable<EquipmentType> types, IDictionary<string, JsonSchema> schemas, IEnumerable<CableType> cableTypes,
         IReadOnlyList<CatalogSiteType> siteTypes, IReadOnlyList<EquipmentCategory> categories, IReadOnlyList<ServiceType> serviceTypes,
-        IDictionary<(string, string), JsonSchema> objectSchemas)
+        IDictionary<(string, string), JsonSchema> objectSchemas, IEnumerable<DuctType> ductTypes)
     {
+        _ductTypes = ductTypes.ToFrozenDictionary(t => t.Key, StringComparer.Ordinal);
         _serviceTypes = serviceTypes;
         _objectSchemas = objectSchemas.ToFrozenDictionary();
         _types = types.ToFrozenDictionary(t => t.Key, StringComparer.Ordinal);
@@ -57,6 +59,11 @@ public sealed class TypeCatalog
     public IReadOnlyCollection<CableType> CableTypes => _cableTypes.Values;
 
     public CableType? FindCable(string key) => _cableTypes.GetValueOrDefault(key);
+
+    /// <summary>Duct types (ADR-0014); none when the catalog has no <c>duct-types/</c> folder.</summary>
+    public IReadOnlyCollection<DuctType> DuctTypes => _ductTypes.Values;
+
+    public DuctType? FindDuct(string key) => _ductTypes.GetValueOrDefault(key);
 
     /// <summary>The site types in catalog order (#208).</summary>
     public IReadOnlyList<CatalogSiteType> SiteTypes => _siteTypes;
@@ -133,7 +140,8 @@ public sealed class TypeCatalog
     /// <param name="serviceTypesJson">service-types.json; null takes the embedded one, <c>[]</c> is none.</param>
     /// <param name="imageExists">Whether a panel image is in the catalog's <c>equipment-images/</c> (#214); null skips the check.</param>
     public static TypeCatalog Parse(IEnumerable<(string File, string Json)> files, string cableTypesJson = "[]",
-        string? siteTypesJson = null, string? categoriesJson = null, string? serviceTypesJson = null, Func<string, bool>? imageExists = null)
+        string? siteTypesJson = null, string? categoriesJson = null, string? serviceTypesJson = null, Func<string, bool>? imageExists = null,
+        IEnumerable<(string File, string Json)>? ductTypeFiles = null)
     {
         var types = new List<EquipmentType>();
         var schemas = new Dictionary<string, JsonSchema>(StringComparer.Ordinal);
@@ -198,6 +206,7 @@ public sealed class TypeCatalog
             errors.Add($"cable-types.json: {ex.Message}");
         }
         CatalogRules.CheckCableTypes(cableTypes, errors);
+        var ductTypes = CatalogRules.DuctTypes(ductTypeFiles ?? [], errors);
 
         // Attribute schemas for sites, cables and services (#211): optional, checked like the equipment ones.
         var objectSchemas = new Dictionary<(string, string), JsonSchema>();
@@ -238,7 +247,7 @@ public sealed class TypeCatalog
         {
             throw new InvalidOperationException("Invalid type catalog:" + Environment.NewLine + string.Join(Environment.NewLine, errors));
         }
-        return new TypeCatalog(types, schemas, cableTypes, siteTypes, categories, serviceTypes, objectSchemas);
+        return new TypeCatalog(types, schemas, cableTypes, siteTypes, categories, serviceTypes, objectSchemas, ductTypes);
     }
 
     /// <summary>Loads and validates the equipment and cable types from <paramref name="source"/>.</summary>
@@ -249,7 +258,7 @@ public sealed class TypeCatalog
             string Required(string file) =>
                 source.Read(file) ?? throw new InvalidOperationException("Invalid type catalog:" + Environment.NewLine + $"{file}: missing");
             return Parse(source.Files("equipment-types"), Required("cable-types.json"), Required("site-types.json"), Required("equipment-categories.json"),
-                source.Read("service-types.json") ?? "[]", file => source.Image(file) is not null);
+                source.Read("service-types.json") ?? "[]", file => source.Image(file) is not null, source.Files("duct-types"));
         }
         catch (InvalidOperationException ex)
         {
