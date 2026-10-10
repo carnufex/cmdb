@@ -27,6 +27,7 @@ import {
   toOperations,
 } from './grid-model';
 import { Selection } from './selection';
+import { ToolSizeComponent } from '../shell/tool-size';
 
 const ROW_HEIGHT = 30;
 
@@ -37,10 +38,11 @@ const ROW_HEIGHT = 30;
  */
 @Component({
   selector: 'cmdb-grid-panel',
-  imports: [ScrollingModule],
+  imports: [ToolSizeComponent, ScrollingModule],
   template: `
     <header class="head">
       <h2>Kalkylark</h2>
+      <cmdb-tool-size />
       <button type="button" class="close" aria-label="Stäng kalkylarket" (click)="tools.close()">
         ×
       </button>

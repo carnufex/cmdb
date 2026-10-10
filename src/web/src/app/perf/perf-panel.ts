@@ -3,6 +3,7 @@ import { DecimalPipe } from '@angular/common';
 import { Tools } from '../shell/tools';
 import { Measurement } from './perf-model';
 import { PerfRunner, Progress } from './perf-runner';
+import { ToolSizeComponent } from '../shell/tool-size';
 
 /**
  * The performance panel (#56): one click runs the interactions in the budget against the loaded network and
@@ -10,7 +11,7 @@ import { PerfRunner, Progress } from './perf-runner';
  */
 @Component({
   selector: 'cmdb-perf-panel',
-  imports: [DecimalPipe],
+  imports: [ToolSizeComponent, DecimalPipe],
   templateUrl: './perf-panel.html',
   styleUrl: './perf-panel.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

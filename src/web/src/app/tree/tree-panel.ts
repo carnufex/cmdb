@@ -28,6 +28,7 @@ import {
   TreeNode,
   TreeRow,
 } from './tree-model';
+import { ToolSizeComponent } from '../shell/tool-size';
 
 const ROW_HEIGHT = 26;
 
@@ -38,10 +39,11 @@ const ROW_HEIGHT = 26;
  */
 @Component({
   selector: 'cmdb-tree-panel',
-  imports: [ScrollingModule, IconComponent],
+  imports: [ToolSizeComponent, ScrollingModule, IconComponent],
   template: `
     <header class="head">
       <h2>Innehåll</h2>
+      <cmdb-tool-size />
       <button
         type="button"
         class="close"
