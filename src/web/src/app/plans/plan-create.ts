@@ -15,6 +15,7 @@ import { firstValueFrom } from 'rxjs';
 import { MapView } from '../map/map-view';
 import { CatalogKinds } from '../shell/catalog-kinds';
 import { ActivePlan } from './active-plan';
+import { PlanDraft } from './plan-draft';
 import { NewOperation, PlanOperation, resolveSite, SiteChoice } from './plan-model';
 
 /** GET /api/cables/near (#169) */
@@ -500,6 +501,7 @@ export class PlanCreateComponent implements OnDestroy {
   private readonly http = inject(HttpClient);
   protected readonly mapView = inject(MapView);
   private readonly active = inject(ActivePlan);
+  private readonly draft = inject(PlanDraft);
   protected readonly kinds = inject(CatalogKinds);
 
   protected readonly tabs: { key: Tab; label: string }[] = [
@@ -559,6 +561,20 @@ export class PlanCreateComponent implements OnDestroy {
   }
 
   constructor() {
+    // A free unit picked in the rack view (#255): new equipment there, with site, rack and position filled in.
+    effect(() => {
+      const draft = this.draft.equipment();
+      if (draft) {
+        untracked(() => {
+          this.tab.set('equipment');
+          this.site = draft.site;
+          this.rack = draft.rack;
+          this.room = draft.room ?? '';
+          this.rackUnit = draft.position;
+          this.draft.equipment.set(null);
+        });
+      }
+    });
     // A new site defaults to the catalog's first access site type (a radio site in the synthetic catalog).
     effect(() => {
       const types = this.kinds.siteTypes();

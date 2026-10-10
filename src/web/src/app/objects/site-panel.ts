@@ -1,6 +1,6 @@
 import { PlanRemoveComponent } from '../plans/plan-remove';
 import { ClassificationComponent, DerivedClassification } from './classification';
-import { RackViewComponent } from './rack-view';
+import { RackPreviewComponent } from './rack-preview';
 import { httpResource } from '@angular/common/http';
 import { DecimalPipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, effect, inject, input } from '@angular/core';
@@ -23,7 +23,7 @@ import { SourcesComponent } from './sources';
     SourcesComponent,
     ClassificationComponent,
     PlanRemoveComponent,
-    RackViewComponent,
+    RackPreviewComponent,
     ObjectLinkComponent,
     StatusComponent,
     EditHeaderComponent,
@@ -85,8 +85,8 @@ import { SourcesComponent } from './sources';
               </span>
             }
           </h3>
-          @if (location.rackUnits) {
-            <cmdb-rack-view [units]="location.rackUnits" [equipment]="location.equipment" />
+          @if (location.kind === 'rack') {
+            <cmdb-rack-preview [rackId]="location.id" />
           }
           @if (location.equipment.length) {
             <table class="rows">
