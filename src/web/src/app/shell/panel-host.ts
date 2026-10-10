@@ -4,6 +4,7 @@ import { CablePanelComponent } from '../objects/cable-panel';
 import { CircuitPanelComponent } from '../objects/circuit-panel';
 import { EquipmentPanelComponent } from '../objects/equipment-panel';
 import { ObjectType, typeLabels } from '../objects/models';
+import { RouteSegmentPanelComponent } from '../objects/route-segment-panel';
 import { ServicePanelComponent } from '../objects/service-panel';
 import { SitePanelComponent } from '../objects/site-panel';
 import { TracePanelComponent } from '../objects/trace-panel';
@@ -22,6 +23,7 @@ import { PanelStack } from './panels';
     ServicePanelComponent,
     CircuitPanelComponent,
     TracePanelComponent,
+    RouteSegmentPanelComponent,
   ],
   template: `
     @if (stack.top(); as top) {
@@ -62,6 +64,9 @@ import { PanelStack } from './panels';
           }
           @case ('trace') {
             <cmdb-trace-panel [id]="top.id" />
+          }
+          @case ('route-segment') {
+            <cmdb-route-segment-panel [id]="top.id" />
           }
           @default {
             <p class="unknown">Okänd objekttyp.</p>

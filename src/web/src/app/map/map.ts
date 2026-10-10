@@ -44,9 +44,10 @@ import {
   resolutions,
   SWEREF,
   tileUrl,
+  conduitTileUrl,
 } from './map-grid';
 import { createBasemap, esriTileUrl, parseBasemap } from './map-basemap';
-import { createStyler, Palette, readPalette } from './map-style';
+import { createStyler, Palette, readPalette, statusColor } from './map-style';
 import { MapView, Operations, PlannedObjects, Route } from './map-view';
 
 /** GET /api/classifications/map (#180) */
@@ -92,6 +93,7 @@ export class MapComponent {
 
   private map?: OlMap;
   private network?: VectorTileLayer;
+  private conduit?: VectorTileLayer;
   private basemap?: TileLayer<XYZ>;
   private marks?: VectorLayer<VectorSource<Feature<OlPoint>>>;
   private route?: VectorLayer<VectorSource<Feature<Geometry>>>;
@@ -102,6 +104,9 @@ export class MapComponent {
   private liveKey = '';
   private lassoDraw?: Draw;
   protected readonly operationsShown = signal(false);
+
+  /** The conduit layer (#236): route segments, off until asked for. */
+  protected readonly conduitShown = signal(false);
 
   /** The classification layer (#180): the lowest level shown, 0 for off. */
   protected readonly classMin = signal(0);
@@ -188,6 +193,9 @@ export class MapComponent {
         this.showClassification(layer ?? null);
       }
     });
+    effect(() => {
+      this.conduit?.setVisible(this.conduitShown());
+    });
     // A point placed for a new site (#167): marked until the form takes it.
     effect(() => {
       const placed = this.mapView.placed();
@@ -234,6 +242,7 @@ export class MapComponent {
       this.planned?.changed();
       this.operations?.changed();
       this.classification?.changed();
+      this.conduit?.changed();
     };
 
     this.network = new VectorTileLayer({
@@ -248,6 +257,20 @@ export class MapComponent {
       declutter: false,
       // Vector mode redraws interim tiles as vectors while zooming, instead of scaling blurry images.
       renderMode: 'vector',
+    });
+
+    this.conduit = new VectorTileLayer({
+      source: new VectorTileSource({
+        format: new MVT({ idProperty: 'id' }),
+        projection: SWEREF,
+        tileGrid: networkTileGrid(),
+        tileUrlFunction: ([z, x, y]) => conduitTileUrl(z, x, y),
+        tileLoadFunction: (tile, url) => this.loadTile(tile as VectorTile<FeatureLike>, url),
+      }),
+      style: (f) => this.conduitStyle(f),
+      visible: this.conduitShown(),
+      renderMode: 'vector',
+      zIndex: 5,
     });
 
     this.marks = new VectorLayer({
@@ -282,6 +305,7 @@ export class MapComponent {
     });
     const layers: (TileLayer | VectorTileLayer | VectorLayer)[] = [
       this.placedLayer,
+      this.conduit,
       this.network,
       this.marks,
       this.planned,
@@ -358,6 +382,11 @@ export class MapComponent {
         if (feature && (feature.get('planned') === 'site' || feature.get('layer') === 'sites')) {
           this.mapView.pick(String(feature.get('code')));
         }
+        return;
+      }
+      if (feature?.get('layer') === 'routes') {
+        // The conduit layer (#236): a route segment opens its panel with the ducts' cross-sections.
+        this.panels.open({ type: 'route-segment', id: String(feature.getId()) }, { replace: true });
         return;
       }
       if (feature?.get('cls')) {
@@ -547,6 +576,39 @@ export class MapComponent {
         return f;
       }),
     ]);
+  }
+
+  private conduitStyleCache?: { key: string; styles: Map<string, Style[]> };
+
+  /**
+   * Route segments under the network (#236): a wide pale band, so cables drawn on top still read. Aerial lines dashed;
+   * planned or unfinished conduit in its status colour.
+   */
+  private conduitStyle(feature: FeatureLike): Style[] {
+    const palette = (this.palette ??= readPalette(this.host.nativeElement));
+    const key = `${palette.cable}|${palette.bg}|${palette.planned}|${palette.construction}`;
+    if (this.conduitStyleCache?.key !== key) {
+      this.conduitStyleCache = { key, styles: new Map() };
+    }
+    const lifecycle = String(feature.get('lifecycle'));
+    const aerial = feature.get('construction') === 'aerial';
+    const ducts = Number(feature.get('ducts')) || 1;
+    const styleKey = `${lifecycle}|${aerial}|${Math.min(ducts, 4)}`;
+    let style = this.conduitStyleCache.styles.get(styleKey);
+    if (!style) {
+      const colour = statusColor(lifecycle, palette, palette.cable);
+      style = [
+        new Style({
+          stroke: new Stroke({
+            color: alpha(colour, 0.45),
+            width: 4 + Math.min(ducts, 4) * 1.5,
+            lineDash: aerial ? [6, 6] : undefined,
+          }),
+        }),
+      ];
+      this.conduitStyleCache.styles.set(styleKey, style);
+    }
+    return style;
   }
 
   private classificationStyleCache?: { key: string; red: Style[]; amber: Style[] };
