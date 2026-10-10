@@ -29,7 +29,9 @@ public sealed class AgentPlanOperation
         "remove (a site, equipment or cable that carries no circuits; a site takes its equipment and cables along) " +
         "set_classification (a classification level on a site, equipment, cable or service) " +
         "move (equipment to another rack or site, or a cable's end to another site; connections on what changes site go and nothing " +
-        "that carries a circuit can move) or set_conductor_usage (fibres of a cable as dark, dark_fibre (leased) or spare; lit is derived).")]
+        "that carries a circuit can move), set_conductor_usage (fibres of a cable as dark, dark_fibre (leased) or spare; lit is derived), " +
+        "create_location (a building, room, rack or position on a site), create_service, create_circuit (with its path of terminals), " +
+        "set_circuit_path, link_circuit (a circuit riding on a carrier circuit) or link_service (a service running on a circuit).")]
     public string Kind { get; set; } = "";
 
     [Description("connect/disconnect: the first terminal id (ports and conductor ends have terminal ids in get_object).")]
@@ -41,7 +43,8 @@ public sealed class AgentPlanOperation
     [Description("connect: patch, splice, termination or internal. Default patch.")]
     public string? ConnectionKind { get; set; }
 
-    [Description("set_lifecycle/rename/remove/set_classification: a reference \"site:12\", \"equipment:34\" or \"cable:56\" (rename: site or equipment; set_classification also \"service:78\").")]
+    [Description("set_lifecycle/rename/remove/set_classification: a reference \"site:12\", \"equipment:34\" or \"cable:56\" (rename: site, equipment or \"location:9\"; set_classification also \"service:78\"). " +
+        "set_circuit_path/link_circuit: the circuit, \"circuit:7\"; link_service: the service, \"service:78\". Planned ones from this plan have negative ids.")]
     public string? Target { get; set; }
 
     [Description("set_lifecycle: planned, under_construction, in_service, decommissioning or removed.")]
@@ -106,6 +109,37 @@ public sealed class AgentPlanOperation
 
     [Description("set_conductor_usage: dark, dark_fibre (leased, lit by the customer) or spare; leave out to clear it.")]
     public string? Usage { get; set; }
+
+    [Description("create_location: the location it stands in, \"location:9\" (a room for a rack); create_equipment: the equipment whose slot a card " +
+        "goes in, \"equipment:34\". Planned ones from this plan allowed.")]
+    public string? Parent { get; set; }
+
+    [Description("create_equipment with parent: the slot the card goes in; it must be free and take the card's category.")]
+    public string? Slot { get; set; }
+
+    [Description("create_location: building, room, rack or position; site is the site and name its name.")]
+    public string? LocationKind { get; set; }
+
+    [Description("create_location: a rack's height in units.")]
+    public int? RackUnits { get; set; }
+
+    [Description("create_service: the service type (describe_catalog); code and name as for a site.")]
+    public string? ServiceType { get; set; }
+
+    [Description("create_circuit: physical, transmission or logical.")]
+    public string? Layer { get; set; }
+
+    [Description("create_circuit/set_circuit_path: the path as terminal ids in order, at least two (ports and conductor ends have terminal ids in get_object).")]
+    public long[]? Hops { get; set; }
+
+    [Description("link_circuit: the circuit it rides on, \"circuit:8\".")]
+    public string? Carrier { get; set; }
+
+    [Description("link_service: the circuit the service runs on, \"circuit:7\".")]
+    public string? Circuit { get; set; }
+
+    [Description("link_circuit/link_service: true takes the link away instead of adding it.")]
+    public bool? Remove { get; set; }
 }
 
 /// <summary>
@@ -199,6 +233,16 @@ public sealed class PlanTools(RequestDb db, PlanWrites writes, PlanViews views, 
                 End = op.End,
                 Conductors = op.Conductors,
                 Usage = op.Usage,
+                ParentId = op.Parent is null ? null : ParseRef(op.Parent, op.Kind == "create_location" ? "location" : "equipment", planned: true),
+                Slot = op.Slot,
+                LocationKind = op.LocationKind,
+                RackUnits = op.RackUnits,
+                ServiceType = op.ServiceType,
+                Layer = op.Layer,
+                Hops = op.Hops,
+                CarrierId = op.Carrier is null ? null : ParseRef(op.Carrier, "circuit", planned: true),
+                CircuitId = op.Circuit is null ? null : ParseRef(op.Circuit, "circuit", planned: true),
+                Remove = op.Remove ?? false,
             });
         }
         return await AddAllAsync(planId, requests, ct);
@@ -529,9 +573,9 @@ public sealed class PlanTools(RequestDb db, PlanWrites writes, PlanViews views, 
     {
         var colon = reference.IndexOf(':', StringComparison.Ordinal);
         var type = colon > 0 ? reference[..colon] : "";
-        return type is "site" or "equipment" or "cable" or "service"
-            // A negative id is a site or equipment the plan creates (#179); the write checks that it exists in the plan.
+        return type is "site" or "equipment" or "cable" or "service" or "circuit" or "location"
+            // A negative id is an object the plan creates (#179, #268); the write checks that it exists in the plan.
             ? (type, ParseRef(reference, type, planned: true))
-            : throw new McpException($"\"{reference}\" is not a reference like \"site:12\", \"equipment:34\", \"cable:56\" or \"service:78\".");
+            : throw new McpException($"\"{reference}\" is not a reference like \"site:12\", \"equipment:34\", \"cable:56\", \"service:78\", \"circuit:7\" or \"location:9\".");
     }
 }
