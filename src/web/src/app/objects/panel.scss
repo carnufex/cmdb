@@ -168,3 +168,14 @@ ul.links {
     margin-left: var(--space-1);
   }
 }
+
+/* A button that reads as a link in a panel's header (#254: Fiberritning). */
+.linkish {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-decoration: underline dotted;
+  cursor: pointer;
+}

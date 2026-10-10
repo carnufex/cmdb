@@ -13,6 +13,8 @@ import { StatusComponent } from '../shell/status';
 import { EditHeaderComponent } from './edit-header';
 import { ImpactListComponent } from './impact-list';
 import { apiPath, Impact, SiteDetail } from './models';
+import { Tools } from '../shell/tools';
+import { fibreTarget } from './fibre-model';
 import { ObjectLinkComponent } from './object-link';
 import { SourcesComponent } from './sources';
 
@@ -50,6 +52,7 @@ import { SourcesComponent } from './sources';
               Visa i kartan
             </button>
           }
+          <button type="button" class="linkish" (click)="fibre(s.id)">Fiberritning</button>
           @if (impact.value(); as i) {
             <span>{{ i.services.length }} tjänster och {{ i.circuits }} kretsar berörs</span>
           } @else {
@@ -201,6 +204,13 @@ import { SourcesComponent } from './sources';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class SitePanelComponent {
+  private readonly fibreTools = inject(Tools);
+
+  /** Opens the fibre drawing (#254) of this object as the workspace. */
+  protected fibre(id: number): void {
+    this.fibreTools.show('fibre', { fibre: fibreTarget('sites', id) });
+  }
+
   private readonly panels = inject(PanelStack);
   private readonly mapView = inject(MapView);
   private readonly plan = inject(ActivePlan);

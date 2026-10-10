@@ -4,7 +4,8 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { map } from 'rxjs';
 
 /** Tools opened from the toolbar. They sit over the left edge of the lens, never on top of the panel stack. */
-export type Tool = 'query' | 'perf' | 'tree' | 'plans' | 'grid' | 'changelog' | 'voice' | 'rack';
+export type Tool =
+  'query' | 'perf' | 'tree' | 'plans' | 'grid' | 'changelog' | 'voice' | 'rack' | 'fibre';
 
 /**
  * How much room a tool takes (#251): a panel over the map, half the screen beside it, or the whole workspace under
@@ -28,10 +29,14 @@ export const toolSpecs: Record<Tool, ToolSpec> = {
   voice: { sizes: ['panel'], initial: 'panel' },
   perf: { sizes: ['panel', 'half', 'workspace'], initial: 'panel' },
   rack: { sizes: ['half', 'workspace'], initial: 'workspace' },
+  fibre: { sizes: ['half', 'workspace'], initial: 'workspace' },
 };
 
-/** What a tool shows, in the address beside it: the rack view's rack (#255). Cleared when the tool closes. */
-const toolParams: Record<string, readonly string[]> = { rack: ['rack'] };
+/**
+ * What a tool shows, in the address beside it: the rack view's rack (#255), the fibre drawing's object and break point
+ * (#254). Cleared when the tool closes.
+ */
+const toolParams: Record<string, readonly string[]> = { rack: ['rack'], fibre: ['fibre', 'at'] };
 
 export const toolSizeNames: Record<ToolSize, string> = {
   panel: 'Panel',

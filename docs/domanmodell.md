@@ -252,6 +252,10 @@ Kablar ligger i subdukter i dukter, som ligger i trasé mellan siter. Kanalisati
   - Kablar med minst N lediga fibrer: ingen krets alls går på fibern (även planerade kretsar tar den), och den är inte angiven som svartfiber eller reserv. Fibrerna räknas i grafen i minnet.
   - Kanalisationslagret i kartan visar dukter och lediga rör per sträcka vid hovring.
 
+### Fiberritning (#254)
+
+`GET /api/fibre/{cables|route-segments|sites}/{id}` och `POST /api/fibre/selection` ger en fiberritning: kablarna (en trasésträckas kablar ur kanalisationen, en sites kablar, ett urvals kablar och kablarna mellan dess siter, högst 60) med varje ledares nummer, färg (`conductor.color`, enligt kabeltypens `colorCode`), användning (tänd när en krets går på den, annars den angivna: mörk, uthyrd eller reserv) och reservation, vad dess ändar är kopplade till och vilka kretsar som går på den. Kopplingar, kretsar och tjänster kommer ur grafen, så `?plan=` ger planens vy. Med `x` och `y` (en kabel) räknas avståndet längs kabelns geometri till dess ändar (`ST_LineLocatePoint`). Tjänsternas kritikalitet är deras klassning i schemat `criticality`. Allt inom omfånget: dolda terminaler blir platshållare, dolda kablar och tjänster räknas. Budget: 200 ms för en trasésträcka.
+
 ## Livscykel
 
 ```

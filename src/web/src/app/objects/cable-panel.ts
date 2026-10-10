@@ -22,6 +22,8 @@ import { IconComponent } from '../shell/icons';
 import { StatusComponent } from '../shell/status';
 import { ImpactListComponent } from './impact-list';
 import { apiPath, CableDetail, Impact, ObjectRef } from './models';
+import { Tools } from '../shell/tools';
+import { fibreTarget } from './fibre-model';
 import { ObjectLinkComponent } from './object-link';
 import { SourcesComponent } from './sources';
 
@@ -49,6 +51,7 @@ import { SourcesComponent } from './sources';
           <cmdb-status [value]="c.lifecycle" />
           <span>{{ c.lengthM / 1000 | number: '1.1-1' }} km</span>
           <span>{{ c.conductorsInUse }} av {{ c.conductors }} ledare i bruk</span>
+          <button type="button" class="linkish" (click)="fibre(c.id)">Fiberritning</button>
         </div>
       </header>
       <cmdb-classification type="cable" [objectId]="c.id" />
@@ -353,6 +356,13 @@ import { SourcesComponent } from './sources';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class CablePanelComponent {
+  private readonly fibreTools = inject(Tools);
+
+  /** Opens the fibre drawing (#254) of this object as the workspace. */
+  protected fibre(id: number): void {
+    this.fibreTools.show('fibre', { fibre: fibreTarget('cables', id) });
+  }
+
   private readonly panels = inject(PanelStack);
   protected readonly kinds = inject(CatalogKinds);
   /** The cable's attributes, named from its type's schema (#211). */
