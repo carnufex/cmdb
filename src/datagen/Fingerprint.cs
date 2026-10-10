@@ -63,7 +63,7 @@ internal static class Fingerprint
         }
         foreach (var r in net.RouteSegments)
         {
-            Row($"T|{r.Id}|{r.Code}|{r.A}|{r.B}|{r.Construction}|{r.Owner}|{string.Join(',', r.Coordinates.Select(v => v.ToString("R", CultureInfo.InvariantCulture)))}|{r.Lifecycle}");
+            Row($"T|{r.Id}|{r.Code}|{r.A}|{r.B}|{r.Construction}|{r.Owner}|{string.Join(',', r.Coordinates.Select(v => v.ToString("R", CultureInfo.InvariantCulture)))}|{r.Lifecycle}|{r.Trunk}");
         }
         foreach (var d in net.Ducts)
         {

@@ -165,8 +165,8 @@ public sealed class CablePathEndpoint(RequestDb db) : Endpoint<CablePathRequest,
 
 /// <summary>
 /// Vector tiles of the conduit (ADR-0014, #236), apart from the network's so the network tiles keep their budget: route
-/// segments with how they are built, their ducts and free tubes. Corridors (segments at a manhole) at every zoom level,
-/// the rest from <see cref="TileGrid.DetailZoom"/>. Cut at the edge of the caller's scope areas.
+/// segments with how they are built, their ducts and free tubes. Trunk conduit at every zoom level (#243), the rest from
+/// <see cref="TileGrid.DetailZoom"/>. Cut at the edge of the caller's scope areas.
 /// </summary>
 public sealed class ConduitTilesEndpoint(RequestDb db) : Endpoint<TileRequest>
 {
@@ -186,20 +186,22 @@ public sealed class ConduitTilesEndpoint(RequestDb db) : Endpoint<TileRequest>
             await Send.BytesAsync([], contentType: "application/vnd.mapbox-vector-tile", cancellation: ct);
             return;
         }
+        // Trunk conduit only below the detail level (#243), from its own index; ducts and free tubes counted once for the tile.
         await using var cmd = db.Source.CreateCommand($"""
             WITH bounds AS (
                 SELECT ST_TileEnvelope($1, $2, $3, ST_MakeEnvelope({TileGrid.MinX}, {TileGrid.MinY}, {TileGrid.MaxX}, {TileGrid.MaxY}, 3006)) AS geom
+            ), picked AS MATERIALIZED (
+                SELECT r.id FROM route_segment r, bounds b
+                WHERE r.geom && b.geom AND r.lifecycle <> 'removed' AND ($1 >= {TileGrid.DetailZoom} OR r.trunk)
+                  AND {ScopeSql.RouteSegment("r.id", 4)}
+            ), counts AS (
+                SELECT ds.route_segment_id AS id, count(DISTINCT ds.duct_id)::int AS ducts, count(*) FILTER (WHERE s.occupancy = 'empty')::int AS free
+                FROM picked p JOIN duct_segment ds ON ds.route_segment_id = p.id JOIN subduct s ON s.duct_id = ds.duct_id
+                GROUP BY ds.route_segment_id
             ), routes AS (
                 SELECT ST_AsMVTGeom({ScopeSql.RouteSegmentGeometry("r", 4, scope)}, b.geom, 4096, 64, true) AS geom,
-                       r.id, r.code, r.construction, r.lifecycle::text AS lifecycle,
-                       (SELECT count(*) FROM duct_segment ds WHERE ds.route_segment_id = r.id)::int AS ducts,
-                       (SELECT count(*) FROM duct_segment ds JOIN subduct s ON s.duct_id = ds.duct_id
-                        WHERE ds.route_segment_id = r.id AND s.occupancy = 'empty')::int AS free
-                FROM route_segment r, bounds b
-                WHERE r.geom && b.geom
-                  AND r.lifecycle <> 'removed'
-                  AND ($1 >= {TileGrid.DetailZoom} OR EXISTS (SELECT 1 FROM site m WHERE m.id IN (r.a_site_id, r.b_site_id) AND m.site_type = 'manhole'))
-                  AND {ScopeSql.RouteSegment("r.id", 4)}
+                       r.id, r.code, r.construction, r.lifecycle::text AS lifecycle, coalesce(c.ducts, 0) AS ducts, coalesce(c.free, 0) AS free
+                FROM picked p JOIN route_segment r ON r.id = p.id LEFT JOIN counts c ON c.id = r.id, bounds b
             )
             SELECT coalesce(ST_AsMVT(routes, 'routes', 4096, 'geom'), '') FROM routes
             """);
