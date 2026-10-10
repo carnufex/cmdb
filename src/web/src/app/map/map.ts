@@ -33,6 +33,8 @@ import VectorTileSource from 'ol/source/VectorTile';
 import { Auth } from '../auth/auth';
 import { RUNTIME_CONFIG } from '../config';
 import { CatalogKinds } from '../shell/catalog-kinds';
+import { Selection } from '../grid/selection';
+import { SelectionBarComponent } from '../grid/selection-bar';
 import { PanelStack } from '../shell/panels';
 import { StatusComponent } from '../shell/status';
 import { ThemeStore } from '../shell/theme';
@@ -72,7 +74,7 @@ interface Hover {
  */
 @Component({
   selector: 'cmdb-map',
-  imports: [StatusComponent],
+  imports: [StatusComponent, SelectionBarComponent],
   templateUrl: './map.html',
   styleUrl: './map.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -83,7 +85,11 @@ export class MapComponent {
   private readonly panels = inject(PanelStack);
   private readonly theme = inject(ThemeStore);
   private readonly mapView = inject(MapView);
+  private readonly selection = inject(Selection);
   private readonly kinds = inject(CatalogKinds);
+  /** Shift and Alt as the lasso closes: add to the selection or take away from it (#253). */
+  private modifiers = { shift: false, alt: false };
+  private lassoClosedAt = 0;
   private readonly host = inject(ElementRef<HTMLElement>);
   private readonly target = viewChild.required<ElementRef<HTMLDivElement>>('target');
 
@@ -132,6 +138,7 @@ export class MapComponent {
     });
     effect(() => {
       this.panels.top();
+      this.selection.current();
       this.network?.changed();
     });
     // Site sizes follow the catalog's roles (#208); restyle once they have loaded.
@@ -164,7 +171,12 @@ export class MapComponent {
         this.lassoDraw = new Draw({ source: new VectorSource(), type: 'Polygon' });
         this.lassoDraw.on('drawend', (e) => {
           const ring = (e.feature.getGeometry() as Polygon).getCoordinates()[0];
-          this.mapView.closeLasso(ring.map((p) => [Math.round(p[0]), Math.round(p[1])]));
+          const mode = this.modifiers.shift ? 'add' : this.modifiers.alt ? 'remove' : 'replace';
+          this.lassoClosedAt = performance.now();
+          this.mapView.closeLasso(
+            ring.map((p) => [Math.round(p[0]), Math.round(p[1])]),
+            mode,
+          );
         });
         this.map.addInteraction(this.lassoDraw);
       } else if (!on && this.lassoDraw) {
@@ -344,6 +356,11 @@ export class MapComponent {
     };
     reportCenter();
     this.map.on('moveend', reportCenter);
+    // The keys held on the click that closes a lasso decide what it does to the selection (#253).
+    const keys = (e: { originalEvent: MouseEvent | PointerEvent | KeyboardEvent }) =>
+      (this.modifiers = { shift: e.originalEvent.shiftKey, alt: e.originalEvent.altKey });
+    this.map.on('click', keys);
+    this.map.on('dblclick', keys);
     this.zoom.set(Math.round(this.map.getView().getZoom() ?? 0));
     this.map
       .getView()
@@ -375,6 +392,10 @@ export class MapComponent {
       );
     });
     this.map.on('click', (e) => {
+      // A click while drawing a lasso is one of its corners, and the double click that closes it is not a pick either.
+      if (this.mapView.lassoing() || performance.now() - this.lassoClosedAt < 500) {
+        return;
+      }
       if (this.mapView.placing()) {
         const [x, y] = e.coordinate;
         this.mapView.place({ x, y });
@@ -1018,13 +1039,15 @@ export class MapComponent {
     }
   }
 
+  /** The open object, and everything in the selection (#253), are drawn as selected. */
   private isSelected(feature: FeatureLike): boolean {
-    const top = this.panels.top();
-    if (!top) {
-      return false;
-    }
     const type = feature.get('layer') === 'sites' ? 'site' : 'cable';
-    return top.type === type && top.id === String(feature.getId());
+    const id = Number(feature.getId());
+    if ((type === 'site' ? this.selection.siteIds() : this.selection.cableIds()).has(id)) {
+      return true;
+    }
+    const top = this.panels.top();
+    return !!top && top.type === type && top.id === String(feature.getId());
   }
 
   private loadTile(tile: VectorTile<FeatureLike>, url: string): void {

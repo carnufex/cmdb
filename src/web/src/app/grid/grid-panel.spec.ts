@@ -43,7 +43,7 @@ describe('GridPanelComponent', () => {
   }
 
   it('loads the selection, pastes a column from Excel and puts the changes into the plan', async () => {
-    TestBed.inject(Selection).sites.set({ ids: [9], label: '1 site' });
+    TestBed.inject(Selection).pick({ siteIds: [9], cableIds: [] });
     const fixture = TestBed.createComponent(GridPanelComponent);
     await settle(fixture);
     const load = http.expectOne('/api/grid');

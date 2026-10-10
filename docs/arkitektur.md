@@ -67,10 +67,11 @@ Uppmätt i full skala (7,6 M terminaler, 4,3 M kanter, 117 000 kretsar):
   - Sitemallar (`catalog/site-templates/*.json`, `GET /api/templates`) och mönster (`POST /api/plans/{id}/patterns`: portintervall → ledarintervall med förskjutning och steg) expanderas till vanliga operationer.
   - `GET /api/plans/{id}/cables/{cableId}/termination` föreslår terminering i båda ändar. I varje ände väljs den ODF som har flest portar utan skarv i planens vy, och fiber k går till dess k:te lediga port.
   - `create_equipment` tar ett rack, som skapas i en byggnad på siten när det saknas.
-- **Kalkylark (#27):**
+- **Massredigering och urval (#27, #253):**
   - `set_attributes` ändrar attributnycklar, där null tar bort. För utrustning valideras de sammanslagna attributen mot modellens schema (JSON Schema, med format) när operationen läggs till.
   - `POST /api/grid` ger rader och schemakolumner för ett urval av siter eller deras utrustning, inom omfånget och utan dolda attribut.
-  - `POST /api/sites/within` ger siterna i en lassopolygon.
+  - `POST /api/sites/within` ger siterna i en lassopolygon och kablarna som ligger helt inom den.
+  - `POST /api/selection/impact` ger påverkan om alla siter och kablar i ett urval faller samtidigt, och `POST /api/selection/export` urvalet som CSV, båda inom omfånget och utan dolda attribut.
 - **Införande** (`POST /api/plans/{id}/apply`) kräver att beroendena redan är införda och att alla operationer passar produktion. Operationerna körs i en transaktion. En koppling blir en rad i `connection`, och en bortkoppling stänger raden (`valid_to`, livscykel *borttagen*). Ändringsflödet tar dem till grafen. Därefter kontrolleras alla utkast som bygger på planen, direkt eller indirekt, mot produktion som den blir, och de vars operationer inte längre passar flaggas.
 - **Avbrott** (`POST /api/plans/{id}/cancel`) flaggar alla utkast som bygger på planen. En ändring i en flaggad plan tar bort flaggan.
 - **Behörighet:** skrivningar kräver `cmdb-full`, som övriga skrivningar. Operationer får bara röra terminaler och objekt inom användarens omfång. En plan syns för omfång med `*` eller planens id i `access_scope.plans`; *Hela nätet* har `*`.

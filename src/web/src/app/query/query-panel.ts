@@ -190,12 +190,9 @@ export class QueryPanelComponent {
   }
 
   /** The matches as a spreadsheet (#27): the grid opens with them selected. */
-  protected openGrid(result: SiteQueryResult): void {
-    this.selection.sites.set({
-      ids: result.points.map((p) => p[0]),
-      label: `${result.points.length} siter från avancerad sökning`,
-    });
-    this.tools.toggle('grid');
+  /** The hits become the selection (#253), with its actions in the map. */
+  protected useAsSelection(result: SiteQueryResult): void {
+    this.selection.pick({ siteIds: result.points.map((p) => p[0]), cableIds: [] });
   }
 
   protected close(): void {

@@ -86,9 +86,9 @@ export function registerCoreCommands(): void {
     },
     {
       id: 'tools.grid',
-      label: 'Kalkylark',
+      label: 'Massredigering',
       hint: 'Verktyg',
-      keywords: ['excel', 'massredigering', 'attribut', 'lasso', 'urval'],
+      keywords: ['excel', 'kalkylark', 'attribut', 'lasso', 'urval'],
       run: () => {
         if (tools.open() !== 'grid') {
           tools.toggle('grid');

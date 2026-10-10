@@ -37,7 +37,7 @@
       [attr.aria-pressed]="tools.open() === 'grid'"
       (click)="tools.toggle('grid')"
     >
-      Kalkylark
+      Massredigering
     </button>
     @if (plan.id() !== null) {
       <span class="plan-chip" role="status">
@@ -176,7 +176,7 @@
     } @else if (tools.open() === 'plans') {
       <aside class="tool" aria-label="Planer"><cmdb-plan-panel /></aside>
     } @else if (tools.open() === 'grid') {
-      <aside class="tool wide" aria-label="Kalkylark"><cmdb-grid-panel /></aside>
+      <aside class="tool wide" aria-label="Massredigering"><cmdb-grid-panel /></aside>
     } @else if (tools.open() === 'changelog') {
       <aside class="tool" aria-label="Nyheter"><cmdb-changelog-panel /></aside>
     } @else if (tools.open() === 'voice') {
