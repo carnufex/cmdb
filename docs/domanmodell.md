@@ -240,7 +240,14 @@ Kablar ligger i subdukter i dukter, som ligger i trasé mellan siter. Kanalisati
   - Indexet sträcka → kablar hålls i minnet per grafversion. En ny graf (laddning eller ändringsflöde, #11) ger en ny version, så indexet följer grafen. Kanalisationen skrivs bara av laddningar i dag. När planer skriver den läggs tabellerna in i ändringsflödet.
   - Planerade arbeten i driftläget visar vilka sträckor grävområdet korsar. Ett klick på området öppnar den första sträckan.
   - MCP `get_object` tar `route-segment:<id>` och visar sträckan med dukter, rör och kablar.
-- **Läs- och skrivytor** som återstår: ledaranvändning och ledig kapacitet (#238).
+- **Ledaranvändning** (#238):
+  - **Tänd** härleds: ledaren ingår i en krets i drift.
+  - **Angiven användning:** släckt, svartfiber (uthyrd, tänds av kunden) och reserv anges med planoperationen `set_conductor_usage` (kabel, ledarnummer, användning eller tomt för att ta bort). En tänd ledare kan inte få en angiven användning.
+  - **Var den syns:** kabelpanelen visar varje ledare med användning som prick och text och kretsarna den ingår i (`GET /api/cables/{id}/conductors`). Ett formulär lägger operationen i aktiv plan. MCP `get_object` för en kabel har `conductorUsage`.
+- **Ledig kapacitet** (#238): `GET /api/conduit/capacity?minFreeTubes=&minFreeFibres=`, MCP `find_capacity`, och *Ledig kapacitet* i avancerad sökning.
+  - Sträckor med minst N tomma rör (inte reserverade).
+  - Kablar med minst N lediga fibrer: ingen krets alls går på fibern (även planerade kretsar tar den), och den är inte angiven som svartfiber eller reserv. Fibrerna räknas i grafen i minnet.
+  - Kanalisationslagret i kartan visar dukter och lediga rör per sträcka vid hovring.
 
 ## Livscykel
 

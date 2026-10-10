@@ -132,6 +132,12 @@ public sealed class AddOperationRequest
 
     /// <summary>move a cable: the end that moves, A or B.</summary>
     public string? End { get; set; }
+
+    /// <summary>set_conductor_usage: the conductor numbers.</summary>
+    public int[]? Conductors { get; set; }
+
+    /// <summary>set_conductor_usage: dark, dark_fibre or spare; null clears what was stated.</summary>
+    public string? Usage { get; set; }
 }
 
 public sealed class AddOperationValidator : Validator<AddOperationRequest>
@@ -193,6 +199,13 @@ public sealed class AddOperationValidator : Validator<AddOperationRequest>
             When(r => r.Type == "cable", () =>
                 RuleFor(r => r.End).Must(e => e is not null && (e.Equals("A", StringComparison.OrdinalIgnoreCase) || e.Equals("B", StringComparison.OrdinalIgnoreCase)))
                     .WithMessage("end is A or B."));
+        });
+        When(r => r.Kind == "set_conductor_usage", () =>
+        {
+            RuleFor(r => r.Type).Equal("cable").WithMessage("type is cable.");
+            RuleFor(r => r.ObjectId).NotNull().GreaterThan(0).WithMessage("objectId is an existing cable.");
+            RuleFor(r => r.Conductors).Must(c => c is { Length: > 0 and <= 1000 } && c.All(n => n > 0)).WithMessage("conductors is 1–1000 conductor numbers.");
+            RuleFor(r => r.Usage).Must(u => u is null or "dark" or "dark_fibre" or "spare").WithMessage("usage is dark, dark_fibre or spare, or null to clear it.");
         });
         When(r => r.Kind == "split_cable", () =>
         {

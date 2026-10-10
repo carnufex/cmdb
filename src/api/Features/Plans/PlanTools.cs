@@ -28,8 +28,8 @@ public sealed class AgentPlanOperation
     [Description("connect, disconnect, set_lifecycle, rename, create_site, create_equipment, create_cable, split_cable (insert a site into a cable) " +
         "remove (a site, equipment or cable that carries no circuits; a site takes its equipment and cables along) " +
         "set_classification (a classification level on a site, equipment, cable or service) " +
-        "or move (equipment to another rack or site, or a cable's end to another site; connections on what changes site go and nothing " +
-        "that carries a circuit can move).")]
+        "move (equipment to another rack or site, or a cable's end to another site; connections on what changes site go and nothing " +
+        "that carries a circuit can move) or set_conductor_usage (fibres of a cable as dark, dark_fibre (leased) or spare; lit is derived).")]
     public string Kind { get; set; } = "";
 
     [Description("connect/disconnect: the first terminal id (ports and conductor ends have terminal ids in get_object).")]
@@ -100,6 +100,12 @@ public sealed class AgentPlanOperation
     [Description("move a cable: the end that moves, \"A\" or \"B\"; target is \"cable:56\" and site the site it moves to. " +
         "move equipment: target is \"equipment:34\", site the site it moves to (its own for a move within it), and rack, room and position say where.")]
     public string? End { get; set; }
+
+    [Description("set_conductor_usage: the conductor numbers; target is the cable, \"cable:56\".")]
+    public int[]? Conductors { get; set; }
+
+    [Description("set_conductor_usage: dark, dark_fibre (leased, lit by the customer) or spare; leave out to clear it.")]
+    public string? Usage { get; set; }
 }
 
 /// <summary>
@@ -191,6 +197,8 @@ public sealed class PlanTools(RequestDb db, PlanWrites writes, PlanViews views, 
                 Position = op.Position,
                 Terminate = op.Terminate,
                 End = op.End,
+                Conductors = op.Conductors,
+                Usage = op.Usage,
             });
         }
         return await AddAllAsync(planId, requests, ct);

@@ -132,6 +132,68 @@ public sealed class ConduitTests(ApiFactory factory)
             w.GetProperty("routeSegments").EnumerateArray().Any(s => s.GetProperty("id").GetInt64() == segment));
     }
 
+    [Fact]
+    public async Task Conductor_usage_is_lit_from_circuits_stated_in_a_plan_otherwise_and_free_capacity_counts_what_is_left()
+    {
+        var db = await factory.NewDatabaseAsync();
+        await Loader.LoadAsync(db, NetworkBuilder.Build(63, Scale.Small, TypeCatalog.Current), reset: false, TextWriter.Null, ct: Ct);
+        await using (var clear = db.CreateCommand("DELETE FROM reservation; DELETE FROM plan_operation; DELETE FROM plan_dependency; DELETE FROM plan"))
+        {
+            await clear.ExecuteNonQueryAsync(Ct);
+        }
+        var connectionString = new NpgsqlConnectionStringBuilder(factory.ConnectionString)
+        {
+            Database = new NpgsqlConnectionStringBuilder(db.ConnectionString).Database,
+        }.ConnectionString;
+        await using var api = factory.WithWebHostBuilder(b => b.UseSetting("ConnectionStrings:Cmdb", connectionString));
+        await api.Services.GetRequiredService<Cmdb.Graph.GraphHolder>().Ready.WaitAsync(TimeSpan.FromSeconds(60), Ct);
+        await api.Services.GetRequiredService<Cmdb.Api.Auth.ScopeRefreshService>().Ready.WaitAsync(TimeSpan.FromSeconds(60), Ct);
+        using var client = NetworkFixture.Client(api);
+
+        // A cable in service with some lit fibres and some dark ones.
+        var cable = await Scalar(db, """
+            SELECT k.cable_id FROM conductor k JOIN cable c ON c.id = k.cable_id AND c.lifecycle = 'in_service'
+            GROUP BY k.cable_id
+            HAVING count(*) FILTER (WHERE EXISTS (SELECT 1 FROM conductor_end e JOIN circuit_hop h ON h.terminal_id = e.terminal_id
+                                                  JOIN circuit r ON r.id = h.circuit_id AND r.lifecycle = 'in_service' WHERE e.conductor_id = k.id)) BETWEEN 1 AND count(*) - 2
+            ORDER BY k.cable_id LIMIT 1
+            """);
+        var before = (await client.GetFromJsonAsync<List<ConductorUsage>>($"/api/cables/{cable}/conductors", Ct))!;
+        var lit = before.First(k => k.Usage == "lit");
+        lit.Circuits.ShouldNotBeEmpty();
+        var dark = before.Where(k => k.Usage == "dark").Select(k => k.Number).Take(2).ToArray();
+        dark.Length.ShouldBe(2);
+
+        async Task<int> FreeFibres()
+        {
+            var r = (await client.GetFromJsonAsync<CapacityResult>("/api/conduit/capacity?minFreeFibres=1&limit=500", Ct))!;
+            return r.Cables.FirstOrDefault(c => c.Id == cable)?.FreeFibres ?? 0;
+        }
+        var freeBefore = await FreeFibres();
+
+        // Stated in a plan: a lit fibre cannot be stated, two dark ones become leased dark fibre on apply.
+        var plan = (await (await client.PostAsJsonAsync("/api/plans", new { name = "Svartfiber till kund" }, Ct)).Content.ReadFromJsonAsync<Cmdb.Api.Features.Plans.PlanSummary>(Ct))!;
+        var refused = await client.PostAsJsonAsync($"/api/plans/{plan.Id}/operations",
+            new { kind = "set_conductor_usage", type = "cable", objectId = cable, conductors = new[] { lit.Number }, usage = "dark_fibre" }, Ct);
+        refused.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await refused.Content.ReadAsStringAsync(Ct)).ShouldContain("tända");
+        var added = await client.PostAsJsonAsync($"/api/plans/{plan.Id}/operations",
+            new { kind = "set_conductor_usage", type = "cable", objectId = cable, conductors = dark, usage = "dark_fibre" }, Ct);
+        added.StatusCode.ShouldBe(HttpStatusCode.OK, await added.Content.ReadAsStringAsync(Ct));
+        (await added.Content.ReadAsStringAsync(Ct)).ShouldContain("svartfiber");
+        (await client.PostAsync($"/api/plans/{plan.Id}/apply", null, Ct)).StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        var after = (await client.GetFromJsonAsync<List<ConductorUsage>>($"/api/cables/{cable}/conductors", Ct))!;
+        after.Where(k => dark.Contains(k.Number)).ShouldAllBe(k => k.Usage == "dark_fibre");
+        (await FreeFibres()).ShouldBe(freeBefore - 2);
+
+        // Route segments with empty tubes, most free first.
+        var tubes = (await client.GetFromJsonAsync<CapacityResult>("/api/conduit/capacity?minFreeTubes=3&limit=10", Ct))!;
+        tubes.Segments.ShouldNotBeEmpty();
+        tubes.Segments.ShouldAllBe(s => s.FreeTubes >= 3 && s.FreeTubes <= s.Tubes);
+        tubes.Segments.Select(s => s.FreeTubes).ShouldBeInOrder(SortDirection.Descending);
+    }
+
     private static async Task<long> Scalar(NpgsqlDataSource db, string sql)
     {
         await using var cmd = db.CreateCommand(sql);

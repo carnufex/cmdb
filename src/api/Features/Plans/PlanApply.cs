@@ -45,6 +45,14 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx, str
             case "move":
                 return await MoveAsync(p, ct);
 
+            case "set_conductor_usage":
+                {
+                    // Stated usage (#238): dark, leased dark fibre or spare; lit stays derived.
+                    var usage = p.TryGetProperty("usage", out var u) && u.ValueKind == JsonValueKind.String ? (object)u.GetString()! : DBNull.Value;
+                    return await ExecuteAsync("UPDATE conductor SET usage = $3 WHERE cable_id = $1 AND number = ANY($2)", ct,
+                        p.GetProperty("id").GetInt64(), p.GetProperty("conductors").EnumerateArray().Select(n => n.GetInt32()).ToArray(), usage) > 0;
+                }
+
             case "set_classification":
                 {
                     // Classifications are not in the graph yet (#177): the row is all there is to change.
