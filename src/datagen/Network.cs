@@ -150,7 +150,8 @@ internal readonly record struct Hop(long CircuitId, int Seq, long TerminalId, lo
 internal sealed record ServiceRow(long Id, string Code, string Name, string Type, string Attributes, string Lifecycle);
 
 /// <summary>A stretch of trench or other conduit between two sites (ADR-0014); <see cref="Coordinates"/> run from A to B.</summary>
-internal sealed record RouteSegmentRow(long Id, string Code, long A, long B, string Construction, string? Owner, double[] Coordinates, string Lifecycle);
+internal sealed record RouteSegmentRow(long Id, string Code, long A, long B, string Construction, string? Owner, double[] Coordinates, string Lifecycle,
+    bool Trunk = false);
 
 /// <summary>A duct on one route segment.</summary>
 internal sealed record DuctRow(long Id, string Code, string TypeKey, long Segment, string Lifecycle);

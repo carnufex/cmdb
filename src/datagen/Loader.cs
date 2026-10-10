@@ -173,7 +173,7 @@ internal static class Loader
             }, ct);
 
         // Conduit (#235, ADR-0014).
-        await Copy(conn, log, "route_segment", "id, code, a_site_id, b_site_id, construction, owner, geom, lifecycle", net.RouteSegments, (w, r) =>
+        await Copy(conn, log, "route_segment", "id, code, a_site_id, b_site_id, construction, owner, geom, lifecycle, trunk", net.RouteSegments, (w, r) =>
         {
             w.Write(r.Id);
             w.Write(r.Code);
@@ -190,6 +190,7 @@ internal static class Loader
             }
             w.Write(LineString(r.Coordinates), NpgsqlDbType.Bytea);
             w.Write(r.Lifecycle, NpgsqlDbType.Text);
+            w.Write(r.Trunk);
         }, ct);
         await Copy(conn, log, "duct", "id, code, duct_type_id, lifecycle", net.Ducts, (w, d) =>
         {

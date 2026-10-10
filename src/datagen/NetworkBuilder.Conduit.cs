@@ -129,7 +129,7 @@ internal sealed partial class NetworkBuilder
                 ? (rng.NextDouble() < 0.3 ? "existing" : "trench", rng.NextDouble() < 0.2 ? "Kanalisation Exempel AB" : null)
                 : (rng.NextDouble() switch { < 0.5 => "plough", < 0.9 => "trench", _ => "aerial" }, (string?)null);
             _net.RouteSegments.Add(new RouteSegmentRow(segment.Id, $"TR-{segment.Id:000000}", segment.A.Id, segment.B.Id, construction, owner,
-                segment.Coordinates, lifecycle));
+                segment.Coordinates, lifecycle, Trunk: segment.Cables.Any(c => c.Count >= 96)));
             if (segment.Corridor)
             {
                 var count = (int)Math.Ceiling(segment.Cables.Count / (double)corridorDuct.Subducts.Count) + (rng.NextDouble() < 0.3 ? 1 : 0);

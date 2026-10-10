@@ -133,7 +133,12 @@ public sealed class LoaderTests(ApiFactory factory)
                    (SELECT count(*) FROM subduct WHERE occupancy = 'cable') - (SELECT count(*) FROM cable_path),
                    (SELECT count(*) FROM site WHERE site_type = 'manhole'),
                    (SELECT count(*) FROM site s WHERE site_type = 'manhole'
-                    AND NOT EXISTS (SELECT 1 FROM route_segment r WHERE s.id IN (r.a_site_id, r.b_site_id)))
+                    AND NOT EXISTS (SELECT 1 FROM route_segment r WHERE s.id IN (r.a_site_id, r.b_site_id))),
+                   (SELECT count(*) FROM route_segment WHERE trunk),
+                   (SELECT count(*) FROM route_segment r WHERE r.trunk <> EXISTS (
+                        SELECT 1 FROM duct_segment ds JOIN subduct s ON s.duct_id = ds.duct_id JOIN cable_path p ON p.subduct_id = s.id
+                        JOIN cable c ON c.id = p.cable_id JOIN cable_type t ON t.id = c.cable_type_id
+                        WHERE ds.route_segment_id = r.id AND t.conductor_count >= 96))
             """);
         await using var reader = await cmd.ExecuteReaderAsync(Ct);
         await reader.ReadAsync(Ct);
@@ -145,6 +150,9 @@ public sealed class LoaderTests(ApiFactory factory)
         reader.GetInt64(4).ShouldBe(0);
         reader.GetInt64(5).ShouldBeGreaterThan(0);
         reader.GetInt64(6).ShouldBe(0);
+        // Trunk conduit (#243) is exactly the conduit with a cable of 96 fibres or more.
+        reader.GetInt64(7).ShouldBeGreaterThan(0);
+        reader.GetInt64(8).ShouldBe(0);
         await reader.CloseAsync();
         await using var conn = await db.OpenConnectionAsync(Ct);
         (await IntegrityCheck.RunAsync(conn, TextWriter.Null, Ct)).ShouldBeEmpty();

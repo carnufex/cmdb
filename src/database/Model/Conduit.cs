@@ -36,6 +36,12 @@ public class RouteSegment : Tracked
 
     public string? Owner { get; set; }
 
+    /// <summary>
+    /// Trunk conduit (#243): carries a cable of 96 fibres or more (backbone, rings). Drawn at every zoom level, like the large
+    /// cables; the rest only in detail.
+    /// </summary>
+    public bool Trunk { get; set; }
+
     /// <summary>In SWEREF 99 TM (EPSG:3006).</summary>
     public required LineString Geom { get; set; }
 
@@ -118,6 +124,8 @@ internal sealed class RouteSegmentConfiguration : IEntityTypeConfiguration<Route
         e.HasIndex(x => x.BSiteId);
         e.Property(x => x.Geom).HasColumnType("geometry(LineString, 3006)");
         e.HasIndex(x => x.Geom).HasMethod("gist");
+        // National map tiles draw only trunk conduit (#243): its own small index.
+        e.HasIndex(x => x.Geom, "ix_route_segment_trunk_geom").HasMethod("gist").HasFilter("trunk").HasDatabaseName("ix_route_segment_trunk_geom");
         e.Property(x => x.LengthM).HasComputedColumnSql("ST_Length(geom)", stored: true);
         e.Property(x => x.Attributes).HasColumnType("jsonb").HasDefaultValueSql("'{}'");
     }
