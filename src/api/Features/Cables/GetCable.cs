@@ -23,7 +23,8 @@ public sealed record CableDetail(
     IReadOnlyList<ObjectRef> Circuits,
     IReadOnlyList<ConductorClaims>? Claims = null,
     string? TypeKey = null,
-    IReadOnlyList<ObjectSource>? Sources = null);
+    IReadOnlyList<ObjectSource>? Sources = null,
+    IReadOnlyList<Cmdb.Api.Features.Conduit.ConductorUsage>? ConductorUsage = null);
 
 /// <summary>A conductor (fibre) that is reserved or wanted by a plan (#25).</summary>
 public sealed record ConductorClaims(long ConductorId, int Number, Cmdb.Api.Features.Reservations.ResourceClaims Claims);

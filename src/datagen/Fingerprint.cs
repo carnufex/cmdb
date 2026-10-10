@@ -61,6 +61,22 @@ internal static class Fingerprint
         {
             Row($"W|{s.Service}|{s.Circuit}");
         }
+        foreach (var r in net.RouteSegments)
+        {
+            Row($"T|{r.Id}|{r.Code}|{r.A}|{r.B}|{r.Construction}|{r.Owner}|{string.Join(',', r.Coordinates.Select(v => v.ToString("R", CultureInfo.InvariantCulture)))}|{r.Lifecycle}|{r.Trunk}");
+        }
+        foreach (var d in net.Ducts)
+        {
+            Row($"U|{d}");
+        }
+        foreach (var s in net.Subducts)
+        {
+            Row($"B|{s}");
+        }
+        foreach (var c in net.CablePaths)
+        {
+            Row($"Q|{c}");
+        }
         return Convert.ToHexStringLower(hash.GetHashAndReset());
     }
 }

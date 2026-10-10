@@ -21,7 +21,9 @@ public sealed record LiveFocus(string Tool, string Reference, string Conversatio
 
 public sealed record OperationsLive(IReadOnlyList<MapIncident> Incidents, LiveFocus? Live);
 
-public sealed record MapWork(long Id, string Title, string Contractor, DateTimeOffset StartsAt, DateTimeOffset EndsAt, bool Ongoing, double[][] Ring);
+/// <param name="RouteSegments">Route segments the dig crosses (#237), within the caller's scopes; up to 20.</param>
+public sealed record MapWork(long Id, string Title, string Contractor, DateTimeOffset StartsAt, DateTimeOffset EndsAt, bool Ongoing, double[][] Ring,
+    IReadOnlyList<Cmdb.Api.Features.Objects.ObjectRef>? RouteSegments = null);
 
 public sealed record MapRisk(string Id, string Kind, string Title, MapPoint Site);
 
@@ -213,6 +215,31 @@ public sealed class OperationsWorksEndpoint(GraphHolder holder, RequestDb db, Sc
                     from <= DateTimeOffset.UtcNow,
                     [.. Enumerable.Range(0, coordinates.GetLength(0)).Select(i => new[] { coordinates[i, 0], coordinates[i, 1] })]));
             }
+        }
+        // The route segments each dig crosses (#237): all the cables in their ducts are at risk.
+        if (works.Count > 0)
+        {
+            var crossed = new Dictionary<long, List<Cmdb.Api.Features.Objects.ObjectRef>>();
+            await using var cmd = db.Source.CreateCommand($"""
+                SELECT w.id, r.id, r.code, r.lifecycle::text
+                FROM planned_work w CROSS JOIN LATERAL (
+                    SELECT r.id, r.code, r.lifecycle FROM route_segment r
+                    WHERE r.geom && w.area AND ST_Intersects(r.geom, w.area) AND {ScopeSql.RouteSegment("r.id", 2)}
+                    ORDER BY r.code LIMIT 20) r
+                WHERE w.id = ANY($1)
+                """);
+            cmd.Parameters.Add(new() { Value = works.Select(w => w.Id).ToArray() });
+            cmd.Parameters.Add(scope.Parameter());
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                if (!crossed.TryGetValue(reader.GetInt64(0), out var list))
+                {
+                    crossed[reader.GetInt64(0)] = list = [];
+                }
+                list.Add(new Cmdb.Api.Features.Objects.ObjectRef("route-segment", reader.GetInt64(1), reader.GetString(2), null, reader.GetString(3)));
+            }
+            works = [.. works.Select(w => crossed.TryGetValue(w.Id, out var segments) ? w with { RouteSegments = segments } : w)];
         }
         var risks = await RiskDetection.RunAsync(graph, await masks.GetAsync(graph, scope, ct), db.Source, scope, ct, rules);
         var sites = new Dictionary<long, MapPoint>();

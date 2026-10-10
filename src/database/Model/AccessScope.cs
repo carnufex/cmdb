@@ -57,6 +57,13 @@ public class ScopeSite
     public long SiteId { get; set; }
 }
 
+/// <summary>A route segment a scope shows (ADR-0014): one whose geometry crosses the scope's area.</summary>
+public class ScopeRouteSegment
+{
+    public required string ScopeKey { get; set; }
+    public long RouteSegmentId { get; set; }
+}
+
 public class ScopeCable
 {
     public required string ScopeKey { get; set; }
@@ -100,6 +107,17 @@ internal sealed class ScopeSiteConfiguration : IEntityTypeConfiguration<ScopeSit
         e.HasKey(x => new { x.ScopeKey, x.SiteId });
         e.HasOne<AccessScope>().WithMany().HasForeignKey(x => x.ScopeKey).OnDelete(DeleteBehavior.Cascade);
         e.HasIndex(x => x.SiteId);
+    }
+}
+
+internal sealed class ScopeRouteSegmentConfiguration : IEntityTypeConfiguration<ScopeRouteSegment>
+{
+    public void Configure(EntityTypeBuilder<ScopeRouteSegment> e)
+    {
+        e.ToTable("scope_route_segment");
+        e.HasKey(x => new { x.ScopeKey, x.RouteSegmentId });
+        e.HasOne<AccessScope>().WithMany().HasForeignKey(x => x.ScopeKey).OnDelete(DeleteBehavior.Cascade);
+        e.HasIndex(x => x.RouteSegmentId);
     }
 }
 

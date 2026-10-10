@@ -1,7 +1,7 @@
 import { ResourceClaims } from './claims';
 import { Lifecycle } from '../shell/status';
 
-export type ObjectType = 'site' | 'equipment' | 'cable' | 'service' | 'circuit';
+export type ObjectType = 'site' | 'equipment' | 'cable' | 'service' | 'circuit' | 'route-segment';
 
 /** A link to another object (ObjectRef in the API). */
 export interface ObjectRef {
@@ -172,6 +172,9 @@ export interface Impact {
   elapsedMs: number;
   /** Affected services outside the caller's access scope (#22): counted, not named. */
   hiddenServices: number;
+  /** For a route segment (#237): the cables in its ducts, and how many lie outside the caller's scope. */
+  cables?: ObjectRef[] | null;
+  hiddenCables?: number;
 }
 
 export interface ServiceDetail {
@@ -214,6 +217,7 @@ export const typeLabels: Record<ObjectType, string> = {
   cable: 'Kabel',
   service: 'Tjänst',
   circuit: 'Krets',
+  'route-segment': 'Trasé',
 };
 
 export const apiPath: Record<ObjectType, string> = {
@@ -222,6 +226,7 @@ export const apiPath: Record<ObjectType, string> = {
   cable: 'cables',
   service: 'services',
   circuit: 'circuits',
+  'route-segment': 'route-segments',
 };
 
 export function asLifecycle(value: string | null | undefined): Lifecycle {

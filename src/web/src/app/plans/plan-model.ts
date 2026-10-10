@@ -130,6 +130,13 @@ export type NewOperation =
     }
   | { kind: 'move'; type: 'cable'; objectId: number; siteId: number; end: 'A' | 'B' }
   | {
+      kind: 'set_conductor_usage';
+      type: 'cable';
+      objectId: number;
+      conductors: number[];
+      usage: 'dark' | 'dark_fibre' | 'spare' | null;
+    }
+  | {
       kind: 'set_classification';
       type: 'site' | 'equipment' | 'cable' | 'service';
       objectId: number;

@@ -15,8 +15,8 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Cmdb.Database.Migrations
 {
     [DbContext(typeof(CmdbDbContext))]
-    [Migration("20261009064252_Reconciliations")]
-    partial class Reconciliations
+    [Migration("20261010171129_RouteSegmentTrunk")]
+    partial class RouteSegmentTrunk
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -235,6 +235,33 @@ namespace Cmdb.Database.Migrations
                             t.HasCheckConstraint("ck_cable_distinct_ends", "a_site_id <> b_site_id");
 
                             t.HasCheckConstraint("ck_cable_valid_time", "valid_to IS NULL OR valid_to > valid_from");
+                        });
+                });
+
+            modelBuilder.Entity("Cmdb.Database.Model.CablePath", b =>
+                {
+                    b.Property<long>("CableId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("cable_id");
+
+                    b.Property<int>("Seq")
+                        .HasColumnType("integer")
+                        .HasColumnName("seq");
+
+                    b.Property<long>("SubductId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("subduct_id");
+
+                    b.HasKey("CableId", "Seq")
+                        .HasName("pk_cable_path");
+
+                    b.HasIndex("SubductId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_cable_path_subduct_id");
+
+                    b.ToTable("cable_path", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_cable_path_seq", "seq >= 0");
                         });
                 });
 
@@ -608,6 +635,10 @@ namespace Cmdb.Database.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("number");
 
+                    b.Property<string>("Usage")
+                        .HasColumnType("text")
+                        .HasColumnName("usage");
+
                     b.HasKey("Id")
                         .HasName("pk_conductor");
 
@@ -618,6 +649,8 @@ namespace Cmdb.Database.Migrations
                     b.ToTable("conductor", null, t =>
                         {
                             t.HasCheckConstraint("ck_conductor_number", "number > 0");
+
+                            t.HasCheckConstraint("ck_conductor_usage", "usage IS NULL OR usage IN ('dark', 'dark_fibre', 'spare')");
                         });
                 });
 
@@ -725,6 +758,171 @@ namespace Cmdb.Database.Migrations
                             t.HasCheckConstraint("ck_connection_ordered", "a_terminal_id < b_terminal_id");
 
                             t.HasCheckConstraint("ck_connection_valid_time", "valid_to IS NULL OR valid_to > valid_from");
+                        });
+                });
+
+            modelBuilder.Entity("Cmdb.Database.Model.Duct", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Attributes")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("attributes")
+                        .HasDefaultValueSql("'{}'");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("code");
+
+                    b.Property<long>("DuctTypeId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("duct_type_id");
+
+                    b.Property<string>("ExternalId")
+                        .HasColumnType("text")
+                        .HasColumnName("external_id");
+
+                    b.Property<DateTimeOffset?>("LastConfirmedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_confirmed_at");
+
+                    b.Property<LifecycleState>("Lifecycle")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("lifecycle_state")
+                        .HasDefaultValue(LifecycleState.Planned)
+                        .HasColumnName("lifecycle");
+
+                    b.Property<long?>("ParentSubductId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("parent_subduct_id");
+
+                    b.Property<string>("SourceSystem")
+                        .HasColumnType("text")
+                        .HasColumnName("source_system");
+
+                    b.Property<DateTimeOffset>("ValidFrom")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("valid_from")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<DateTimeOffset?>("ValidTo")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("valid_to");
+
+                    b.HasKey("Id")
+                        .HasName("pk_duct");
+
+                    b.HasIndex("Code")
+                        .IsUnique()
+                        .HasDatabaseName("ix_duct_code");
+
+                    b.HasIndex("DuctTypeId")
+                        .HasDatabaseName("ix_duct_duct_type_id");
+
+                    b.HasIndex("ParentSubductId")
+                        .HasDatabaseName("ix_duct_parent_subduct_id")
+                        .HasFilter("parent_subduct_id IS NOT NULL");
+
+                    b.ToTable("duct", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_duct_valid_time", "valid_to IS NULL OR valid_to > valid_from");
+                        });
+                });
+
+            modelBuilder.Entity("Cmdb.Database.Model.DuctSegment", b =>
+                {
+                    b.Property<long>("DuctId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("duct_id");
+
+                    b.Property<int>("Seq")
+                        .HasColumnType("integer")
+                        .HasColumnName("seq");
+
+                    b.Property<long>("RouteSegmentId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("route_segment_id");
+
+                    b.HasKey("DuctId", "Seq")
+                        .HasName("pk_duct_segment");
+
+                    b.HasIndex("RouteSegmentId")
+                        .HasDatabaseName("ix_duct_segment_route_segment_id");
+
+                    b.HasIndex("DuctId", "RouteSegmentId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_duct_segment_duct_id_route_segment_id");
+
+                    b.ToTable("duct_segment", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_duct_segment_seq", "seq >= 0");
+                        });
+                });
+
+            modelBuilder.Entity("Cmdb.Database.Model.DuctType", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("ColorCode")
+                        .HasColumnType("text")
+                        .HasColumnName("color_code");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("key");
+
+                    b.Property<string>("Manufacturer")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("manufacturer");
+
+                    b.Property<string>("Model")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("model");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("name");
+
+                    b.Property<int>("OuterDiameterMm")
+                        .HasColumnType("integer")
+                        .HasColumnName("outer_diameter_mm");
+
+                    b.Property<int>("SubductCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("subduct_count");
+
+                    b.Property<int>("SubductInnerDiameterMm")
+                        .HasColumnType("integer")
+                        .HasColumnName("subduct_inner_diameter_mm");
+
+                    b.HasKey("Id")
+                        .HasName("pk_duct_type");
+
+                    b.HasIndex("Key")
+                        .IsUnique()
+                        .HasDatabaseName("ix_duct_type_key");
+
+                    b.ToTable("duct_type", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_duct_type_subducts", "subduct_count > 0 AND subduct_inner_diameter_mm > 0 AND outer_diameter_mm > 0");
                         });
                 });
 
@@ -1461,72 +1659,6 @@ namespace Cmdb.Database.Migrations
                         });
                 });
 
-            modelBuilder.Entity("Cmdb.Database.Model.Reconciliation", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint")
-                        .HasColumnName("id");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<long>("Id"));
-
-                    b.Property<long?>("AppliedPlanId")
-                        .HasColumnType("bigint")
-                        .HasColumnName("applied_plan_id");
-
-                    b.Property<bool>("DryRun")
-                        .HasColumnType("boolean")
-                        .HasColumnName("dry_run");
-
-                    b.Property<double>("ElapsedMs")
-                        .HasColumnType("double precision")
-                        .HasColumnName("elapsed_ms");
-
-                    b.Property<string>("Report")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("jsonb")
-                        .HasColumnName("report")
-                        .HasDefaultValueSql("'{}'");
-
-                    b.Property<long?>("ReviewPlanId")
-                        .HasColumnType("bigint")
-                        .HasColumnName("review_plan_id");
-
-                    b.Property<string>("RunBy")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("run_by");
-
-                    b.Property<string>("SourceSystem")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("source_system");
-
-                    b.Property<DateTimeOffset>("StartedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("started_at")
-                        .HasDefaultValueSql("now()");
-
-                    b.HasKey("Id")
-                        .HasName("pk_reconciliation");
-
-                    b.HasIndex("AppliedPlanId")
-                        .HasDatabaseName("ix_reconciliation_applied_plan_id");
-
-                    b.HasIndex("ReviewPlanId")
-                        .HasDatabaseName("ix_reconciliation_review_plan_id");
-
-                    b.HasIndex("SourceSystem", "StartedAt")
-                        .HasDatabaseName("ix_reconciliation_source_system_started_at");
-
-                    b.ToTable("reconciliation", null, t =>
-                        {
-                            t.HasCheckConstraint("ck_reconciliation_report", "jsonb_typeof(report) = 'object'");
-                        });
-                });
-
             modelBuilder.Entity("Cmdb.Database.Model.Reservation", b =>
                 {
                     b.Property<long>("Id")
@@ -1598,9 +1730,124 @@ namespace Cmdb.Database.Migrations
                         {
                             t.HasCheckConstraint("ck_reservation_holder", "holder_kind IN ('plan', 'service')");
 
-                            t.HasCheckConstraint("ck_reservation_resource", "resource_kind IN ('terminal', 'conductor', 'slot', 'channel')");
+                            t.HasCheckConstraint("ck_reservation_resource", "resource_kind IN ('terminal', 'conductor', 'slot', 'channel', 'subduct')");
 
                             t.HasCheckConstraint("ck_reservation_slot", "(resource_kind = 'slot') = (slot IS NOT NULL)");
+                        });
+                });
+
+            modelBuilder.Entity("Cmdb.Database.Model.RouteSegment", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("ASiteId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("a_site_id");
+
+                    b.Property<string>("Attributes")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("attributes")
+                        .HasDefaultValueSql("'{}'");
+
+                    b.Property<long>("BSiteId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("b_site_id");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("code");
+
+                    b.Property<string>("Construction")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("construction");
+
+                    b.Property<string>("ExternalId")
+                        .HasColumnType("text")
+                        .HasColumnName("external_id");
+
+                    b.Property<LineString>("Geom")
+                        .IsRequired()
+                        .HasColumnType("geometry(LineString, 3006)")
+                        .HasColumnName("geom");
+
+                    b.Property<DateTimeOffset?>("LastConfirmedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_confirmed_at");
+
+                    b.Property<double>("LengthM")
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("double precision")
+                        .HasColumnName("length_m")
+                        .HasComputedColumnSql("ST_Length(geom)", true);
+
+                    b.Property<LifecycleState>("Lifecycle")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("lifecycle_state")
+                        .HasDefaultValue(LifecycleState.Planned)
+                        .HasColumnName("lifecycle");
+
+                    b.Property<string>("Owner")
+                        .HasColumnType("text")
+                        .HasColumnName("owner");
+
+                    b.Property<string>("SourceSystem")
+                        .HasColumnType("text")
+                        .HasColumnName("source_system");
+
+                    b.Property<bool>("Trunk")
+                        .HasColumnType("boolean")
+                        .HasColumnName("trunk");
+
+                    b.Property<DateTimeOffset>("ValidFrom")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("valid_from")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<DateTimeOffset?>("ValidTo")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("valid_to");
+
+                    b.HasKey("Id")
+                        .HasName("pk_route_segment");
+
+                    b.HasIndex("ASiteId")
+                        .HasDatabaseName("ix_route_segment_a_site_id");
+
+                    b.HasIndex("BSiteId")
+                        .HasDatabaseName("ix_route_segment_b_site_id");
+
+                    b.HasIndex("Code")
+                        .IsUnique()
+                        .HasDatabaseName("ix_route_segment_code");
+
+                    b.HasIndex("Geom")
+                        .HasDatabaseName("ix_route_segment_geom");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("Geom"), "gist");
+
+                    b.HasIndex(new[] { "Geom" }, "ix_route_segment_trunk_geom")
+                        .HasDatabaseName("ix_route_segment_trunk_geom")
+                        .HasFilter("trunk");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex(new[] { "Geom" }, "ix_route_segment_trunk_geom"), "gist");
+
+                    b.ToTable("route_segment", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_route_segment_construction", "construction IN ('trench', 'plough', 'aerial', 'existing')");
+
+                            t.HasCheckConstraint("ck_route_segment_distinct_ends", "a_site_id <> b_site_id");
+
+                            t.HasCheckConstraint("ck_route_segment_valid_time", "valid_to IS NULL OR valid_to > valid_from");
                         });
                 });
 
@@ -1640,6 +1887,25 @@ namespace Cmdb.Database.Migrations
                         .HasDatabaseName("ix_scope_circuit_circuit_id");
 
                     b.ToTable("scope_circuit", (string)null);
+                });
+
+            modelBuilder.Entity("Cmdb.Database.Model.ScopeRouteSegment", b =>
+                {
+                    b.Property<string>("ScopeKey")
+                        .HasColumnType("text")
+                        .HasColumnName("scope_key");
+
+                    b.Property<long>("RouteSegmentId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("route_segment_id");
+
+                    b.HasKey("ScopeKey", "RouteSegmentId")
+                        .HasName("pk_scope_route_segment");
+
+                    b.HasIndex("RouteSegmentId")
+                        .HasDatabaseName("ix_scope_route_segment_route_segment_id");
+
+                    b.ToTable("scope_route_segment", (string)null);
                 });
 
             modelBuilder.Entity("Cmdb.Database.Model.ScopeService", b =>
@@ -1992,10 +2258,6 @@ namespace Cmdb.Database.Migrations
                         .HasColumnType("text")
                         .HasColumnName("external_id");
 
-                    b.Property<DateTimeOffset?>("MissingSince")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("missing_since");
-
                     b.Property<long>("ObjectId")
                         .HasColumnType("bigint")
                         .HasColumnName("object_id");
@@ -2033,6 +2295,49 @@ namespace Cmdb.Database.Migrations
                             t.HasCheckConstraint("ck_source_record_object_type", "object_type IN ('site', 'location', 'equipment', 'cable', 'circuit', 'service')");
 
                             t.HasCheckConstraint("ck_source_record_reported", "jsonb_typeof(reported) = 'object'");
+                        });
+                });
+
+            modelBuilder.Entity("Cmdb.Database.Model.Subduct", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Color")
+                        .HasColumnType("text")
+                        .HasColumnName("color");
+
+                    b.Property<long>("DuctId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("duct_id");
+
+                    b.Property<int>("Number")
+                        .HasColumnType("integer")
+                        .HasColumnName("number");
+
+                    b.Property<string>("Occupancy")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("empty")
+                        .HasColumnName("occupancy");
+
+                    b.HasKey("Id")
+                        .HasName("pk_subduct");
+
+                    b.HasIndex("DuctId", "Number")
+                        .IsUnique()
+                        .HasDatabaseName("ix_subduct_duct_id_number");
+
+                    b.ToTable("subduct", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_subduct_number", "number > 0");
+
+                            t.HasCheckConstraint("ck_subduct_occupancy", "occupancy IN ('empty', 'cable', 'blown_fibre')");
                         });
                 });
 
@@ -2321,6 +2626,23 @@ namespace Cmdb.Database.Migrations
                     b.Navigation("CableType");
                 });
 
+            modelBuilder.Entity("Cmdb.Database.Model.CablePath", b =>
+                {
+                    b.HasOne("Cmdb.Database.Model.Cable", null)
+                        .WithMany()
+                        .HasForeignKey("CableId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_cable_path_cable_cable_id");
+
+                    b.HasOne("Cmdb.Database.Model.Subduct", null)
+                        .WithMany()
+                        .HasForeignKey("SubductId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_cable_path_subducts_subduct_id");
+                });
+
             modelBuilder.Entity("Cmdb.Database.Model.Channel", b =>
                 {
                     b.HasOne("Cmdb.Database.Model.Terminal", "Terminal")
@@ -2459,6 +2781,41 @@ namespace Cmdb.Database.Migrations
                     b.Navigation("BTerminal");
                 });
 
+            modelBuilder.Entity("Cmdb.Database.Model.Duct", b =>
+                {
+                    b.HasOne("Cmdb.Database.Model.DuctType", "DuctType")
+                        .WithMany()
+                        .HasForeignKey("DuctTypeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_duct_duct_types_duct_type_id");
+
+                    b.HasOne("Cmdb.Database.Model.Subduct", null)
+                        .WithMany()
+                        .HasForeignKey("ParentSubductId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_duct_subducts_parent_subduct_id");
+
+                    b.Navigation("DuctType");
+                });
+
+            modelBuilder.Entity("Cmdb.Database.Model.DuctSegment", b =>
+                {
+                    b.HasOne("Cmdb.Database.Model.Duct", null)
+                        .WithMany()
+                        .HasForeignKey("DuctId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_duct_segment_duct_duct_id");
+
+                    b.HasOne("Cmdb.Database.Model.RouteSegment", null)
+                        .WithMany()
+                        .HasForeignKey("RouteSegmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_duct_segment_route_segments_route_segment_id");
+                });
+
             modelBuilder.Entity("Cmdb.Database.Model.Equipment", b =>
                 {
                     b.HasOne("Cmdb.Database.Model.EquipmentType", "EquipmentType")
@@ -2575,19 +2932,25 @@ namespace Cmdb.Database.Migrations
                     b.Navigation("Terminal");
                 });
 
-            modelBuilder.Entity("Cmdb.Database.Model.Reconciliation", b =>
+            modelBuilder.Entity("Cmdb.Database.Model.RouteSegment", b =>
                 {
-                    b.HasOne("Cmdb.Database.Model.Plan", null)
+                    b.HasOne("Cmdb.Database.Model.Site", "ASite")
                         .WithMany()
-                        .HasForeignKey("AppliedPlanId")
-                        .OnDelete(DeleteBehavior.SetNull)
-                        .HasConstraintName("fk_reconciliation_plan_applied_plan_id");
+                        .HasForeignKey("ASiteId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_route_segment_sites_a_site_id");
 
-                    b.HasOne("Cmdb.Database.Model.Plan", null)
+                    b.HasOne("Cmdb.Database.Model.Site", "BSite")
                         .WithMany()
-                        .HasForeignKey("ReviewPlanId")
-                        .OnDelete(DeleteBehavior.SetNull)
-                        .HasConstraintName("fk_reconciliation_plan_review_plan_id");
+                        .HasForeignKey("BSiteId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_route_segment_sites_b_site_id");
+
+                    b.Navigation("ASite");
+
+                    b.Navigation("BSite");
                 });
 
             modelBuilder.Entity("Cmdb.Database.Model.ScopeCable", b =>
@@ -2608,6 +2971,16 @@ namespace Cmdb.Database.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_scope_circuit_access_scope_scope_key");
+                });
+
+            modelBuilder.Entity("Cmdb.Database.Model.ScopeRouteSegment", b =>
+                {
+                    b.HasOne("Cmdb.Database.Model.AccessScope", null)
+                        .WithMany()
+                        .HasForeignKey("ScopeKey")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_scope_route_segment_access_scope_scope_key");
                 });
 
             modelBuilder.Entity("Cmdb.Database.Model.ScopeService", b =>
@@ -2649,6 +3022,18 @@ namespace Cmdb.Database.Migrations
                     b.Navigation("Circuit");
 
                     b.Navigation("Service");
+                });
+
+            modelBuilder.Entity("Cmdb.Database.Model.Subduct", b =>
+                {
+                    b.HasOne("Cmdb.Database.Model.Duct", "Duct")
+                        .WithMany()
+                        .HasForeignKey("DuctId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_subduct_duct_duct_id");
+
+                    b.Navigation("Duct");
                 });
 
             modelBuilder.Entity("Cmdb.Database.Model.Circuit", b =>

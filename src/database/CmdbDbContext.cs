@@ -34,6 +34,7 @@ public sealed class CmdbDbContext(DbContextOptions<CmdbDbContext> options) : DbC
     public DbSet<AccessScope> AccessScopes => Set<AccessScope>();
     public DbSet<ScopeSite> ScopeSites => Set<ScopeSite>();
     public DbSet<ScopeCable> ScopeCables => Set<ScopeCable>();
+    public DbSet<ScopeRouteSegment> ScopeRouteSegments => Set<ScopeRouteSegment>();
     public DbSet<ScopeCircuit> ScopeCircuits => Set<ScopeCircuit>();
     public DbSet<ScopeService> ScopeServices => Set<ScopeService>();
     public DbSet<Plan> Plans => Set<Plan>();
@@ -52,6 +53,12 @@ public sealed class CmdbDbContext(DbContextOptions<CmdbDbContext> options) : DbC
     public DbSet<Classification> Classifications => Set<Classification>();
     public DbSet<SourceRecord> SourceRecords => Set<SourceRecord>();
     public DbSet<Reconciliation> Reconciliations => Set<Reconciliation>();
+    public DbSet<DuctType> DuctTypes => Set<DuctType>();
+    public DbSet<RouteSegment> RouteSegments => Set<RouteSegment>();
+    public DbSet<Duct> Ducts => Set<Duct>();
+    public DbSet<DuctSegment> DuctSegments => Set<DuctSegment>();
+    public DbSet<Subduct> Subducts => Set<Subduct>();
+    public DbSet<CablePath> CablePaths => Set<CablePath>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

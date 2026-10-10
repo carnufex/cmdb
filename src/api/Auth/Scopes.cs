@@ -320,6 +320,23 @@ public static class ScopeSql
     public static string Service(string idColumn, int param) =>
         $"(${param}::text[] IS NULL OR EXISTS (SELECT 1 FROM scope_service z WHERE z.scope_key = ANY(${param}) AND z.service_id = {idColumn}))";
 
+    /// <summary>A route segment (ADR-0014): shown when its geometry crosses one of the caller's scope areas.</summary>
+    public static string RouteSegment(string idColumn, int param) =>
+        $"(${param}::text[] IS NULL OR EXISTS (SELECT 1 FROM scope_route_segment z WHERE z.scope_key = ANY(${param}) AND z.route_segment_id = {idColumn}))";
+
+    /// <summary>
+    /// A route segment's geometry as the caller may see it: whole for an unrestricted caller or when a scope's area covers
+    /// it, otherwise cut at the edge of the caller's areas, as cables in clip mode (ADR-0014). <paramref name="alias"/> is
+    /// the route segment row.
+    /// </summary>
+    public static string RouteSegmentGeometry(string alias, int param, UserScope scope) => scope.Unrestricted
+        ? $"{alias}.geom"
+        : $"""
+            coalesce((SELECT CASE WHEN bool_or(a.area IS NULL OR ST_CoveredBy({alias}.geom, a.area)) THEN {alias}.geom
+                                  ELSE ST_Intersection({alias}.geom, ST_Union(a.area)) END
+                      FROM access_scope a WHERE a.key = ANY(${param}) AND (a.area IS NULL OR a.area && {alias}.geom)), {alias}.geom)
+            """;
+
     /// <summary>
     /// A cable's geometry as the caller may see it: whole, or cut to the areas of the clipping scopes that show it when
     /// no scope shows it whole (<see cref="UserScope.Clips"/>). <paramref name="alias"/> is the cable row.

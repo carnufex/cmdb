@@ -116,6 +116,15 @@ public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views
             }
             payload = removal;
         }
+        else if (req.Kind == "set_conductor_usage")
+        {
+            var (usage, error) = await ConductorUsageAsync(scope, req, ct);
+            if (usage is null)
+            {
+                return PlanWrite.Fail<PlanOperationView>(PlanWriteFailure.Invalid, error!);
+            }
+            payload = usage;
+        }
         else if (req.Kind == "move")
         {
             var (move, error) = await MoveAsync(scope, view, req, ct);
@@ -416,6 +425,44 @@ public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views
             lineA,
             lineB,
         }), null);
+    }
+
+    /// <summary>
+    /// Checks a stated conductor usage (#238, ADR-0014) and gives its payload: the cable is visible, the conductors exist, and
+    /// none of them is lit (in a circuit in service), since lit is derived and never stated.
+    /// </summary>
+    private async Task<(string? Payload, string? Error)> ConductorUsageAsync(UserScope scope, AddOperationRequest req, CancellationToken ct)
+    {
+        var cable = req.ObjectId!.Value;
+        if (!await PlanSql.ObjectVisibleAsync(db, "cable", cable, scope, ct))
+        {
+            return (null, $"Kabel {cable} finns inte.");
+        }
+        var numbers = req.Conductors!.Distinct().Order().ToArray();
+        await using var cmd = db.CreateCommand("""
+            SELECT k.number, EXISTS (SELECT 1 FROM conductor_end e JOIN circuit_hop h ON h.terminal_id = e.terminal_id
+                                     JOIN circuit r ON r.id = h.circuit_id AND r.lifecycle = 'in_service' WHERE e.conductor_id = k.id)
+            FROM conductor k WHERE k.cable_id = $1 AND k.number = ANY($2)
+            """);
+        cmd.Parameters.Add(new() { Value = cable });
+        cmd.Parameters.Add(new() { Value = numbers });
+        var found = new Dictionary<int, bool>();
+        await using (var reader = await cmd.ExecuteReaderAsync(ct))
+        {
+            while (await reader.ReadAsync(ct))
+            {
+                found[reader.GetInt32(0)] = reader.GetBoolean(1);
+            }
+        }
+        if (numbers.Where(n => !found.ContainsKey(n)).ToList() is { Count: > 0 } missing)
+        {
+            return (null, $"Kabeln har inga ledare {string.Join(", ", missing)}.");
+        }
+        if (req.Usage is not null && found.Where(f => f.Value).Select(f => f.Key).Order().ToList() is { Count: > 0 } lit)
+        {
+            return (null, $"Ledare {string.Join(", ", lit)} ingår i kretsar i drift och är tända; användningen härleds då.");
+        }
+        return (System.Text.Json.JsonSerializer.Serialize(new { type = "cable", id = cable, conductors = numbers, usage = req.Usage }), null);
     }
 
     /// <summary>

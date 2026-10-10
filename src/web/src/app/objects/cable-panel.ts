@@ -20,7 +20,7 @@ import { CatalogKinds } from '../shell/catalog-kinds';
 import { PanelStack } from '../shell/panels';
 import { StatusComponent } from '../shell/status';
 import { ImpactListComponent } from './impact-list';
-import { apiPath, CableDetail, Impact } from './models';
+import { apiPath, CableDetail, Impact, ObjectRef } from './models';
 import { ObjectLinkComponent } from './object-link';
 import { SourcesComponent } from './sources';
 
@@ -61,6 +61,24 @@ import { SourcesComponent } from './sources';
           <dd><cmdb-link [ref]="c.b" [showName]="true" /></dd>
         </dl>
       </section>
+      @if (path.value()?.length) {
+        <section>
+          <h3>Väg i kanalisationen ({{ path.value()!.length }} sträckor)</h3>
+          <ol class="conduit-path">
+            @for (step of path.value()!; track step.seq) {
+              <li>
+                <cmdb-link [ref]="step.segment" />
+                @if (step.subduct) {
+                  <span class="muted">
+                    {{ step.duct }} rör {{ step.subduct
+                    }}{{ step.color ? ' (' + step.color + ')' : '' }}
+                  </span>
+                }
+              </li>
+            }
+          </ol>
+        </section>
+      }
       @if (attributes().length) {
         <section>
           <h3>Attribut</h3>
@@ -164,6 +182,62 @@ import { SourcesComponent } from './sources';
           }
         </section>
       }
+      @if (conductors.value(); as list) {
+        <section>
+          <details>
+            <summary>
+              <h3 class="inline">Ledare och användning</h3>
+              <span class="muted">{{ usageSummary(list) }}</span>
+            </summary>
+            <table class="conductors">
+              <tbody>
+                @for (k of list; track k.id) {
+                  <tr>
+                    <td class="mono">{{ k.number }}</td>
+                    <td class="muted">{{ k.color }}</td>
+                    <td>
+                      <span class="usage" [attr.data-usage]="k.usage">
+                        <span class="dot" aria-hidden="true"></span>{{ usageLabels[k.usage] }}
+                      </span>
+                    </td>
+                    <td>
+                      @for (r of k.circuits; track $index) {
+                        <cmdb-link [ref]="r" />
+                      }
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </details>
+          @if (plan.view.value()?.plan?.status === 'draft') {
+            <form class="usage-form" (submit)="$event.preventDefault(); setUsage(c)">
+              <label
+                >Ledare (t.ex. 1–4, 7)
+                <input
+                  [value]="usageNumbers()"
+                  (input)="usageNumbers.set($any($event.target).value)"
+                />
+              </label>
+              <label
+                >Användning
+                <select [value]="usageValue()" (change)="usageValue.set($any($event.target).value)">
+                  <option value="dark_fibre">Svartfiber (uthyrd)</option>
+                  <option value="spare">Reserv</option>
+                  <option value="dark">Släckt</option>
+                  <option value="">Ta bort angiven</option>
+                </select>
+              </label>
+              <button type="submit" class="action" [disabled]="settingUsage()">
+                Ange i planen
+              </button>
+            </form>
+            @if (usageError(); as err) {
+              <p class="error" role="alert">{{ err }}</p>
+            }
+          }
+        </section>
+      }
       <section>
         <cmdb-impact-list
           [impact]="impact.value()"
@@ -190,6 +264,60 @@ import { SourcesComponent } from './sources';
   `,
   styleUrl: './panel.scss',
   styles: `
+    .inline {
+      display: inline;
+      margin-right: var(--space-2);
+    }
+    .conductors {
+      width: 100%;
+      font-size: var(--text-sm);
+      border-collapse: collapse;
+    }
+    .conductors td {
+      padding: 1px var(--space-2) 1px 0;
+      vertical-align: baseline;
+    }
+    .usage {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-1);
+    }
+    .usage .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      border: 1px solid var(--border-strong);
+    }
+    [data-usage='lit'] .dot {
+      background: var(--status-in-service);
+    }
+    [data-usage='dark_fibre'] .dot {
+      background: var(--status-construction);
+    }
+    [data-usage='spare'] .dot {
+      background: var(--status-planned);
+    }
+    .usage-form {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-2);
+      align-items: end;
+      margin-top: var(--space-2);
+      font-size: var(--text-sm);
+    }
+    .usage-form label {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .conduit-path {
+      margin: 0;
+      padding-left: var(--space-4);
+      font-size: var(--text-sm);
+    }
+    .conduit-path li {
+      padding: 1px 0;
+    }
     .muted {
       margin: 0;
       color: var(--text-muted);
@@ -302,6 +430,69 @@ export class CablePanelComponent {
   readonly id = input.required<string>();
 
   protected readonly cable = httpResource<CableDetail>(() => `/api/${apiPath.cable}/${this.id()}`);
+  /** Each conductor's usage (#238): lit is derived, the rest stated in a plan. */
+  protected readonly conductors = httpResource<
+    {
+      id: number;
+      number: number;
+      color: string | null;
+      usage: 'lit' | 'dark' | 'dark_fibre' | 'spare';
+      circuits: ObjectRef[];
+    }[]
+  >(() => this.plan.request(`/api/${apiPath.cable}/${this.id()}/conductors`));
+  protected readonly usageLabels: Record<string, string> = {
+    lit: 'Tänd',
+    dark: 'Släckt',
+    dark_fibre: 'Svartfiber',
+    spare: 'Reserv',
+  };
+  protected readonly usageNumbers = signal('');
+  protected readonly usageValue = signal('dark_fibre');
+  protected readonly settingUsage = signal(false);
+  protected readonly usageError = signal<string | null>(null);
+
+  protected usageSummary(list: { usage: string }[]): string {
+    const count = (u: string) => list.filter((k) => k.usage === u).length;
+    return `${count('lit')} tända, ${count('dark')} släckta, ${count('dark_fibre')} svartfiber, ${count('spare')} reserv`;
+  }
+
+  /** States the usage of some conductors in the active plan (#238). */
+  protected async setUsage(c: CableDetail): Promise<void> {
+    this.usageError.set(null);
+    const numbers = parseNumbers(this.usageNumbers());
+    if (!numbers?.length) {
+      this.usageError.set('Ange ledare som nummer och intervall, t.ex. 1–4, 7.');
+      return;
+    }
+    this.settingUsage.set(true);
+    try {
+      const usage = this.usageValue();
+      await this.plan.add({
+        kind: 'set_conductor_usage',
+        type: 'cable',
+        objectId: c.id,
+        conductors: numbers,
+        usage: usage === '' ? null : (usage as 'dark' | 'dark_fibre' | 'spare'),
+      });
+      this.usageNumbers.set('');
+    } catch (e: unknown) {
+      this.usageError.set(problem(e, 'Användningen kunde inte anges.'));
+    } finally {
+      this.settingUsage.set(false);
+    }
+  }
+
+  /** The cable's way through the conduit (#236). */
+  protected readonly path = httpResource<
+    {
+      seq: number;
+      segment: ObjectRef;
+      construction: string | null;
+      duct: string;
+      subduct: number;
+      color: string | null;
+    }[]
+  >(() => `/api/${apiPath.cable}/${this.id()}/path`);
   /** Loaded after the cable itself: impact analysis has its own, larger budget. */
   protected readonly impact = httpResource<Impact>(() => {
     return this.cable.value()

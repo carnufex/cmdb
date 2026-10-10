@@ -97,3 +97,12 @@ public sealed record PortBox(string Side, int X, int Y, int Width, int Height)
 /// <summary>A cable model from <c>catalog/cable-types.json</c>. Medium is fiber, copper, coax or power.</summary>
 /// <param name="Attributes">Optional JSON Schema for the cable's attributes (#211); without one they are free.</param>
 public sealed record CableType(string Key, string Name, string Medium, int ConductorCount, string? ColorCode = null, JsonElement? Attributes = null);
+
+/// <summary>
+/// A duct model from <c>catalog/duct-types/&lt;key&gt;.json</c> (ADR-0014): its outer size and the template its subducts are
+/// generated from, as ports are from a port template. A new size is a catalog entry, not a migration.
+/// </summary>
+public sealed record DuctType(string Key, string Name, string Manufacturer, string Model, int OuterDiameterMm, SubductTemplate Subducts);
+
+/// <param name="ColorCode">The colour sequence the tubes follow, e.g. "IEC 60304"; tube N gets the N-th colour.</param>
+public sealed record SubductTemplate(int Count, int InnerDiameterMm, string? ColorCode = null);

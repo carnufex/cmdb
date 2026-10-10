@@ -122,7 +122,7 @@ Sitetyper och utrustningskategorier är katalogdata med nyckel, visningsnamn och
 | `termination` | kategori | Terminerar fibrer (ODF): där mönster och ruttförslag landar ledare. |
 | `power` | kategori | Reservkraft: riskvyn kollar batteriernas ålder. |
 
-En typ kan ha flera roller eller ingen. Okända roller, dubbla nycklar och sitemallar med okänd sitetyp ger fel vid laddning. Avancerad sökning och MCP `describe_catalog` visar namn och roller, och webben hämtar dem från `GET /api/catalog/kinds`. Datageneratorn bygger fortfarande det syntetiska nätet mot den syntetiska katalogens nycklar.
+En typ kan ha flera roller eller ingen. Okända roller, dubbla nycklar och sitemallar med okänd sitetyp ger fel vid laddning. Avancerad sökning och MCP `describe_catalog` visar namn och roller, och webben hämtar dem från `GET /api/catalog/kinds`. Datageneratorn väljer också sitetyper efter roll (se [Syntetiskt nät mot en egen katalog](#syntetiskt-nät-mot-en-egen-katalog)).
 
 ### Attributscheman för siter, kablar och tjänster (#211)
 
@@ -160,6 +160,7 @@ Den syntetiska katalogen i `catalog/` byggs in i API:t och datageneratorn och an
   source-priority.json        valfri, vilken källa som äger vilket attribut (#215)
   source-matching.json        valfri, hur objekt från en ny källa matchas mot cmdb (#216)
   equipment-types/<key>.json
+  duct-types/<key>.json       valfri, dukttyper för kanalisationen (ADR-0014)
   equipment-images/<fil>      valfri, bilder som modellerna pekar ut (#214)
   classifications/<key>.json  criticality.json krävs
   site-templates/<key>.json
@@ -168,6 +169,86 @@ Den syntetiska katalogen i `catalog/` byggs in i API:t och datageneratorn och an
 - Valideringen och synken till databasen är densamma oavsett källa. Fel anger katalogens mapp, filen och regeln, och processen startar inte.
 - En satt men saknad mapp är ett fel, inte en tom katalog. Utan variabeln används den inbäddade katalogen.
 - Katalogen läses en gång när processen startar. En ändrad katalog börjar gälla vid nästa utrullning, när migreringssteget synkar den.
+
+#### Generera katalog ur en export (#209)
+
+En organisation med hundratals modeller skriver inte katalogposterna för hand. Ofta finns modellerna bara i data: utrustning med en modellbeteckning och portar med namn. `catalog generate` gör en utrustningstyp per modell ur en export:
+
+```bash
+dotnet run --project src/datagen -- catalog generate --from <export> --out <katalogmapp> [--force]
+```
+
+- **Exporten** är importformatets `equipment.csv` och `ports.csv` ([import.md](import.md)), med modellbeteckningen i `model` (eller `type`). `equipment.csv` kan också ha `manufacturer`, `category`, `rackUnits` och, för kort, `parent` + `slot`. `ports.csv` kan ha `type` och `group`. Ett syntetiskt exempel finns i [`docs/exempel/katalog-export/`](exempel/katalog-export/).
+- **Nyckel:** tillverkare och modell som gemener, siffror och bindestreck (`initech-sw-24g`).
+- **Portmall:**
+  - Portnamnen från alla enheter av modellen slås ihop.
+  - Namn som bara skiljer sig i ett avslutande löpnummer, med samma typ och grupp, blir en mall per obruten följd: `ge-0/0/{n}` med `range` 1–24. Övriga blir enskilda portar.
+  - Nollutfyllda nummer (`P01`) behålls som de är.
+  - Har samma port olika typ i exporten används den vanligaste, och modellen får en varning.
+- **Frontpanel:** mallarna läggs ut från vänster till höger på rader som är lika breda som den bredaste följden, högst 48 kolumner. Längre följder delas på flera rader, så varje port får en egen cell.
+- **Kort och slotar** genereras bara när exporten anger `parent` och `slot`. Kortets slotnummer i portnamnen blir `{slot}`. Kortet får mappens kategori med rollen `card` (annars en ny, `kort`), och chassimodellen får de slotar exporten använder.
+- **Kategorier** som saknas läggs till i `equipment-categories.json` utan roller, och modeller utan kategori hamnar i `ovrigt`. Sätt roller efteråt (#208).
+- **Attributschema** genereras inte: attributen är fria tills någon skriver ett.
+- **Kontroll:**
+  - Varje typ kontrolleras som en handskriven innan den skrivs. Hela mappen laddas sedan som API:t gör.
+  - Rapporten listar varningar och modeller som inte genererades, med orsak.
+  - En befintlig fil skrivs bara över med `--force`.
+
+#### Syntetiskt nät mot en egen katalog (#219)
+
+Datageneratorn bygger ett syntetiskt nät mot den katalog den startas med, även en egen (`CMDB_CATALOG_PATH`), utan kodändring. Topologin är densamma: nav med stamnät, aggregeringsringar och accessgrenar.
+
+- **Sitetyper efter roll:** nav, aggregeringsnod, access och skarvpunkt hämtas ur katalogens roller (#208). Radiositer får den första accesstypen och skåp den sista.
+- **Kablar efter medium:** stamnätet får den största fiberkabeln, ringarna den minsta med minst 96 fibrer, accessgrenarna den minsta som räcker. Kopparkabel läggs bara om katalogen har en. När den största fiberkabeln är liten serverar en gren högst så många siter som kabeln har fibrer.
+- **Den syntetiska katalogen** (alla dess modeller finns) ger hela nätet som tidigare: radiosektorer, våglängder och VLAN över routrar och switchar, med samma fingeravtryck för samma frö.
+- **En annan katalog** ger ett generiskt nät:
+  - Kablar termineras på modeller med rollen `termination`.
+  - Varje site utom skarvpunkter får en aktiv modell, det vill säga en kategori utan rollerna card, termination och power, med minst två portar. Accessiter får den med minst portar, nav och aggregeringsnoder den med flest, och fler enheter när portarna tar slut.
+  - Nav och aggregeringsnoder får en kraftmodell om katalogen har en.
+  - Varje länk blir en fysisk krets genom ODF:erna. Varje accessite får en tjänst (katalogens första tjänstetyp, annars `ethernet`) på en logisk krets över grenen och aggregeringsnodens ring.
+  - Kort genereras inte.
+- **Attribut** för okända modeller och tjänster genereras ur typens JSON Schema: alla obligatoriska egenskaper, och valfria enkla egenskaper utan mönster, inom sina gränser.
+- **Krav på katalogen:** minst en sitetyp per roll, en fiberkabel, en modell med rollen `termination` och en aktiv modell. Saknas något stannar generatorn med ett fel som säger vad.
+- **Demoscenarierna** ([demo-scenarier.md](demo-scenarier.md)) hittar nav och aggregeringsnoder efter roll, men kräver tjänster av typen `mobile-backhaul` och hoppar annars över.
+
+## Kanalisation (ADR-0014, #92)
+
+Kablar ligger i subdukter i dukter, som ligger i trasé mellan siter. Kanalisationen bär ingen signal och ligger inte i grafen.
+
+| Tabell | Vad |
+|---|---|
+| `route_segment` | Trasésträcka mellan två siter: LineString i EPSG:3006, anläggningssätt (`trench`, `plough`, `aerial`, `existing`), ägare, livscykel och proveniens. Längden räknas av databasen. |
+| `duct_type` | Dukttyp, synkad från `catalog/duct-types/<key>.json`: ytterdiameter och subduktmall (antal, innerdiameter, färgkod). |
+| `duct` | En dukt av en dukttyp. Ligger den i en annan dukts rör (rör i rör) pekar `parent_subduct_id` ut röret. |
+| `duct_segment` | Duktens ordnade trasésträckor (`seq` från 0). |
+| `subduct` | Rör nummer N i dukten, genererat ur mallen. `occupancy` är `empty`, `cable` eller `blown_fibre`. *Reserverad* lagras inte: det är en reservation av röret (`resource_kind = 'subduct'`, #25). |
+| `cable_path` | Kabelns väg som ordnade subdukter från A-änden. Ett rör rymmer en kabel. Utan väg ligger kabeln fritt med sin egen geometri. |
+| `conductor.usage` | `dark`, `dark_fibre` (uthyrd, tänds av kunden) eller `spare`; tom när inget sagts. *Tänd* lagras inte, eftersom en ledare i en aktiv krets är tänd. |
+
+- **Brunnar** är siter av sitetypen `manhole` (Brunn), med position, livscykel, platser och omfång som andra siter.
+- **Dukttyper** är katalogdata som kabeltyperna: en ny storlek är en fil, inte en migrering. Mappen `duct-types/` är valfri, också i en extern katalog. Fel anger filen och regeln, till exempel filnamn som inte matchar nyckeln, inga rör eller ett rör som är större än dukten.
+- **Datageneratorn** (#235) lägger kablarna i kanalisation när katalogen har dukttyper:
+  - **Gemensamma stråk:** stamnät och ringar dras i stråk längs ett rutnät med en brunn ungefär var tionde kilometer. Kablar åt samma håll delar trasé, så ett navs länkar och ringar lämnar det i samma stråk. Ett stråk som skulle gå över hav byts mot en egen trasé.
+  - **Accesskablar:** en egen trasé längs sin sträckning, delad med andra kablar mellan samma två siter.
+  - **Kablarnas geometri** är deras trasésträckors.
+  - **Dukter:** stråken får multidukter med marginal. En enskild kabel får skyddsrör eller en multidukt, och en del accesstrasé får en mikrorörsbunt med blåsfiber.
+  - **Resten av nätet** är oförändrat för samma frö (egen slumpkälla), utom de långa kablarnas sträckning.
+- **I kartan** (#236): kryssrutan *Kanalisation* i teckenförklaringen visar trasén som ett eget lager under nätet (`GET /api/tiles/conduit/{z}/{x}/{y}`), så nätets plattor och deras budget är opåverkade. Stamtrasé (`route_segment.trunk`: en sträcka som bär en kabel med minst 96 fibrer, samma gräns som för kablarna) syns på alla zoomnivåer, med ett eget partiellt index, och övriga sträckor från detaljnivån (#243). Bredden visar antalet dukter, och luftledningar är streckade.
+- **Sträckpanelen** (`GET /api/route-segments/{id}`) visar anläggningssätt, ändar, ägare och varje dukt som ett tvärsnitt ritat ur dukttypens mall. Rörens beläggning visas som prick och text: tom, reserverad (en aktiv reservation av röret), kabel eller blåsfiber. Kabeln i röret är en länk.
+- **Kabelpanelen** visar kabelns väg genom kanalisationen (`GET /api/cables/{id}/path`): sträcka, dukt och rör från A-änden.
+- **Omfång:** en sträcka syns när dess geometri skär något av anroparens områden (`scope_route_segment`, materialiserad med de andra omfångstabellerna), och i plattorna klipps den vid områdets kant. Dukter och rör följer sin sträcka. En kabel utanför omfånget visas som *upptagen* utan namn, och en sträcka utanför omfånget i en kabels väg visas som dold.
+- **Påverkan per sträcka** (#237): en grävning på en trasésträcka kapar alla kablar i dess dukter (`GET /api/route-segments/{id}/impact`, MCP `impact` med `route-segment:<id>`, och *Om sträckan grävs av* i sträckpanelen). Påverkan räknas med samma kod som för en kabel, över alla kablarna tillsammans. Kablar utanför anroparens omfång räknas med för det de bär, så långt anroparen får se, och anges bara som antal.
+  - Indexet sträcka → kablar hålls i minnet per grafversion. En ny graf (laddning eller ändringsflöde, #11) ger en ny version, så indexet följer grafen. Kanalisationen skrivs bara av laddningar i dag. När planer skriver den läggs tabellerna in i ändringsflödet.
+  - Planerade arbeten i driftläget visar vilka sträckor grävområdet korsar. Ett klick på området öppnar den första sträckan.
+  - MCP `get_object` tar `route-segment:<id>` och visar sträckan med dukter, rör och kablar.
+- **Ledaranvändning** (#238):
+  - **Tänd** härleds: ledaren ingår i en krets i drift.
+  - **Angiven användning:** släckt, svartfiber (uthyrd, tänds av kunden) och reserv anges med planoperationen `set_conductor_usage` (kabel, ledarnummer, användning eller tomt för att ta bort). En tänd ledare kan inte få en angiven användning.
+  - **Var den syns:** kabelpanelen visar varje ledare med användning som prick och text och kretsarna den ingår i (`GET /api/cables/{id}/conductors`). Ett formulär lägger operationen i aktiv plan. MCP `get_object` för en kabel har `conductorUsage`.
+- **Ledig kapacitet** (#238): `GET /api/conduit/capacity?minFreeTubes=&minFreeFibres=`, MCP `find_capacity`, och *Ledig kapacitet* i avancerad sökning.
+  - Sträckor med minst N tomma rör (inte reserverade).
+  - Kablar med minst N lediga fibrer: ingen krets alls går på fibern (även planerade kretsar tar den), och den är inte angiven som svartfiber eller reserv. Fibrerna räknas i grafen i minnet.
+  - Kanalisationslagret i kartan visar dukter och lediga rör per sträcka vid hovring.
 
 ## Livscykel
 

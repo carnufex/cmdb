@@ -1,6 +1,6 @@
 # ADR-0019: Ursprung per attribut som källposter per objekt och källa
 
-**Status:** Föreslagen · **Datum:** 2026-10-09 (#215)
+**Status:** Accepterad · **Datum:** 2026-10-09 · **Beslut:** #225 · **Issue:** #215
 
 ## Kontext
 Objekten har i dag ursprung på objektnivå: `source_system`, `external_id` och `last_confirmed_at` (ADR-0009, `Tracked`). När ett 40-tal källsystem ska läsas in (Fas 9) äger olika system olika attribut på samma objekt. En nätverkshanterare äger kort och portar, övervakningen bekräftar att utrustningen lever och planeringen äger positionen. Samma utrustning finns dessutom i flera system med olika id:n. Avstämningen (#216) behöver kunna veta vem som sa vad och när, och vilken källa som får skriva vilket attribut.
@@ -10,7 +10,7 @@ Objekten har i dag ursprung på objektnivå: `source_system`, `external_id` och 
 - **B. Ett jsonb-fält med ursprung på varje objekttabell.** Inga nya tabeller, men varje bekräftelse skriver om objektets rad, och externa id:n från flera källor kan inte ges ett unikt index.
 - **C. En källpost per objekt och källa** (`source_record`): källa, externt id, när källan senast bekräftade objektet, och de värden källan rapporterade per attribut (jsonb).
 
-## Beslut (förslag)
+## Beslut
 **C.**
 - **Källposten.** En källa bekräftar alla sina attribut på ett objekt samtidigt, så en rad per objekt och källa räcker. `(objektslag, källa, externt id)` är unikt, så samma objekt kan ha id:n från flera källor.
 - **Källans värden.** Raden sparar det källan rapporterade, inte en hänvisning till cmdb:s värde. Ett värde som ändrats i cmdb efter bekräftelsen syns därför direkt, utan att planer, redigering eller andra skrivvägar behöver märka ursprung. Avstämningen (#216) får också det den behöver för att visa källans värde mot cmdb:s.

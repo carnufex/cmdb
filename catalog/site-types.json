@@ -128,5 +128,29 @@
         }
       }
     }
+  },
+  {
+    "key": "manhole",
+    "name": "Brunn",
+    "roles": [],
+    "attributes": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "backupHours": {
+          "title": "Reservkraft (timmar)",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 720
+        },
+        "aliases": {
+          "title": "Andra namn",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
   }
 ]

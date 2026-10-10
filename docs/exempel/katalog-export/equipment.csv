@@ -1,0 +1,9 @@
+id;model;manufacturer;category;rackUnits;parent;slot
+E1;SW-24G;Initech;vaxel;1;;
+E2;SW-24G;Initech;vaxel;1;;
+E3;CH-6;Initech;;6;;
+E4;LC-4X;Initech;;;E3;3
+E5;LC-4X;Initech;;;E3;5
+E6;FR-12;Initech Optical;termineringsram;1;;
+E7;BAT-200;Initech Power;batteri;3;;
+E8;PP-60;Initech;;2;;

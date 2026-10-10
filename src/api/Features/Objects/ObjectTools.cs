@@ -23,19 +23,20 @@ public sealed record AgentImpactedService(string Ref, string Code, string? Name,
 public sealed record AgentImpact(string Ref, string Url, int Circuits, int DirectCircuits, int Services, IReadOnlyList<AgentImpactedService> AffectedServices, bool Truncated);
 
 [McpServerToolType]
-public sealed class ObjectTools(RequestDb db, GraphHolder holder, AgentLinks links, ScopeMasks masks, IHttpContextAccessor http)
+public sealed class ObjectTools(RequestDb db, GraphHolder holder, AgentLinks links, ScopeMasks masks, Conduit.ConduitIndex conduit, IHttpContextAccessor http)
 {
     private const int MaxServices = 50;
 
     /// <summary>The calling agent's scopes (#22).</summary>
     private UserScope Scope => http.HttpContext!.Scope();
-    private static readonly string[] Types = ["site", "equipment", "cable", "service", "circuit"];
+    private static readonly string[] Types = ["site", "equipment", "cable", "service", "circuit", "route-segment"];
 
     [McpServerTool(Name = "get_object", Title = "Hämta objekt", ReadOnly = true, Idempotent = true, OpenWorld = false)]
     [Description("Everything the UI shows for one object: a site with locations, equipment and cables; equipment with ports and " +
-        "connections; a cable with conductors; a service with its circuits; a circuit with its hops.")]
+        "connections; a cable with conductors; a service with its circuits; a circuit with its hops; a route segment (conduit) with its " +
+        "ducts, their tubes and the cables in them.")]
     public async Task<AgentObject> GetObject(
-        [Description("A reference \"type:id\" (site, equipment, cable, service, circuit), e.g. \"site:1268\", or an exact code such as \"RAD-000007\".")] string reference,
+        [Description("A reference \"type:id\" (site, equipment, cable, service, circuit, route-segment), e.g. \"site:1268\", or an exact code such as \"RAD-000007\".")] string reference,
         CancellationToken ct = default)
     {
         var (type, id) = await ResolveAsync(reference, ct);
@@ -43,8 +44,12 @@ public sealed class ObjectTools(RequestDb db, GraphHolder holder, AgentLinks lin
         {
             "site" => await GetSiteEndpoint.LoadAsync(db, id, Scope, ct),
             "equipment" => await EquipmentSlice.LoadAsync(db, id, Scope, ct),
-            "cable" => await GetCableEndpoint.LoadAsync(db, id, Scope, ct),
+            // Agents get each conductor's usage too (#238): lit, dark, leased dark fibre or spare.
+            "cable" => await GetCableEndpoint.LoadAsync(db, id, Scope, ct) is { } cable
+                ? cable with { ConductorUsage = await Conduit.CableConductorsEndpoint.LoadAsync(db, id, Scope, ct) }
+                : null,
             "service" => await GetServiceEndpoint.LoadAsync(db, id, Scope, ct),
+            "route-segment" => await Conduit.RouteSegmentEndpoint.LoadAsync(db, id, Scope, ct),
             _ => await GetCircuitEndpoint.LoadAsync(db, id, Scope, ct),
         };
         return detail is null
@@ -53,22 +58,26 @@ public sealed class ObjectTools(RequestDb db, GraphHolder holder, AgentLinks lin
     }
 
     [McpServerTool(Name = "impact", Title = "Påverkansanalys", ReadOnly = true, Idempotent = true, OpenWorld = false)]
-    [Description("What a cut of a cable, or an outage of equipment or a site, would affect: the circuits through it, circuits " +
-        "riding on those, and the services they carry, each with the chain of circuits that reaches it.")]
+    [Description("What a cut of a cable, an outage of equipment or a site, or a dig across a route segment (all cables in its ducts) " +
+        "would affect: the circuits through it, circuits riding on those, and the services they carry, each with the chain of circuits " +
+        "that reaches it.")]
     public async Task<AgentImpact> Impact(
-        [Description("A cable, equipment or site: \"cable:42\", \"equipment:9001\", \"site:1268\" or an exact code such as \"K-000123\".")] string reference,
+        [Description("A cable, equipment, site or route segment: \"cable:42\", \"equipment:9001\", \"site:1268\", \"route-segment:77\" or an exact code such as \"K-000123\".")] string reference,
         CancellationToken ct = default)
     {
         var (type, id) = await ResolveAsync(reference, ct);
-        if (type is not ("cable" or "equipment" or "site"))
+        if (type is not ("cable" or "equipment" or "site" or "route-segment"))
         {
-            throw new McpException("impact works on cables, equipment and sites.");
+            throw new McpException("impact works on cables, equipment, sites and route segments.");
         }
         if (holder.Current is not { } graph)
         {
             throw new McpException("The network graph is still loading; try again in a few seconds.");
         }
-        var impact = await ImpactEndpoint.RunAsync(graph, await masks.GetAsync(graph, Scope, ct), db, type, id, ct);
+        var mask = await masks.GetAsync(graph, Scope, ct);
+        var impact = type == "route-segment"
+            ? await conduit.RunAsync(graph, mask, db, Scope, id, ct) ?? throw new McpException($"No route segment with id {id}.")
+            : await ImpactEndpoint.RunAsync(graph, mask, db, type, id, ct);
         return new AgentImpact(
             AgentLinks.Ref(type, id),
             links.For(type, id),

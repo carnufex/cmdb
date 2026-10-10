@@ -63,6 +63,20 @@ Slutsatser:
 - **Ändringar skalar.** Satser som flyttar kopplingar, ändrar objekt, lägger till, tar bort, flyttar eller bygger om utrustning och kablar, eller ändrar kretsar blir ett delta (#81, #119, #121, #123, se [arkitektur.md](arkitektur.md)): millisekunder oavsett nätets storlek. Deltat kompakteras in i arrayerna vart tionde minut eller vid 50 000 noder. Utan borttag tar det under en sekund även i 4× och toppen är högst 1,1 gånger grafens storlek. Med borttag numreras arrayerna om, och toppen blir cirka 1,5 gånger grafens storlek.
 - **Ombyggnad från rader är en reservväg.** Den sker bara när en sats rader inte passar deltat (till exempel en borttagen terminal som en krets fortfarande går genom). Tiden och toppen växer linjärt, och toppen är ungefär tre gånger grafens storlek. Podgränsen bestäms ändå av laddningen vid start och av den ovanliga ombyggnaden, tills API-tabellen ovan har mätts om. I full skala räcker 2 GiB (topp 1,6 GB). I 2× behövs cirka 4 GiB och i 4× cirka 7 GiB.
 
+### Kanalisation i full skala (#235)
+
+Uppmätt 2026-10-10 lokalt (docker compose, utvecklingsmaskin), seed 1:
+
+| | Antal | COPY |
+|---|---|---|
+| Brunnar (siter) | 2 331 | – |
+| Trasésträckor | 42 940 | 0,2 s |
+| Dukter | 50 138 | 0,1 s |
+| Rör | 218 024 | 0,3 s |
+| Kabelvägar | 47 431 | 0,1 s |
+
+Generatorn bygger kanalisationen på ungefär 0,2 s av totalt 2,0 s, och hela laddningen tar 65,5 s. `scripts/perf.sh --target local` håller budgeten med kanalisationen laddad: snabbsök p95 23 ms och kartplatta p95 16 ms. Kanalisationen läses ännu inte av några frågor; plattor och påverkan per sträcka mäts i #236 och #237.
+
 ## Prestandabudget
 
 | Interaktion | Mål (p95, full skala) |
@@ -71,7 +85,9 @@ Slutsatser:
 | Öppna objekt med närmaste grannar | < 50 ms |
 | Spåra tjänst ände till ände | < 50 ms |
 | Påverkansanalys för en kabelsträcka | < 200 ms |
+| Påverkan av grävning på en trasésträcka (#237) | < 200 ms |
 | Kartplatta per omfång | < 100 ms |
+| Kanalisationsplatta per omfång (#236) | < 100 ms |
 | Växla vy mellan produktion och plan | < 100 ms |
 
 Budgeten kan mätas direkt i appen: **Prestanda** i verktygsfältet kör interaktionerna mot det laddade nätet och visar p50 och p95 för servern (`Server-Timing`) och webbläsaren. Status bedöms på serverns p95. Är kartan öppen mäts också kartans bildtid, och är grannskapsgrafen öppen mäts grafens bildtid när den har expanderats från ett nav till minst 2 000 siter (#89). Visas en frontpanel med bild mäts dess bildtid medan ett portintervall flyttas en port per bild (#214). Målet för alla tre är p95 under 33 ms (30 fps), men de ingår inte i budgeten.
@@ -103,6 +119,9 @@ Om tiden blir knapp räcker scenario 1–4. Övriga visas som förberedda i data
 | 5 – Provisionering | Dokumentera nätet i planer: rita i kartan, sätt in en site i en befintlig kabel, massimport, kabelväg, ta bort och flytta, rack (#166) | – |
 | 6 – Klassning och regler | Klassningar (t.ex. kritikalitet 1–5) med ärvning och regler som syns i planer (ADR-0017, #175) | – |
 | 7 – Röstagenter: härdning | En hemlighet per röstingång, NetworkPolicy, SMS-leverantör (#181–#183) | – |
+| 8 – Demo på egen datamodell | Katalog från extern mapp, sitetyper och kategorier med roller, attributscheman, katalog ur en export, datageneratorn mot en egen katalog (#206–#211, #219) | – |
+| 9 – Integrationer | Proveniens, avstämning mot källsystem till planer, adapterramverk (#215–#217, #230) | – |
+| 10 – Kanalisation | Trasé, dukter och rör, kablars väg, påverkan per trasésträcka, ledaranvändning och ledig kapacitet (ADR-0014, #92) | 3 |
 
 Backloggen finns som issues på GitHub (källa: [`backlog/`](../backlog/)).
 

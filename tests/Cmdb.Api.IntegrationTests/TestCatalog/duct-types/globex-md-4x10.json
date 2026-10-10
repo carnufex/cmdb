@@ -1,0 +1,8 @@
+{
+  "key": "globex-md-4x10",
+  "name": "Globex multidukt 4×10",
+  "manufacturer": "Globex Duct",
+  "model": "MD-4x10",
+  "outerDiameterMm": 30,
+  "subducts": { "count": 4, "innerDiameterMm": 8 }
+}

@@ -90,8 +90,9 @@ public static class ScopeCatalog
 }
 
 /// <summary>
-/// Materialises what each scope shows into <c>scope_site</c>, <c>scope_cable</c>, <c>scope_circuit</c> and
-/// <c>scope_service</c> (#22), in one transaction so readers see either the old or the new state.
+/// Materialises what each scope shows into <c>scope_site</c>, <c>scope_cable</c>, <c>scope_circuit</c>,
+/// <c>scope_service</c> (#22) and <c>scope_route_segment</c> (ADR-0014), in one transaction so readers see either the old or
+/// the new state.
 /// </summary>
 public static class ScopeVisibility
 {
@@ -100,6 +101,7 @@ public static class ScopeVisibility
         DELETE FROM scope_service;
         DELETE FROM scope_circuit;
         DELETE FROM scope_cable;
+        DELETE FROM scope_route_segment;
         DELETE FROM scope_site;
 
         INSERT INTO scope_site (scope_key, site_id)
@@ -119,6 +121,13 @@ public static class ScopeVisibility
         WHERE (a.valid_to IS NULL OR a.valid_to > now())
           AND (sa.site_id IS NOT NULL OR sb.site_id IS NOT NULL
                OR (a.crossing_mode = 'clip' AND a.area IS NOT NULL AND ST_Intersects(a.area, c.geom)));
+
+        -- Conduit (ADR-0014): a route segment is shown when its geometry crosses the area, as cables in clip mode; the API
+        -- cuts it at the edge.
+        INSERT INTO scope_route_segment (scope_key, route_segment_id)
+        SELECT a.key, r.id
+        FROM access_scope a JOIN route_segment r ON a.area IS NULL OR ST_Intersects(a.area, r.geom)
+        WHERE a.valid_to IS NULL OR a.valid_to > now();
 
         -- A circuit is shown when the site at either end is. An end is a port (its equipment's site) or a conductor end
         -- (the site at that side of the cable).

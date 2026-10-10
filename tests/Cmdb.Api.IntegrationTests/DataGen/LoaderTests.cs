@@ -111,6 +111,85 @@ public sealed class LoaderTests(ApiFactory factory)
         (reader.GetInt64(0), reader.GetInt64(1), reader.GetInt64(2)).ShouldBe((1L, 2L, 2L));
     }
 
+    [Fact]
+    public async Task Cables_lie_in_conduit_whose_route_segments_give_their_route_and_corridors_are_shared()
+    {
+        await using var db = await factory.NewDatabaseAsync();
+        var network = NetworkBuilder.Build(1, Scale.Small, TypeCatalog.Current);
+        await Loader.LoadAsync(db, network, reset: false, TextWriter.Null, fast: false, ct: Ct);
+        await using var cmd = db.CreateCommand("""
+            WITH way AS (
+                SELECT p.cable_id, sum(r.length_m) AS length, count(*) AS segments
+                FROM cable_path p JOIN subduct s ON s.id = p.subduct_id JOIN duct_segment ds ON ds.duct_id = s.duct_id
+                JOIN route_segment r ON r.id = ds.route_segment_id GROUP BY p.cable_id
+            ), shared AS (
+                SELECT ds.route_segment_id FROM cable_path p JOIN subduct s ON s.id = p.subduct_id JOIN duct_segment ds ON ds.duct_id = s.duct_id
+                JOIN cable c ON c.id = p.cable_id JOIN cable_type t ON t.id = c.cable_type_id
+                GROUP BY ds.route_segment_id HAVING count(DISTINCT t.key) FILTER (WHERE t.key IN ('fiber-288', 'fiber-96')) = 2
+            )
+            SELECT (SELECT count(*) FROM cable),
+                   (SELECT count(*) FROM way),
+                   (SELECT count(*) FROM way w JOIN cable c ON c.id = w.cable_id WHERE abs(c.length_m - w.length) > 0.5),
+                   (SELECT count(*) FROM shared),
+                   (SELECT count(*) FROM subduct WHERE occupancy = 'cable') - (SELECT count(*) FROM cable_path),
+                   (SELECT count(*) FROM site WHERE site_type = 'manhole'),
+                   (SELECT count(*) FROM site s WHERE site_type = 'manhole'
+                    AND NOT EXISTS (SELECT 1 FROM route_segment r WHERE s.id IN (r.a_site_id, r.b_site_id))),
+                   (SELECT count(*) FROM route_segment WHERE trunk),
+                   (SELECT count(*) FROM route_segment r WHERE r.trunk <> EXISTS (
+                        SELECT 1 FROM duct_segment ds JOIN subduct s ON s.duct_id = ds.duct_id JOIN cable_path p ON p.subduct_id = s.id
+                        JOIN cable c ON c.id = p.cable_id JOIN cable_type t ON t.id = c.cable_type_id
+                        WHERE ds.route_segment_id = r.id AND t.conductor_count >= 96))
+            """);
+        await using var reader = await cmd.ExecuteReaderAsync(Ct);
+        await reader.ReadAsync(Ct);
+        // Every cable is in conduit, and its route is its segments' routes.
+        reader.GetInt64(1).ShouldBe(reader.GetInt64(0));
+        reader.GetInt64(2).ShouldBe(0);
+        // Backbone and rings share corridors; a tube with a cable is occupied; manholes lie on corridors.
+        reader.GetInt64(3).ShouldBeGreaterThan(0);
+        reader.GetInt64(4).ShouldBe(0);
+        reader.GetInt64(5).ShouldBeGreaterThan(0);
+        reader.GetInt64(6).ShouldBe(0);
+        // Trunk conduit (#243) is exactly the conduit with a cable of 96 fibres or more.
+        reader.GetInt64(7).ShouldBeGreaterThan(0);
+        reader.GetInt64(8).ShouldBe(0);
+        await reader.CloseAsync();
+        await using var conn = await db.OpenConnectionAsync(Ct);
+        (await IntegrityCheck.RunAsync(conn, TextWriter.Null, Ct)).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Builds_and_loads_a_network_from_an_external_catalog_with_its_own_types()
+    {
+        // The test catalog (#207) names its site types and categories differently and has one switch, one ODF and one fibre (#219).
+        var catalog = TypeCatalog.Load(CatalogSource.FromPath(Path.Combine(AppContext.BaseDirectory, "TestCatalog")));
+        var network = NetworkBuilder.Build(1, Scale.Small, catalog);
+        Fingerprint.Of(NetworkBuilder.Build(1, Scale.Small, catalog)).ShouldBe(Fingerprint.Of(network));
+        network.Sites.Select(s => s.SiteType).Distinct().Order().ShouldBe(["brunn", "karna", "kundskap", "nod"]);
+        network.Equipment.Select(e => e.Type.Key).Distinct().Order().ShouldBe(["globex-odf-8", "globex-sw-4"]);
+        network.Cables.ShouldAllBe(c => c.Type.Key == "globex-fiber-8");
+        network.Equipment.ShouldAllBe(e => catalog.ValidateAttributes(e.Type.Key, System.Text.Json.JsonDocument.Parse(e.Attributes, default).RootElement).Count == 0);
+
+        await using var db = await factory.NewDatabaseAsync();
+        // The demo scenarios find the hubs and aggregation nodes by role; without mobile backhaul services they step aside.
+        await Loader.LoadAsync(db, network, reset: false, TextWriter.Null, fast: false, scenarios: true, ct: Ct);
+
+        (await Count(db, "site")).ShouldBe(network.Sites.Count);
+        (await Count(db, "connection")).ShouldBe(network.Connections.Count);
+        await using var conn = await db.OpenConnectionAsync(Ct);
+        (await IntegrityCheck.RunAsync(conn, TextWriter.Null, Ct)).ShouldBeEmpty();
+        // Every access site has a service on a logical circuit that rides its link and its aggregation node's ring.
+        await using var cmd = db.CreateCommand("""
+            SELECT (SELECT count(*) FROM site WHERE site_type = 'kundskap'),
+                   (SELECT count(DISTINCT sc.service_id) FROM service_circuit sc JOIN circuit c ON c.id = sc.circuit_id AND c.layer = 'logical'
+                    WHERE (SELECT count(*) FROM circuit_dependency d WHERE d.circuit_id = c.id) = 2)
+            """);
+        await using var reader = await cmd.ExecuteReaderAsync(Ct);
+        await reader.ReadAsync(Ct);
+        reader.GetInt64(1).ShouldBe(reader.GetInt64(0));
+    }
+
     [Theory]
     [InlineData(55.40, 13.35)]
     [InlineData(59.33, 18.07)]

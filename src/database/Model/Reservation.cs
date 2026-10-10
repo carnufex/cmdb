@@ -12,10 +12,10 @@ public class Reservation
 {
     public long Id { get; set; }
 
-    /// <summary>terminal, conductor, slot or channel.</summary>
+    /// <summary>terminal, conductor, slot, channel or subduct (ADR-0014).</summary>
     public required string ResourceKind { get; set; }
 
-    /// <summary>The terminal, conductor or channel id; for a slot, the equipment id.</summary>
+    /// <summary>The terminal, conductor, channel or subduct id; for a slot, the equipment id.</summary>
     public long ResourceId { get; set; }
 
     /// <summary>The slot name, for slots only.</summary>
@@ -37,7 +37,7 @@ internal sealed class ReservationConfiguration : IEntityTypeConfiguration<Reserv
     {
         e.ToTable("reservation", t =>
         {
-            t.HasCheckConstraint("ck_reservation_resource", "resource_kind IN ('terminal', 'conductor', 'slot', 'channel')");
+            t.HasCheckConstraint("ck_reservation_resource", "resource_kind IN ('terminal', 'conductor', 'slot', 'channel', 'subduct')");
             t.HasCheckConstraint("ck_reservation_slot", "(resource_kind = 'slot') = (slot IS NOT NULL)");
             t.HasCheckConstraint("ck_reservation_holder", "holder_kind IN ('plan', 'service')");
         });

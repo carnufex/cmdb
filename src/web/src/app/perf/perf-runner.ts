@@ -90,6 +90,41 @@ export class PerfRunner {
         this.request(`/api/cables/${cables[i % cables.length].id}/impact`, signal),
       ),
     );
+    // Route segments (#237) from the conduit paths of some cables; none when the network has no conduit.
+    const segments = [
+      ...new Set(
+        (
+          await Promise.all(
+            pick(cables, 10).map(
+              async (c) =>
+                (
+                  await this.request<{ segment: { id: number } }[]>(
+                    `/api/cables/${c.id}/path`,
+                    signal,
+                  )
+                ).body,
+            ),
+          )
+        )
+          .flat()
+          .map((s) => s.segment.id)
+          .filter((id) => id > 0),
+      ),
+    ];
+    if (segments.length) {
+      results.push(
+        await this.measure(
+          'segment',
+          'Påverkan, grävning på trasé',
+          200,
+          RUNS,
+          onProgress,
+          signal,
+          (i) =>
+            this.request(`/api/route-segments/${segments[i % segments.length]}/impact`, signal),
+        ),
+      );
+    }
     results.push(
       await this.measure('trace', 'Spåra tjänst', 50, RUNS, onProgress, signal, (i) =>
         this.request(`/api/trace?service=${services[i % services.length].id}`, signal),
@@ -99,6 +134,11 @@ export class PerfRunner {
     results.push(
       await this.measure('tiles', 'Kartplatta', 100, RUNS, onProgress, signal, (i) =>
         this.request(`/api/tiles/${tiles[i].join('/')}`, signal, 'binary'),
+      ),
+    );
+    results.push(
+      await this.measure('conduit', 'Kanalisationsplatta', 100, RUNS, onProgress, signal, (i) =>
+        this.request(`/api/tiles/conduit/${tiles[i].join('/')}`, signal, 'binary'),
       ),
     );
     results.push(
