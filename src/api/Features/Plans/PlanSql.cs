@@ -350,6 +350,7 @@ internal static class PlanSql
             UNION ALL SELECT 'cable', c.id, c.code, NULL, c.lifecycle::text, {ScopeSql.Cable("c.id", 4)} FROM cable c WHERE c.id = ANY($3)
             UNION ALL SELECT 'service', v.id, v.code, v.name, 'in_service', {ScopeSql.Service("v.id", 4)} FROM service v WHERE v.id = ANY($5)
             UNION ALL SELECT 'location', l.id, l.name, l.kind, l.lifecycle::text, {ScopeSql.Site("l.site_id", 4)} FROM location l WHERE l.id = ANY($6)
+            UNION ALL SELECT 'circuit', r.id, r.code, NULL, r.lifecycle::text, {ScopeSql.Circuit("r.id", 4)} FROM circuit r WHERE r.id = ANY($7)
             """);
         cmd.Parameters.Add(new() { Value = refs.Where(r => r.Type == "site").Select(r => r.Id).ToArray() });
         cmd.Parameters.Add(new() { Value = refs.Where(r => r.Type == "equipment").Select(r => r.Id).ToArray() });
@@ -357,6 +358,7 @@ internal static class PlanSql
         cmd.Parameters.Add(scope.Parameter());
         cmd.Parameters.Add(new() { Value = refs.Where(r => r.Type == "service").Select(r => r.Id).ToArray() });
         cmd.Parameters.Add(new() { Value = refs.Where(r => r.Type == "location").Select(r => r.Id).ToArray() });
+        cmd.Parameters.Add(new() { Value = refs.Where(r => r.Type == "circuit").Select(r => r.Id).ToArray() });
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
         {

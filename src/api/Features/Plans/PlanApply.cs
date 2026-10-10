@@ -320,6 +320,10 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx, str
             SELECT t.id, e.site_id, e.id, $3, $4 FROM equipment_type t, equipment e WHERE t.key = $1 AND e.id = $2 RETURNING id
             """, ct, type.Key, parent, slot, p.GetProperty("name").GetString()!);
         Ids[Planned.ObjectId(op.Id)] = equipment;
+        if (p.TryGetProperty("attributes", out var attributes) && attributes.ValueKind == JsonValueKind.Object)
+        {
+            await ExecuteAsync("UPDATE equipment SET attributes = $2::jsonb WHERE id = $1", ct, equipment, attributes.GetRawText());
+        }
         await FromSourceAsync("equipment", equipment, p, ct);
         var ports = PortExpansion.Expand(type, slot);
         var terminals = await NewTerminalsAsync("port", ports.Count, ct);

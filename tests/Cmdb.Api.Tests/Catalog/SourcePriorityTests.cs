@@ -64,7 +64,25 @@ public sealed class SourcePriorityTests : IDisposable
         SourcePriority.Load(CatalogSource.FromDirectory(_folder)).ShouldBeSameAs(SourcePriority.None);
     }
 
+    [Fact]
+    public void What_lies_between_objects_has_rules_too()
+    {
+        var links = SourcePriority.Parse("""
+            [
+              { "object": "connection", "attribute": "kind", "sources": ["nms"], "autoApply": ["nms"] },
+              { "object": "circuit", "attribute": "path", "sources": ["nms"] },
+              { "object": "service", "attribute": "circuits", "sources": ["crm"] }
+            ]
+            """);
+        (links.Rank("connection", "kind", "nms"), links.Rank("connection", "kind", "plan")).ShouldBe((0, null));
+        links.AutoApplies("connection", "kind", "nms").ShouldBeTrue();
+        links.Rank("circuit", "carriers", "plan").ShouldBe(int.MaxValue);
+        links.Rank("service", "circuits", "nms").ShouldBeNull();
+    }
+
     [Theory]
+    [InlineData("""[{ "object": "connection", "attribute": "attributes.x", "sources": ["a"] }]""", "unknown attribute")]
+    [InlineData("""[{ "object": "connection", "attribute": "path", "sources": ["a"] }]""", "unknown attribute")]
     [InlineData("""[{ "object": "rack", "attribute": "name", "sources": ["a"] }]""", "unknown object type")]
     [InlineData("""[{ "object": "site", "attribute": "colour", "sources": ["a"] }]""", "unknown attribute")]
     [InlineData("""[{ "object": "circuit", "attribute": "attributes.x", "sources": ["a"] }]""", "unknown attribute")]
