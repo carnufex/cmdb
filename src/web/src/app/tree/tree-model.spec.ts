@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { EquipmentDetail, SiteDetail } from '../objects/models';
-import { equipmentChildren, flatten, navigate, pathTo, siteTree } from './tree-model';
+import {
+  equipmentChildren,
+  flatten,
+  groupChildren,
+  navigate,
+  networkTree,
+  pathTo,
+  rangeFor,
+  siteTree,
+} from './tree-model';
 
 const site = {
   id: 1,
@@ -100,5 +109,47 @@ describe('content tree', () => {
     expect(navigate(rows, 2, 'ArrowLeft')).toEqual({ index: 1 });
     expect(navigate(rows, 0, 'End')).toEqual({ index: 2 });
     expect(navigate(rows, 0, 'x')).toBeNull();
+  });
+
+  it('starts at the network and splits large site types into ranges (#250)', () => {
+    const root = networkTree({
+      label: 'Sverige',
+      sites: 1300,
+      groups: [
+        { siteType: 'hub', name: 'Nav', icon: 'hub', sites: 2 },
+        { siteType: 'cabinet', name: 'Teknikskåp', icon: 'cabinet', sites: 1298 },
+      ],
+    });
+    expect(root.label).toBe('Sverige');
+    expect(root.detail).toBe('1 300 siter');
+    expect(flatten(root, new Set(['network'])).map((r) => [r.node.key, r.expandable])).toEqual([
+      ['network', true],
+      ['group:hub', true],
+      ['group:cabinet', true],
+    ]);
+
+    const cabinets = root.children[1];
+    cabinets.children = groupChildren('cabinet', {
+      chunks: [
+        { from: 'SKP-0001', to: 'SKP-0500', sites: 500 },
+        { from: 'SKP-0501', to: 'SKP-1000', sites: 500 },
+        { from: 'SKP-1001', to: 'SKP-1298', sites: 298 },
+      ],
+      sites: null,
+    });
+    expect(cabinets.children.map((c) => c.label)).toEqual([
+      'SKP-0001 – SKP-0500',
+      'SKP-0501 – SKP-1000',
+      'SKP-1001 – SKP-1298',
+    ]);
+    expect(rangeFor(cabinets, 'SKP-0777')?.key).toBe('range:cabinet:SKP-0501');
+    expect(rangeFor(cabinets, 'HUB-001')).toBeNull();
+
+    const hubs = groupChildren('hub', {
+      chunks: null,
+      sites: [{ id: 1, code: 'HUB-001', name: 'Nav 1', lifecycle: 'in_service' }],
+    });
+    expect(hubs[0]).toMatchObject({ key: 'site:1', kind: 'site', typeKey: 'hub', lazy: true });
+    expect(hubs[0].ref).toEqual({ type: 'site', id: 1, code: 'HUB-001', name: 'Nav 1' });
   });
 });
