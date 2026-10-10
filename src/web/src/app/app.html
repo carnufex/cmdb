@@ -20,14 +20,17 @@
     >
       Innehåll
     </button>
-    <button
-      type="button"
-      class="text-button tool-button"
-      [attr.aria-pressed]="tools.open() === 'plans'"
-      (click)="tools.toggle('plans')"
-    >
-      Planer
-    </button>
+    @if (plan.id() === null) {
+      <!-- With a plan active, its chip opens the plans instead. -->
+      <button
+        type="button"
+        class="text-button tool-button"
+        [attr.aria-pressed]="tools.open() === 'plans'"
+        (click)="tools.toggle('plans')"
+      >
+        Planer
+      </button>
+    }
     <button
       type="button"
       class="text-button tool-button"
@@ -42,6 +45,7 @@
         <button
           type="button"
           class="plan-name"
+          [title]="'Plan: ' + (plan.view.value()?.plan?.name ?? '') + ' (visa planer)'"
           (click)="tools.open() !== 'plans' && tools.toggle('plans')"
         >
           Plan: {{ plan.view.value()?.plan?.name ?? '…' }}
@@ -77,11 +81,16 @@
     </button>
     <button
       type="button"
-      class="text-button tool-button"
+      class="text-button tool-button perf"
+      aria-label="Prestanda"
+      title="Prestanda"
       [attr.aria-pressed]="tools.open() === 'perf'"
       (click)="tools.toggle('perf')"
     >
-      Prestanda
+      <svg viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M2.5 11.5a5.5 5.5 0 0 1 11 0 M8 11.5l2.5-3.5" />
+      </svg>
+      <span class="label">Prestanda</span>
     </button>
     <button
       type="button"
@@ -126,31 +135,40 @@
       <span class="user error">API:t svarar inte</span>
     }
     @if (auth.isAuthenticated()) {
-      <button type="button" class="text-button" (click)="auth.logout()">Logga ut</button>
+      <button
+        type="button"
+        class="text-button"
+        [title]="'Logga ut ' + (me.value()?.name ?? me.value()?.username ?? '')"
+        (click)="auth.logout()"
+      >
+        Logga ut
+      </button>
     }
   </div>
 </header>
 
 <main class="workspace">
-  <section class="lens">
-    <router-outlet />
-    <nav class="lens-switch" aria-label="Lins">
-      <a
-        routerLink="/"
-        queryParamsHandling="preserve"
-        routerLinkActive="active"
-        [routerLinkActiveOptions]="{ exact: true }"
-        ariaCurrentWhenActive="page"
-        >Karta</a
-      >
-      <a
-        routerLink="/graf"
-        queryParamsHandling="preserve"
-        routerLinkActive="active"
-        ariaCurrentWhenActive="page"
-        >Grannskap</a
-      >
-    </nav>
+  <section class="lens" [class]="'lens size-' + (tools.open() ? tools.size() : 'none')">
+    <div class="stage">
+      <router-outlet />
+      <nav class="lens-switch" aria-label="Lins">
+        <a
+          routerLink="/"
+          queryParamsHandling="preserve"
+          routerLinkActive="active"
+          [routerLinkActiveOptions]="{ exact: true }"
+          ariaCurrentWhenActive="page"
+          >Karta</a
+        >
+        <a
+          routerLink="/graf"
+          queryParamsHandling="preserve"
+          routerLinkActive="active"
+          ariaCurrentWhenActive="page"
+          >Grannskap</a
+        >
+      </nav>
+    </div>
     @if (tools.open() === 'query') {
       <aside class="tool" aria-label="Avancerad sökning"><cmdb-query-panel /></aside>
     } @else if (tools.open() === 'tree') {

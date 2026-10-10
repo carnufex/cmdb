@@ -1,5 +1,7 @@
 :host {
   display: grid;
+  // The column never grows with the toolbar's content: the toolbar fits the window, not the other way round (#251).
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: var(--topbar-height) 1fr;
   height: 100dvh;
   overflow: hidden;
@@ -62,18 +64,30 @@
 }
 
 .user {
+  max-width: 180px;
+  overflow: hidden;
   color: var(--text-muted);
   font-size: var(--text-sm);
   padding: 0 var(--space-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 
   &.error {
     color: var(--status-conflict);
+  }
+
+  // Under 1440 px the name gives way to the tools; it stays on the sign-out button (#72, #251).
+  @media (max-width: 1439px) {
+    &:not(.error) {
+      display: none;
+    }
   }
 }
 
 .icon-button,
 .text-button {
   height: 28px;
+  white-space: nowrap;
   border: var(--line);
   border-radius: var(--radius-md);
   background: transparent;
@@ -114,6 +128,14 @@
   flex: 1;
   min-width: 0;
   position: relative;
+  display: flex;
+}
+
+// The map or graph; hidden, not destroyed, while a tool takes the whole workspace, so it keeps its view (#251).
+.stage {
+  position: relative;
+  flex: 1;
+  min-width: 0;
 }
 
 // Map or neighbourhood graph (#20); top right so it never sits under a tool or the map legend.
@@ -175,6 +197,36 @@
   width: var(--tool-width-wide);
 }
 
+// Half the screen (#251): the tool beside the map, which keeps at least 500 px.
+.lens.size-half .tool,
+.lens.size-workspace .tool {
+  position: relative;
+  inset: auto;
+  order: -1;
+  max-width: none;
+  border: 0;
+  border-right: var(--line);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.lens.size-half .tool {
+  flex: 0 0 min(50%, calc(100% - 500px));
+  width: auto;
+}
+
+// The workspace: the tool takes all of it, and the map is not drawn while it is hidden.
+.lens.size-workspace {
+  .tool {
+    flex: 1;
+    width: auto;
+  }
+
+  .stage {
+    display: none;
+  }
+}
+
 /* The active plan (#24): the whole app shows the plan's view until you go back to production. */
 .plan-chip {
   display: inline-flex;
@@ -201,12 +253,49 @@
     cursor: pointer;
   }
 
+  .plan-name {
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
   .plan-exit {
     color: var(--text-muted);
     font-size: 16px;
 
     &:hover {
       color: var(--text);
+    }
+  }
+}
+
+/* Under 1440 px the performance tool is an icon, so the toolbar fits 1280 px with a plan active (#72, #251). */
+.perf {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+
+  svg {
+    display: none;
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.3;
+    stroke-linecap: round;
+  }
+
+  @media (max-width: 1439px) {
+    width: 28px;
+    justify-content: center;
+    padding: 0;
+
+    svg {
+      display: block;
+    }
+
+    .label {
+      display: none;
     }
   }
 }

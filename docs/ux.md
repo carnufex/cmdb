@@ -10,6 +10,14 @@ Mörk, informationstät och lugn, i samma familj som Linear. Tunna linjer (1 px)
 
 Minsta stödda storlek är **1280×720 CSS-pixlar**, vilket motsvarar 1080p med 150 % skalning (#72). Där ska kartan, ett verktyg (avancerad sökning eller prestanda) och objektpanelen kunna vara öppna samtidigt, utan radbrytning i verktygsfältet och utan sidscroll. Paneler och verktyg scrollar internt. Under 1440 px bredd blir objektpanelen och verktygen smalare, så att kartan behåller ungefär 500 px. Större skärmar ger kartan all extra yta.
 
+Ett verktyg har tre storlekar (#251), som växlas med knapparna i verktygets rubrik, med Alt+. eller från kommandopaletten:
+
+- **Panel:** ovanpå kartans vänsterkant, som förut.
+- **Halva skärmen:** verktyget bredvid kartan, som får minst 500 px. Planer och massredigering startar här.
+- **Arbetsyta:** verktyget tar hela ytan under verktygsfältet. Kartan döljs men behåller sitt läge och ritas inte medan den är dold. *Visa i kartan* går tillbaka till halva skärmen med det öppna objektet markerat och kartan på det.
+
+Varje verktyg anger vilka storlekar det klarar. Valet sparas per verktyg på enheten, och verktyget och storleken står i adressen (`?tool=plans&size=workspace`), så att en länk öppnar samma vy. Objektpanelen ligger till höger i alla tre. Under 1440 px döljs användarnamnet (det står på *Logga ut*), *Prestanda* blir en ikon och sökfältet krymper, så att verktygsfältet ryms på 1280 px även med en aktiv plan.
+
 ## Färg betyder status
 
 | Status | Färg |

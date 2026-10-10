@@ -4,7 +4,7 @@ import { traceId } from '../objects/trace-model';
 import { CommandRegistry } from './commands';
 import { PanelStack } from './panels';
 import { ThemeStore } from './theme';
-import { Tools } from './tools';
+import { Tools, ToolSize } from './tools';
 
 /** The shell's own commands. Call once from the root component's injection context. */
 export function registerCoreCommands(): void {
@@ -13,6 +13,22 @@ export function registerCoreCommands(): void {
   const tools = inject(Tools);
   const theme = inject(ThemeStore);
   const document = inject(DOCUMENT);
+
+  // The open tool's sizes (#251), also on Alt+.
+  const sizeLabels: Record<ToolSize, string> = {
+    panel: 'Verktyget som panel',
+    half: 'Verktyget på halva skärmen',
+    workspace: 'Verktyget som arbetsyta',
+  };
+  const size = (to: ToolSize) => ({
+    id: `tools.size.${to}`,
+    label: sizeLabels[to],
+    hint: 'Alt+.',
+    keywords: ['storlek', 'arbetsyta', 'halva', 'panel', 'helskärm'],
+    when: () => tools.sizes().includes(to) && tools.size() !== to,
+    run: () => tools.setSize(to),
+  });
+  registry.register(size('panel'), size('half'), size('workspace'));
 
   registry.register(
     {

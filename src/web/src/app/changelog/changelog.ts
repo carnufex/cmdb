@@ -10,6 +10,7 @@ import {
 import { firstValueFrom } from 'rxjs';
 import { Auth } from '../auth/auth';
 import { Tools } from '../shell/tools';
+import { ToolSizeComponent } from '../shell/tool-size';
 
 /** GET /api/changelog (#82) */
 export interface ChangelogPost {
@@ -54,10 +55,12 @@ export class ChangelogStore {
 
 /** What is new (#82): published posts, newest first, the unread ones marked, each linking to its issues. */
 @Component({
+  imports: [ToolSizeComponent],
   selector: 'cmdb-changelog-panel',
   template: `
     <header class="head">
       <h2>Nyheter</h2>
+      <cmdb-tool-size />
       <button type="button" class="close" aria-label="Stäng nyheter" (click)="tools.close()">
         ×
       </button>

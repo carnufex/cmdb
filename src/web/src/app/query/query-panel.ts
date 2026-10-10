@@ -24,6 +24,7 @@ import {
   textOps,
   toRequest,
 } from './query-model';
+import { ToolSizeComponent } from '../shell/tool-size';
 
 /**
  * Advanced search (#55): sites by their own fields, the equipment they hold and the services passing through.
@@ -31,7 +32,7 @@ import {
  */
 @Component({
   selector: 'cmdb-query-panel',
-  imports: [StatusComponent, CapacityComponent],
+  imports: [ToolSizeComponent, StatusComponent, CapacityComponent],
   templateUrl: './query-panel.html',
   styleUrl: './query-panel.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

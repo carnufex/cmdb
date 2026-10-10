@@ -19,6 +19,7 @@ import {
   planLifecycle,
   planStatusLabels,
 } from './plan-model';
+import { ToolSizeComponent } from '../shell/tool-size';
 
 /**
  * Plans (#24): the list, a new plan on top of others, and the active plan with its operations. Choosing a plan
@@ -28,6 +29,7 @@ import {
 @Component({
   selector: 'cmdb-plan-panel',
   imports: [
+    ToolSizeComponent,
     FormsModule,
     StatusComponent,
     ObjectLinkComponent,
@@ -38,6 +40,7 @@ import {
   template: `
     <header class="head">
       <h2>Planer</h2>
+      <cmdb-tool-size />
       <button type="button" class="close" aria-label="Stäng planer" (click)="tools.close()">
         ×
       </button>

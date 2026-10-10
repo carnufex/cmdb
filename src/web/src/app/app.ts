@@ -47,6 +47,7 @@ export interface Me {
   ],
   templateUrl: './app.html',
   styleUrl: './app.scss',
+  host: { '(document:keydown)': 'onKey($event)' },
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class App {
@@ -63,5 +64,18 @@ export class App {
   constructor() {
     registerCoreCommands();
     void this.theme.load();
+  }
+
+  /** Alt+. steps the open tool through its sizes (#251). */
+  protected onKey(event: KeyboardEvent): void {
+    if (
+      event.altKey &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      (event.code === 'Period' || event.key === '.')
+    ) {
+      event.preventDefault();
+      this.tools.cycleSize();
+    }
   }
 }
