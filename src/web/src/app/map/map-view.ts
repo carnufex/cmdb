@@ -88,6 +88,8 @@ export interface Operations {
     endsAt: string;
     ongoing: boolean;
     ring: readonly (readonly number[])[];
+    /** Route segments the dig crosses (#237). */
+    routeSegments?: readonly { id: number; code: string }[] | null;
   }[];
   risks: readonly { id: string; kind: string; title: string; site: MapPoint }[];
   /** Incidents whose impact the agent panel shows (#161). */

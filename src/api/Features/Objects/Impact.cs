@@ -26,7 +26,10 @@ public sealed record ImpactCircuit(ObjectRef Circuit, string Layer);
 /// <param name="Direct">Circuits passing the object itself; the rest ride on those.</param>
 /// <param name="Services">Affected services by code, each with the path that reaches it.</param>
 /// <param name="HiddenServices">Affected services outside the caller's scope (#22): counted, not shown.</param>
-public sealed record Impact(int Circuits, int Direct, IReadOnlyList<ImpactedService> Services, double ElapsedMs, int HiddenServices = 0);
+/// <param name="Cables">For a route segment (#237): the cables in its ducts that the caller may see.</param>
+/// <param name="HiddenCables">For a route segment: its cables outside the caller's scope, counted.</param>
+public sealed record Impact(int Circuits, int Direct, IReadOnlyList<ImpactedService> Services, double ElapsedMs, int HiddenServices = 0,
+    IReadOnlyList<ObjectRef>? Cables = null, int HiddenCables = 0);
 
 /// <summary>
 /// Impact of a cable (a span between two sites or splice points), equipment or a site (#10): every circuit whose path
@@ -85,7 +88,13 @@ public sealed class ImpactEndpoint(GraphHolder holder, RequestDb db, ScopeMasks 
         {
             return new Impact(0, 0, [], Math.Round(sw.Elapsed.TotalMilliseconds, 2));
         }
+        return await FromResultAsync(g, mask, db, result, sw, ct);
+    }
 
+    /// <summary>The walk's result as an answer: what the caller may see named, the rest counted.</summary>
+    internal static async Task<Impact> FromResultAsync(Cmdb.Graph.Graph g, GraphMask mask, NpgsqlDataSource db, ImpactResult result, Stopwatch sw,
+        CancellationToken ct)
+    {
         var shown = Enumerable.Range(0, result.Services.Length).Where(i => mask.ServiceVisible(result.Services[i])).ToList();
         var paths = shown.ToDictionary(i => i, result.PathOf);
         var pathCircuits = new HashSet<long>();

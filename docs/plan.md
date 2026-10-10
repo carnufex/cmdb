@@ -85,7 +85,9 @@ Generatorn bygger kanalisationen på ungefär 0,2 s av totalt 2,0 s, och hela la
 | Öppna objekt med närmaste grannar | < 50 ms |
 | Spåra tjänst ände till ände | < 50 ms |
 | Påverkansanalys för en kabelsträcka | < 200 ms |
+| Påverkan av grävning på en trasésträcka (#237) | < 200 ms |
 | Kartplatta per omfång | < 100 ms |
+| Kanalisationsplatta per omfång (#236) | < 100 ms |
 | Växla vy mellan produktion och plan | < 100 ms |
 
 Budgeten kan mätas direkt i appen: **Prestanda** i verktygsfältet kör interaktionerna mot det laddade nätet och visar p50 och p95 för servern (`Server-Timing`) och webbläsaren. Status bedöms på serverns p95. Är kartan öppen mäts också kartans bildtid, och är grannskapsgrafen öppen mäts grafens bildtid när den har expanderats från ett nav till minst 2 000 siter (#89). Visas en frontpanel med bild mäts dess bildtid medan ett portintervall flyttas en port per bild (#214). Målet för alla tre är p95 under 33 ms (30 fps), men de ingår inte i budgeten.

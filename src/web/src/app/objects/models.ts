@@ -172,6 +172,9 @@ export interface Impact {
   elapsedMs: number;
   /** Affected services outside the caller's access scope (#22): counted, not named. */
   hiddenServices: number;
+  /** For a route segment (#237): the cables in its ducts, and how many lie outside the caller's scope. */
+  cables?: ObjectRef[] | null;
+  hiddenCables?: number;
 }
 
 export interface ServiceDetail {

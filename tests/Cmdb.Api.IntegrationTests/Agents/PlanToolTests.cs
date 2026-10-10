@@ -208,6 +208,25 @@ public sealed class PlanToolTests(ApiFactory factory)
     }
 
     [Fact]
+    public async Task An_agent_reads_a_route_segment_and_what_a_dig_across_it_would_affect()
+    {
+        var (db, api) = await NetworkAsync(36);
+        await using var dbScope = db;
+        await using var apiScope = api;
+        await using var agent = await ConnectAsync(api, AgentToken());
+        await using var cmd = db.CreateCommand("""
+            SELECT ds.route_segment_id FROM cable_path p JOIN subduct s ON s.id = p.subduct_id JOIN duct_segment ds ON ds.duct_id = s.duct_id
+            GROUP BY ds.route_segment_id ORDER BY count(*) DESC, ds.route_segment_id LIMIT 1
+            """);
+        var segment = (long)(await cmd.ExecuteScalarAsync(Ct))!;
+
+        var detail = Json(await agent.CallToolAsync("get_object", new Dictionary<string, object?> { ["reference"] = $"route-segment:{segment}" }, cancellationToken: Ct));
+        detail.GetProperty("detail").GetProperty("ducts").GetArrayLength().ShouldBeGreaterThan(0);
+        var impact = Json(await agent.CallToolAsync("impact", new Dictionary<string, object?> { ["reference"] = $"route-segment:{segment}" }, cancellationToken: Ct));
+        impact.GetProperty("circuits").GetInt32().ShouldBeGreaterThan(0);
+    }
+
+    [Fact]
     public async Task An_agent_imports_sites_and_cables_into_a_plan_all_or_nothing_and_cannot_apply_them()
     {
         var (db, api) = await NetworkAsync(34);

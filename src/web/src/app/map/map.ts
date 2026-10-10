@@ -396,7 +396,13 @@ export class MapComponent {
         return;
       }
       if (feature?.get('ops')) {
-        // The operations layer (#156): incidents, risks and the live fault open their site.
+        // The operations layer (#156): incidents, risks and the live fault open their site; a dig the first route segment it
+        // crosses (#237).
+        const segment = feature.get('segmentId') as number | undefined;
+        if (segment) {
+          this.panels.open({ type: 'route-segment', id: String(segment) }, { replace: true });
+          return;
+        }
         const site = feature.get('siteId') as number | undefined;
         if (site) {
           this.panels.open({ type: 'site', id: String(site) }, { replace: true });
@@ -814,10 +820,19 @@ export class MapComponent {
     const features: Feature<Geometry>[] = [
       ...operations.works.map((w) => {
         const f = new Feature<Geometry>(new Polygon([w.ring.map((p) => [p[0], p[1]])]));
+        const crossed = w.routeSegments ?? [];
         f.setProperties({
           ops: w.ongoing ? 'work' : 'work-planned',
           code: w.ongoing ? 'Pågående arbete' : 'Planerat arbete',
-          name: `${w.title}, ${w.contractor}`,
+          name:
+            `${w.title}, ${w.contractor}` +
+            (crossed.length
+              ? `, korsar ${crossed
+                  .slice(0, 3)
+                  .map((s) => s.code)
+                  .join(', ')}${crossed.length > 3 ? ` och ${crossed.length - 3} till` : ''}`
+              : ''),
+          segmentId: crossed[0]?.id,
         });
         return f;
       }),

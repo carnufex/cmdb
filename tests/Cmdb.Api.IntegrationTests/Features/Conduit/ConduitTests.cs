@@ -82,6 +82,56 @@ public sealed class ConduitTests(ApiFactory factory)
         }
     }
 
+    [Fact]
+    public async Task A_dig_across_a_route_segment_cuts_every_cable_in_its_ducts_and_a_planned_dig_shows_the_segments_it_crosses()
+    {
+        var db = await factory.NewDatabaseAsync();
+        await Loader.LoadAsync(db, NetworkBuilder.Build(62, Scale.Small, TypeCatalog.Current), reset: false, TextWriter.Null, ct: Ct);
+        var connectionString = new NpgsqlConnectionStringBuilder(factory.ConnectionString)
+        {
+            Database = new NpgsqlConnectionStringBuilder(db.ConnectionString).Database,
+        }.ConnectionString;
+        await using var api = factory.WithWebHostBuilder(b => b.UseSetting("ConnectionStrings:Cmdb", connectionString));
+        await api.Services.GetRequiredService<Cmdb.Graph.GraphHolder>().Ready.WaitAsync(TimeSpan.FromSeconds(60), Ct);
+        await api.Services.GetRequiredService<Cmdb.Api.Auth.ScopeRefreshService>().Ready.WaitAsync(TimeSpan.FromSeconds(60), Ct);
+        using var client = NetworkFixture.Client(api);
+
+        // The corridor with the most cables carrying services.
+        var segment = await Scalar(db, """
+            SELECT ds.route_segment_id FROM cable_path p JOIN subduct s ON s.id = p.subduct_id JOIN duct_segment ds ON ds.duct_id = s.duct_id
+            WHERE EXISTS (SELECT 1 FROM conductor k JOIN conductor_end e ON e.conductor_id = k.id JOIN circuit_hop h ON h.terminal_id = e.terminal_id WHERE k.cable_id = p.cable_id)
+            GROUP BY ds.route_segment_id ORDER BY count(*) DESC, ds.route_segment_id LIMIT 1
+            """);
+        var impact = (await client.GetFromJsonAsync<Cmdb.Api.Features.Objects.Impact>($"/api/route-segments/{segment}/impact", Ct))!;
+        impact.Cables!.Count.ShouldBeGreaterThan(1);
+        impact.ElapsedMs.ShouldBeLessThan(200);
+
+        // The same as cutting each of its cables, together.
+        var services = new HashSet<long>();
+        foreach (var cable in impact.Cables)
+        {
+            var one = (await client.GetFromJsonAsync<Cmdb.Api.Features.Objects.Impact>($"/api/cables/{cable.Id}/impact", Ct))!;
+            services.UnionWith(one.Services.Select(s => s.Service.Id));
+        }
+        impact.Services.Select(s => s.Service.Id).ToHashSet().SetEquals(services).ShouldBeTrue();
+        services.Count.ShouldBeGreaterThan(0);
+
+        (await client.GetAsync("/api/route-segments/999999999/impact", Ct)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+
+        // A planned dig across the segment lists it.
+        await using (var cmd = db.CreateCommand($"""
+            INSERT INTO planned_work (title, description, contractor, responsible_employee_id, area, starts_at, ends_at)
+            SELECT 'Schaktning', 'Test', 'Exempel AB', '1001', ST_Buffer(ST_LineInterpolatePoint(geom, 0.5), 20), now(), now() + interval '2 days'
+            FROM route_segment WHERE id = {segment}
+            """))
+        {
+            await cmd.ExecuteNonQueryAsync(Ct);
+        }
+        var works = await client.GetFromJsonAsync<System.Text.Json.JsonElement>("/api/operations/works", Ct);
+        works.GetProperty("works").EnumerateArray().ShouldContain(w =>
+            w.GetProperty("routeSegments").EnumerateArray().Any(s => s.GetProperty("id").GetInt64() == segment));
+    }
+
     private static async Task<long> Scalar(NpgsqlDataSource db, string sql)
     {
         await using var cmd = db.CreateCommand(sql);

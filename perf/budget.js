@@ -19,7 +19,9 @@ export const ROWS = [
   { key: 'open', label: 'Öppna objekt med närmaste grannar', budget: 50 },
   { key: 'trace', label: 'Spåra tjänst ände till ände', budget: 50 },
   { key: 'impact', label: 'Påverkansanalys för en kabelsträcka', budget: 200 },
+  { key: 'segment', label: 'Påverkan av grävning på en trasésträcka', budget: 200 },
   { key: 'tiles', label: 'Kartplatta per omfång', budget: 100 },
+  { key: 'conduit', label: 'Kanalisationsplatta per omfång', budget: 100 },
   { key: 'plan', label: 'Växla vy mellan produktion och plan', budget: 100 },
 ];
 const MEASURED = ROWS.filter((r) => !r.pending);
@@ -49,7 +51,8 @@ export const options = {
 const headers = { Authorization: `Bearer ${TOKEN}` };
 
 function get(path, op) {
-  return http.get(BASE + path, { headers, tags: { op }, responseType: op === 'tiles' ? 'binary' : 'text' });
+  const binary = op === 'tiles' || op === 'conduit';
+  return http.get(BASE + path, { headers, tags: { op }, responseType: binary ? 'binary' : 'text' });
 }
 
 export function setup() {
@@ -79,7 +82,19 @@ export function setup() {
   if (!plans.length) {
     throw new Error(`No draft plans to switch to (${plansRes.status}); the data generator seeds three.`);
   }
-  return { sites, cables, services, terms, plans };
+  // Route segments (#237) from the conduit paths of some cables.
+  const segments = [
+    ...new Set(
+      cables.slice(0, 20).flatMap((c) => {
+        const res = get(`/api/cables/${c.id}/path`, 'setup');
+        return res.status === 200 ? res.json().map((s) => s.segment.id).filter((id) => id > 0) : [];
+      }),
+    ),
+  ];
+  if (!segments.length) {
+    throw new Error('No cables in conduit to sample route segments from; reload the demo data (#235).');
+  }
+  return { sites, cables, services, terms, plans, segments };
 }
 
 // Tiles over Sweden at zoom 0–8 in the API's grid (map-grid.ts, Tiles.cs).
@@ -109,7 +124,9 @@ export default function (data) {
     open: () => `/api/sites/${pick(data.sites, n).id}`,
     trace: () => `/api/trace?service=${pick(data.services, n).id}`,
     impact: () => `/api/cables/${pick(data.cables, n).id}/impact`,
+    segment: () => `/api/route-segments/${pick(data.segments, n)}/impact`,
     tiles: () => `/api/tiles/${randomTile()}`,
+    conduit: () => `/api/tiles/conduit/${randomTile()}`,
     plan: () => `/api/plans/${pick(data.plans, n).id}/view`,
   }[row.key]();
 
