@@ -19,6 +19,10 @@ internal static class Cli
         {
             return await Exchange.ExchangeCli.RunAsync(args);
         }
+        if (args.Length > 0 && args[0] == "catalog")
+        {
+            return CatalogGeneration.CatalogGenerationCli.Run(args);
+        }
         var seed = 1;
         var scale = Scale.Small;
         var reset = false;

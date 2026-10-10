@@ -168,6 +168,30 @@ Den syntetiska katalogen i `catalog/` byggs in i API:t och datageneratorn och an
 - En satt men saknad mapp är ett fel, inte en tom katalog. Utan variabeln används den inbäddade katalogen.
 - Katalogen läses en gång när processen startar. En ändrad katalog börjar gälla vid nästa utrullning, när migreringssteget synkar den.
 
+#### Generera katalog ur en export (#209)
+
+En organisation med hundratals modeller skriver inte katalogposterna för hand. Ofta finns modellerna bara i data: utrustning med en modellbeteckning och portar med namn. `catalog generate` gör en utrustningstyp per modell ur en export:
+
+```bash
+dotnet run --project src/datagen -- catalog generate --from <export> --out <katalogmapp> [--force]
+```
+
+- **Exporten** är importformatets `equipment.csv` och `ports.csv` ([import.md](import.md)), med modellbeteckningen i `model` (eller `type`). `equipment.csv` kan också ha `manufacturer`, `category`, `rackUnits` och, för kort, `parent` + `slot`. `ports.csv` kan ha `type` och `group`. Ett syntetiskt exempel finns i [`docs/exempel/katalog-export/`](exempel/katalog-export/).
+- **Nyckel:** tillverkare och modell som gemener, siffror och bindestreck (`initech-sw-24g`).
+- **Portmall:**
+  - Portnamnen från alla enheter av modellen slås ihop.
+  - Namn som bara skiljer sig i ett avslutande löpnummer, med samma typ och grupp, blir en mall per obruten följd: `ge-0/0/{n}` med `range` 1–24. Övriga blir enskilda portar.
+  - Nollutfyllda nummer (`P01`) behålls som de är.
+  - Har samma port olika typ i exporten används den vanligaste, och modellen får en varning.
+- **Frontpanel:** mallarna läggs ut från vänster till höger på rader som är lika breda som den bredaste följden, högst 48 kolumner. Längre följder delas på flera rader, så varje port får en egen cell.
+- **Kort och slotar** genereras bara när exporten anger `parent` och `slot`. Kortets slotnummer i portnamnen blir `{slot}`. Kortet får mappens kategori med rollen `card` (annars en ny, `kort`), och chassimodellen får de slotar exporten använder.
+- **Kategorier** som saknas läggs till i `equipment-categories.json` utan roller, och modeller utan kategori hamnar i `ovrigt`. Sätt roller efteråt (#208).
+- **Attributschema** genereras inte: attributen är fria tills någon skriver ett.
+- **Kontroll:**
+  - Varje typ kontrolleras som en handskriven innan den skrivs. Hela mappen laddas sedan som API:t gör.
+  - Rapporten listar varningar och modeller som inte genererades, med orsak.
+  - En befintlig fil skrivs bara över med `--force`.
+
 #### Syntetiskt nät mot en egen katalog (#219)
 
 Datageneratorn bygger ett syntetiskt nät mot den katalog den startas med, även en egen (`CMDB_CATALOG_PATH`), utan kodändring. Topologin är densamma: nav med stamnät, aggregeringsringar och accessgrenar.
