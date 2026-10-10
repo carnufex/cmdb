@@ -119,6 +119,9 @@ Om tiden blir knapp räcker scenario 1–4. Övriga visas som förberedda i data
 | 5 – Provisionering | Dokumentera nätet i planer: rita i kartan, sätt in en site i en befintlig kabel, massimport, kabelväg, ta bort och flytta, rack (#166) | – |
 | 6 – Klassning och regler | Klassningar (t.ex. kritikalitet 1–5) med ärvning och regler som syns i planer (ADR-0017, #175) | – |
 | 7 – Röstagenter: härdning | En hemlighet per röstingång, NetworkPolicy, SMS-leverantör (#181–#183) | – |
+| 8 – Demo på egen datamodell | Katalog från extern mapp, sitetyper och kategorier med roller, attributscheman, katalog ur en export, datageneratorn mot en egen katalog (#206–#211, #219) | – |
+| 9 – Integrationer | Proveniens, avstämning mot källsystem till planer, adapterramverk (#215–#217, #230) | – |
+| 10 – Kanalisation | Trasé, dukter och rör, kablars väg, påverkan per trasésträcka, ledaranvändning och ledig kapacitet (ADR-0014, #92) | 3 |
 
 Backloggen finns som issues på GitHub (källa: [`backlog/`](../backlog/)).
 
