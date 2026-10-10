@@ -236,7 +236,11 @@ Kablar ligger i subdukter i dukter, som ligger i trasé mellan siter. Kanalisati
 - **Sträckpanelen** (`GET /api/route-segments/{id}`) visar anläggningssätt, ändar, ägare och varje dukt som ett tvärsnitt ritat ur dukttypens mall. Rörens beläggning visas som prick och text: tom, reserverad (en aktiv reservation av röret), kabel eller blåsfiber. Kabeln i röret är en länk.
 - **Kabelpanelen** visar kabelns väg genom kanalisationen (`GET /api/cables/{id}/path`): sträcka, dukt och rör från A-änden.
 - **Omfång:** en sträcka syns när dess geometri skär något av anroparens områden (`scope_route_segment`, materialiserad med de andra omfångstabellerna), och i plattorna klipps den vid områdets kant. Dukter och rör följer sin sträcka. En kabel utanför omfånget visas som *upptagen* utan namn, och en sträcka utanför omfånget i en kabels väg visas som dold.
-- **Läs- och skrivytor** som återstår: påverkan per sträcka (#237), ledaranvändning och ledig kapacitet (#238).
+- **Påverkan per sträcka** (#237): en grävning på en trasésträcka kapar alla kablar i dess dukter (`GET /api/route-segments/{id}/impact`, MCP `impact` med `route-segment:<id>`, och *Om sträckan grävs av* i sträckpanelen). Påverkan räknas med samma kod som för en kabel, över alla kablarna tillsammans. Kablar utanför anroparens omfång räknas med för det de bär, så långt anroparen får se, och anges bara som antal.
+  - Indexet sträcka → kablar hålls i minnet per grafversion. En ny graf (laddning eller ändringsflöde, #11) ger en ny version, så indexet följer grafen. Kanalisationen skrivs bara av laddningar i dag. När planer skriver den läggs tabellerna in i ändringsflödet.
+  - Planerade arbeten i driftläget visar vilka sträckor grävområdet korsar. Ett klick på området öppnar den första sträckan.
+  - MCP `get_object` tar `route-segment:<id>` och visar sträckan med dukter, rör och kablar.
+- **Läs- och skrivytor** som återstår: ledaranvändning och ledig kapacitet (#238).
 
 ## Livscykel
 

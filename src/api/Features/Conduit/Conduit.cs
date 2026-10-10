@@ -35,9 +35,20 @@ public sealed class RouteSegmentEndpoint(RequestDb db) : Endpoint<RouteSegmentRe
 
     public override async Task HandleAsync(RouteSegmentRequest req, CancellationToken ct)
     {
+        if (await LoadAsync(db, req.Id, HttpContext.Scope(), ct) is not { } detail)
+        {
+            await Send.NotFoundAsync(ct);
+            return;
+        }
+        await Send.OkAsync(detail, ct);
+    }
+
+    /// <summary>Also used by the MCP tool <c>get_object</c>, so agents see what the panel shows.</summary>
+    internal static async Task<RouteSegmentDetail?> LoadAsync(NpgsqlDataSource db, long segmentId, UserScope scope, CancellationToken ct)
+    {
         var started = Stopwatch.GetTimestamp();
-        var scope = HttpContext.Scope();
-        await using var conn = await db.Source.OpenConnectionAsync(ct);
+        var req = new RouteSegmentRequest(segmentId);
+        await using var conn = await db.OpenConnectionAsync(ct);
         await using var batch = new NpgsqlBatch(conn)
         {
             BatchCommands =
@@ -67,9 +78,7 @@ public sealed class RouteSegmentEndpoint(RequestDb db) : Endpoint<RouteSegmentRe
         await using var reader = await batch.ExecuteReaderAsync(ct);
         if (!await reader.ReadAsync(ct))
         {
-            await reader.DisposeAsync();
-            await Send.NotFoundAsync(ct);
-            return;
+            return null;
         }
         ObjectRef Site(int at) => reader.GetBoolean(at + 4)
             ? new ObjectRef("site", reader.GetInt64(at), reader.GetString(at + 1), reader.GetString(at + 2), reader.GetString(at + 3))
@@ -118,8 +127,8 @@ public sealed class RouteSegmentEndpoint(RequestDb db) : Endpoint<RouteSegmentRe
         {
             ducts.Add(current with { Subducts = [.. tubes] });
         }
-        await Send.OkAsync(new RouteSegmentDetail(id, code, construction, owner, lifecycle, length, a, b, ducts,
-            ducts.Sum(d => d.Subducts.Count(s => s.Occupancy == "empty")), Math.Round(Stopwatch.GetElapsedTime(started).TotalMilliseconds, 1)), ct);
+        return new RouteSegmentDetail(id, code, construction, owner, lifecycle, length, a, b, ducts,
+            ducts.Sum(d => d.Subducts.Count(s => s.Occupancy == "empty")), Math.Round(Stopwatch.GetElapsedTime(started).TotalMilliseconds, 1));
     }
 }
 

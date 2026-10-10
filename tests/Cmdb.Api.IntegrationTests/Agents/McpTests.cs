@@ -84,7 +84,7 @@ public sealed class McpTests(ApiFactory factory)
     [InlineData("search", """{ "query": "ab" }""", "three characters")]
     [InlineData("get_object", """{ "reference": "toaster:1" }""", "Unknown type")]
     [InlineData("get_object", """{ "reference": "site:999999999" }""", "No site")]
-    [InlineData("impact", """{ "reference": "service:1" }""", "cables, equipment and sites")]
+    [InlineData("impact", """{ "reference": "service:1" }""", "cables, equipment, sites and route segments")]
     [InlineData("find_sites", """{ "equipment": [ { "attribute": { "key": "noSuchKey", "op": "eq", "value": 1 } } ] }""", "noSuchKey")]
     [InlineData("neighbourhood", """{ "siteId": 1, "hops": 9 }""", "hops")]
     public async Task Invalid_arguments_come_back_as_tool_errors_the_agent_can_read(string tool, string arguments, string message)

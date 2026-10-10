@@ -2,7 +2,8 @@ import { httpResource } from '@angular/common/http';
 import { DecimalPipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 import { StatusComponent } from '../shell/status';
-import { asLifecycle, ObjectRef } from './models';
+import { ImpactListComponent } from './impact-list';
+import { asLifecycle, Impact, ObjectRef } from './models';
 import { ObjectLinkComponent } from './object-link';
 
 /** GET /api/route-segments/{id} (#236) */
@@ -86,7 +87,7 @@ export function crossSection(count: number, size = 120): { x: number; y: number;
  */
 @Component({
   selector: 'cmdb-route-segment-panel',
-  imports: [DecimalPipe, ObjectLinkComponent, StatusComponent],
+  imports: [DecimalPipe, ObjectLinkComponent, StatusComponent, ImpactListComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (segment.value(); as s) {
@@ -111,6 +112,29 @@ export function crossSection(count: number, size = 120): { x: number; y: number;
             <dd>{{ s.owner }}</dd>
           }
         </dl>
+      </section>
+      <section>
+        <h3>Om sträckan grävs av</h3>
+        @if (impact.value(); as i) {
+          <p class="muted">
+            {{ i.cables?.length ?? 0 }} kablar{{
+              i.hiddenCables ? ' och ' + i.hiddenCables + ' utanför ditt omfång' : ''
+            }}
+            kapas.
+          </p>
+          @if (i.cables?.length) {
+            <p class="cables">
+              @for (c of i.cables; track c.id; let last = $last) {
+                <cmdb-link [ref]="c" />{{ last ? '' : ', ' }}
+              }
+            </p>
+          }
+        }
+        <cmdb-impact-list
+          [impact]="impact.value()"
+          [failed]="!!impact.error()"
+          none="Inga tjänster går genom sträckan."
+        />
       </section>
       @for (d of s.ducts; track d.id) {
         <section class="duct">
@@ -173,6 +197,9 @@ export function crossSection(count: number, size = 120): { x: number; y: number;
   `,
   styleUrl: './panel.scss',
   styles: `
+    .cables {
+      font-size: var(--text-sm);
+    }
     .duct h3 {
       display: flex;
       gap: var(--space-2);
@@ -258,6 +285,10 @@ export class RouteSegmentPanelComponent {
 
   protected readonly segment = httpResource<RouteSegmentDetail>(
     () => `/api/route-segments/${this.id()}`,
+  );
+  /** A dig across the segment (#237): every cable in its ducts, loaded after the segment itself. */
+  protected readonly impact = httpResource<Impact>(() =>
+    this.segment.value() ? `/api/route-segments/${this.id()}/impact` : undefined,
   );
   protected readonly occupancyLabels = occupancyLabels;
   protected readonly asLifecycle = asLifecycle;
