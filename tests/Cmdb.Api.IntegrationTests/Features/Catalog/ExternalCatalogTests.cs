@@ -25,6 +25,7 @@ public sealed class ExternalCatalogTests(ApiFactory factory)
         var types = await context.EquipmentTypes.Where(t => t.Key.StartsWith("globex-")).OrderBy(t => t.Key).Select(t => t.Key).ToListAsync(Ct);
         types.ShouldBe(["globex-odf-8", "globex-sw-4"]);
         (await context.CableTypes.SingleAsync(t => t.Key == "globex-fiber-8", Ct)).ConductorCount.ShouldBe(8);
+        (await context.DuctTypes.SingleAsync(t => t.Key == "globex-md-4x10", Ct)).SubductCount.ShouldBe(4);
         // A second sync of the same folder writes nothing.
         (await CatalogSync.SyncAsync(context, catalog, Ct)).ShouldBe(0);
     }

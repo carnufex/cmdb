@@ -1,0 +1,12 @@
+{
+  "key": "acme-md-24x7",
+  "name": "Mikrorörsbunt 24×7 mm",
+  "manufacturer": "Acme Duct",
+  "model": "MD-24x7",
+  "outerDiameterMm": 45,
+  "subducts": {
+    "count": 24,
+    "innerDiameterMm": 5,
+    "colorCode": "IEC 60304"
+  }
+}

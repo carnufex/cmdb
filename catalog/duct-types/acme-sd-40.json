@@ -1,0 +1,11 @@
+{
+  "key": "acme-sd-40",
+  "name": "Skyddsrör 40 mm",
+  "manufacturer": "Acme Duct",
+  "model": "SD-40",
+  "outerDiameterMm": 40,
+  "subducts": {
+    "count": 1,
+    "innerDiameterMm": 33
+  }
+}

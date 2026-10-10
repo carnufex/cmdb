@@ -1,0 +1,12 @@
+{
+  "key": "acme-md-7x16",
+  "name": "Multidukt 7×16 mm",
+  "manufacturer": "Acme Duct",
+  "model": "MD-7x16",
+  "outerDiameterMm": 50,
+  "subducts": {
+    "count": 7,
+    "innerDiameterMm": 12,
+    "colorCode": "IEC 60304"
+  }
+}

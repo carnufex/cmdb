@@ -159,6 +159,7 @@ Den syntetiska katalogen i `catalog/` byggs in i API:t och datageneratorn och an
   service-types.json          valfri
   source-priority.json        valfri, vilken källa som äger vilket attribut (#215)
   equipment-types/<key>.json
+  duct-types/<key>.json       valfri, dukttyper för kanalisationen (ADR-0014)
   equipment-images/<fil>      valfri, bilder som modellerna pekar ut (#214)
   classifications/<key>.json  criticality.json krävs
   site-templates/<key>.json
@@ -208,6 +209,24 @@ Datageneratorn bygger ett syntetiskt nät mot den katalog den startas med, även
 - **Attribut** för okända modeller och tjänster genereras ur typens JSON Schema: alla obligatoriska egenskaper, och valfria enkla egenskaper utan mönster, inom sina gränser.
 - **Krav på katalogen:** minst en sitetyp per roll, en fiberkabel, en modell med rollen `termination` och en aktiv modell. Saknas något stannar generatorn med ett fel som säger vad.
 - **Demoscenarierna** ([demo-scenarier.md](demo-scenarier.md)) hittar nav och aggregeringsnoder efter roll, men kräver tjänster av typen `mobile-backhaul` och hoppar annars över.
+
+## Kanalisation (ADR-0014, #92)
+
+Kablar ligger i subdukter i dukter, som ligger i trasé mellan siter. Kanalisationen bär ingen signal och ligger inte i grafen.
+
+| Tabell | Vad |
+|---|---|
+| `route_segment` | Trasésträcka mellan två siter: LineString i EPSG:3006, anläggningssätt (`trench`, `plough`, `aerial`, `existing`), ägare, livscykel och proveniens. Längden räknas av databasen. |
+| `duct_type` | Dukttyp, synkad från `catalog/duct-types/<key>.json`: ytterdiameter och subduktmall (antal, innerdiameter, färgkod). |
+| `duct` | En dukt av en dukttyp. Ligger den i en annan dukts rör (rör i rör) pekar `parent_subduct_id` ut röret. |
+| `duct_segment` | Duktens ordnade trasésträckor (`seq` från 0). |
+| `subduct` | Rör nummer N i dukten, genererat ur mallen. `occupancy` är `empty`, `cable` eller `blown_fibre`. *Reserverad* lagras inte: det är en reservation av röret (`resource_kind = 'subduct'`, #25). |
+| `cable_path` | Kabelns väg som ordnade subdukter från A-änden. Ett rör rymmer en kabel. Utan väg ligger kabeln fritt med sin egen geometri. |
+| `conductor.usage` | `dark`, `dark_fibre` (uthyrd, tänds av kunden) eller `spare`; tom när inget sagts. *Tänd* lagras inte, eftersom en ledare i en aktiv krets är tänd. |
+
+- **Brunnar** är siter av sitetypen `manhole` (Brunn), med position, livscykel, platser och omfång som andra siter.
+- **Dukttyper** är katalogdata som kabeltyperna: en ny storlek är en fil, inte en migrering. Mappen `duct-types/` är valfri, också i en extern katalog. Fel anger filen och regeln, till exempel filnamn som inte matchar nyckeln, inga rör eller ett rör som är större än dukten.
+- **Läs- och skrivytor** kommer i #235–#238: datageneratorn, kartan och tvärsnittet, påverkan per sträcka, ledaranvändning och ledig kapacitet.
 
 ## Livscykel
 

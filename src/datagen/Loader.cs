@@ -14,6 +14,7 @@ internal static class Loader
     private static readonly string[] NetworkTables =
     [
         "classification", "service_circuit", "circuit_dependency", "circuit_hop", "circuit", "service", "channel",
+        "cable_path", "duct_segment", "subduct", "duct", "route_segment",
         "connection", "conductor_end", "conductor", "cable", "port", "terminal", "equipment", "location", "site",
     ];
 
