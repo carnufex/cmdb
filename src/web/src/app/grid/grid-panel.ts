@@ -6,12 +6,10 @@ import {
   computed,
   effect,
   inject,
-  OnDestroy,
   signal,
   untracked,
 } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
-import { MapView } from '../map/map-view';
 import { ActivePlan } from '../plans/active-plan';
 import { Tools } from '../shell/tools';
 import {
@@ -32,7 +30,7 @@ import { ToolSizeComponent } from '../shell/tool-size';
 const ROW_HEIGHT = 30;
 
 /**
- * The spreadsheet mode (#27): a selection of sites, or the equipment on them, as an editable grid. Paste a block from
+ * Mass editing (#27, named so since #253): the selected sites, or the equipment on them, as an editable grid. Paste a block from
  * Excel at the active cell, fill down with Ctrl+D over a Shift-marked range, and put the changes into the active plan,
  * where each is checked against the model's attribute schema before anything reaches production.
  */
@@ -41,17 +39,19 @@ const ROW_HEIGHT = 30;
   imports: [ToolSizeComponent, ScrollingModule],
   template: `
     <header class="head">
-      <h2>Kalkylark</h2>
+      <h2>Massredigering</h2>
       <cmdb-tool-size />
-      <button type="button" class="close" aria-label="Stäng kalkylarket" (click)="tools.close()">
+      <button
+        type="button"
+        class="close"
+        aria-label="Stäng massredigeringen"
+        (click)="tools.close()"
+      >
         ×
       </button>
     </header>
     <div class="bar">
       <span class="muted">{{ selection.sites()?.label ?? 'Inget urval' }}</span>
-      <button type="button" class="action" (click)="lasso()">
-        {{ mapView.lassoing() ? 'Avbryt lasso' : 'Rita lasso i kartan' }}
-      </button>
       <span class="kinds" role="radiogroup" aria-label="Rader">
         <button
           type="button"
@@ -71,11 +71,6 @@ const ROW_HEIGHT = 30;
         </button>
       </span>
     </div>
-    @if (mapView.lassoing()) {
-      <p class="hint" role="status">
-        Klicka runt siterna i kartan och dubbelklicka för att stänga lasson.
-      </p>
-    }
     @if (grid(); as g) {
       <div
         class="table"
@@ -170,7 +165,7 @@ const ROW_HEIGHT = 30;
       <p class="muted pad">Hämtar…</p>
     } @else {
       <p class="muted pad">
-        Välj siter med avancerad sökning (Öppna som kalkylark) eller en lasso i kartan.
+        Välj siter med en lasso i kartan (L) eller avancerad sökning (Använd som urval).
       </p>
     }
     @if (error(); as e) {
@@ -339,11 +334,10 @@ const ROW_HEIGHT = 30;
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class GridPanelComponent implements OnDestroy {
+export class GridPanelComponent {
   private readonly http = inject(HttpClient);
   protected readonly tools = inject(Tools);
   protected readonly selection = inject(Selection);
-  protected readonly mapView = inject(MapView);
   protected readonly plan = inject(ActivePlan);
 
   protected readonly rowHeight = ROW_HEIGHT;
@@ -377,17 +371,6 @@ export class GridPanelComponent implements OnDestroy {
       const kind = this.kind();
       untracked(() => void this.load(sites?.ids ?? [], kind));
     });
-    // A closed lasso becomes the selection.
-    effect(() => {
-      const lasso = this.mapView.lasso();
-      if (lasso) {
-        untracked(() => void this.fromLasso(lasso.ring));
-      }
-    });
-  }
-
-  ngOnDestroy(): void {
-    this.mapView.lassoing.set(false);
   }
 
   protected track = (_: number, row: GridRow) => row.id;
@@ -457,10 +440,6 @@ export class GridPanelComponent implements OnDestroy {
     this.edits.update((e) => paste(e, g.rows, this.columns(), active, text));
   }
 
-  protected lasso(): void {
-    this.mapView.lassoing.update((on) => !on);
-  }
-
   protected async toPlan(): Promise<void> {
     const g = this.grid();
     const planId = this.plan.id();
@@ -494,22 +473,6 @@ export class GridPanelComponent implements OnDestroy {
       }
     } finally {
       this.busy.set(false);
-    }
-  }
-
-  private async fromLasso(ring: number[][]): Promise<void> {
-    try {
-      const within = await firstValueFrom(
-        this.http.post<{ sites: number[]; truncated: boolean }>('/api/sites/within', {
-          polygon: ring,
-        }),
-      );
-      this.selection.sites.set({
-        ids: within.sites,
-        label: `${within.sites.length} siter i lasso${within.truncated ? ' (fler finns)' : ''}`,
-      });
-    } catch {
-      this.error.set('Lasson kunde inte användas.');
     }
   }
 
