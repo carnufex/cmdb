@@ -6,12 +6,14 @@ COPY global.json Directory.Build.props Directory.Packages.props .editorconfig ./
 COPY src/datagen/Cmdb.DataGen.csproj src/datagen/
 COPY src/database/Cmdb.Database.csproj src/database/
 COPY src/catalog/Cmdb.Catalog.csproj src/catalog/
+COPY src/exchange/Cmdb.Exchange.csproj src/exchange/
 COPY src/graph/Cmdb.Graph.csproj src/graph/
 RUN dotnet restore src/datagen/Cmdb.DataGen.csproj
 COPY catalog/ catalog/
 COPY changelog/ changelog/
 COPY src/database/ src/database/
 COPY src/catalog/ src/catalog/
+COPY src/exchange/ src/exchange/
 COPY src/graph/ src/graph/
 COPY src/datagen/ src/datagen/
 RUN dotnet publish src/datagen/Cmdb.DataGen.csproj -c Release -o /app --no-restore

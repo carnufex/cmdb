@@ -4,7 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Cmdb.Catalog;
-using Cmdb.DataGen.Exchange;
+using Cmdb.Exchange;
 
 namespace Cmdb.DataGen.CatalogGeneration;
 

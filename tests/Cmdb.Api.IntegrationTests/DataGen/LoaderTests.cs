@@ -1,3 +1,4 @@
+using Cmdb.Exchange;
 using Cmdb.Catalog;
 using Cmdb.DataGen;
 using Cmdb.DataGen.Geo;

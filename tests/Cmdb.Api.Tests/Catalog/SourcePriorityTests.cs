@@ -13,7 +13,7 @@ public sealed class SourcePriorityTests : IDisposable
     private static readonly SourcePriority Priority = SourcePriority.Parse("""
         [
           { "object": "equipment", "attribute": "placement", "sources": ["nms", "plan"] },
-          { "object": "equipment", "attribute": "attributes.*", "sources": ["nms"] },
+          { "object": "equipment", "attribute": "attributes.*", "sources": ["nms"], "autoApply": ["nms"] },
           { "object": "equipment", "attribute": "attributes.owner", "sources": ["plan"] },
           { "object": "*", "attribute": "lifecycle", "sources": ["plan", "nms"] },
           { "object": "site", "attribute": "*", "sources": ["plan"] }
@@ -50,6 +50,14 @@ public sealed class SourcePriorityTests : IDisposable
     }
 
     [Fact]
+    public void Only_the_listed_sources_are_trusted_with_an_attribute()
+    {
+        Priority.AutoApplies("equipment", "attributes.serialNumber", "nms").ShouldBeTrue();
+        Priority.AutoApplies("equipment", "attributes.owner", "plan").ShouldBeFalse();
+        Priority.AutoApplies("equipment", "name", "nms").ShouldBeFalse();
+    }
+
+    [Fact]
     public void The_embedded_catalog_has_valid_rules_and_a_catalog_without_the_file_has_none()
     {
         SourcePriority.Load(CatalogSource.Embedded).Rules.ShouldNotBeEmpty();
@@ -64,6 +72,7 @@ public sealed class SourcePriorityTests : IDisposable
     [InlineData("""[{ "object": "site", "attribute": "name", "sources": ["a", "a"] }]""", "more than once")]
     [InlineData("""[{ "object": "site", "attribute": "name", "sources": ["a"] }, { "object": "site", "attribute": "name", "sources": ["b"] }]""", "more than one rule")]
     [InlineData("""[{ "object": "site", "attribute": "name", "sources": ["a"], "weight": 2 }]""", "weight")]
+    [InlineData("""[{ "object": "site", "attribute": "name", "sources": ["a"], "autoApply": ["b"] }]""", "not one of its sources")]
     public void Invalid_rules_are_rejected(string json, string message)
     {
         Should.Throw<InvalidOperationException>(() => SourcePriority.Parse(json)).Message.ShouldContain(message);

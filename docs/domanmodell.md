@@ -158,6 +158,7 @@ Den syntetiska katalogen i `catalog/` byggs in i API:t och datageneratorn och an
   equipment-categories.json   krävs
   service-types.json          valfri
   source-priority.json        valfri, vilken källa som äger vilket attribut (#215)
+  source-matching.json        valfri, hur objekt från en ny källa matchas mot cmdb (#216)
   equipment-types/<key>.json
   duct-types/<key>.json       valfri, dukttyper för kanalisationen (ADR-0014)
   equipment-images/<fil>      valfri, bilder som modellerna pekar ut (#214)
@@ -379,8 +380,12 @@ Ett befintligt nät från ett källsystem läses in i produktion med ett utbytes
 Varje källa som rapporterar ett objekt får en **källpost** (`source_record`) per objekt och källa: källans id, när den senast bekräftade objektet och värdet per attribut som källan rapporterade det. Attributen är objektets fält (`name`, `lifecycle`, `position`, `placement` …) och dess egna attribut som `attributes.<nyckel>`. Importen skriver källposterna i samma transaktion som objekten.
 
 - **Nuvarande värde jämförs vid läsning.** Objektets panel, API och MCP:s `get_object` visar under *Källor* vad varje källa sa, och om objektet ändrats i cmdb sedan dess. Ingen skrivväg behöver veta om källposterna, så de kan inte glida isär.
-- **Vem äger vad** är katalogdata: `source-priority.json` i katalogen anger per objekttyp och attribut vilka källor som får skriva, i prioritetsordning. Den mest specifika regeln gäller (`attributes.serialNumber` före `attributes.*` före `*`, objekttyp före `*`). Utan regel äger den källa som bekräftade senast. Avstämningen (#216) använder samma regler.
+- **Vem äger vad** är katalogdata: `source-priority.json` i katalogen anger per objekttyp och attribut vilka källor som får skriva, i prioritetsordning. Den mest specifika regeln gäller (`attributes.serialNumber` före `attributes.*` före `*`, objekttyp före `*`). Utan regel äger den källa som bekräftade senast. Avstämningen (#216) använder samma regler, och `autoApply` anger källorna vars ändringar av attributet förs in utan granskning.
 - **Behörighet:** källposterna maskas som objektets attribut. Dolda attribut och, när omfånget döljer koordinater, `position` och `route` visas inte. Länkar till andra objekt (`placement`, `ends`) och kabelns sträckning jämförs men visas aldrig som värden, eftersom de är interna id:n som kan peka på objekt utanför omfånget. Tabellen ingår inte i den direkta databasåtkomsten (ADR-0012).
+
+### Avstämning mot ett källsystem (#216, ADR-0020)
+
+En källas data i utbytesformatet jämförs med cmdb genom `POST /api/reconciliations`, under anroparens omfång. Objekten matchas på källa och id, och för en ny källa på reglerna i `source-matching.json`. Skillnader i attribut som källan äger blir operationer i en plan för granskning, och det källan är betrodd med (`autoApply`) förs in direkt i en egen plan. Övriga skillnader, nya objekt som inte kan skapas och det som saknas i källan rapporteras. Inget tas bort. Se [avstamning.md](avstamning.md).
 
 ### Ta bort en site, utrustning eller kabel (#172)
 

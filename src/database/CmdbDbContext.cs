@@ -52,6 +52,7 @@ public sealed class CmdbDbContext(DbContextOptions<CmdbDbContext> options) : DbC
     public DbSet<ServiceRequest> ServiceRequests => Set<ServiceRequest>();
     public DbSet<Classification> Classifications => Set<Classification>();
     public DbSet<SourceRecord> SourceRecords => Set<SourceRecord>();
+    public DbSet<Reconciliation> Reconciliations => Set<Reconciliation>();
     public DbSet<DuctType> DuctTypes => Set<DuctType>();
     public DbSet<RouteSegment> RouteSegments => Set<RouteSegment>();
     public DbSet<Duct> Ducts => Set<Duct>();

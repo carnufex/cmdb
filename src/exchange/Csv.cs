@@ -1,13 +1,13 @@
 using System.Globalization;
 using System.Text;
 
-namespace Cmdb.DataGen.Exchange;
+namespace Cmdb.Exchange;
 
 /// <summary>
 /// CSV as spreadsheets write it: a header row, comma or semicolon (whichever the header uses), fields in double quotes
 /// when they hold the separator, a quote or a line break. Rows are numbered from 2, the header being row 1.
 /// </summary>
-internal sealed class CsvTable
+public sealed class CsvTable
 {
     private readonly Dictionary<string, int> _columns;
 
@@ -115,7 +115,7 @@ internal sealed class CsvTable
 }
 
 /// <summary>Writes CSV with comma separators, quoting only where needed.</summary>
-internal sealed class CsvWriter(TextWriter writer, params string[] header)
+public sealed class CsvWriter(TextWriter writer, params string[] header)
 {
     private bool _headerWritten;
 

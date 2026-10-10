@@ -8,9 +8,12 @@ namespace Cmdb.Catalog;
 /// One rule in <c>source-priority.json</c> (#215): which sources may write <paramref name="Attribute"/> on
 /// <paramref name="ObjectType"/>, highest priority first. The attribute is one of the recorded ones (<c>name</c>,
 /// <c>position</c> …), an object's own attribute (<c>attributes.serialNumber</c>), all of those (<c>attributes.*</c>) or
-/// everything (<c>*</c>); the object is an object type or <c>*</c>.
+/// everything (<c>*</c>); the object is an object type or <c>*</c>. <paramref name="AutoApply"/> lists the sources whose
+/// changes to the attribute reconciliation brings into production without review (#216, ADR-0020); each is one of
+/// <paramref name="Sources"/>.
 /// </summary>
-public sealed record SourceRule([property: JsonPropertyName("object")] string ObjectType, string Attribute, IReadOnlyList<string> Sources);
+public sealed record SourceRule([property: JsonPropertyName("object")] string ObjectType, string Attribute, IReadOnlyList<string> Sources,
+    IReadOnlyList<string>? AutoApply = null);
 
 /// <summary>
 /// Which source system owns which attribute (#215, ADR-0019), as catalog data. The most specific rule decides: the
@@ -81,6 +84,10 @@ public sealed class SourcePriority
         return null;
     }
 
+    /// <summary>Whether the source's changes to the attribute go into production without review (#216).</summary>
+    public bool AutoApplies(string objectType, string attribute, string source) =>
+        RuleFor(objectType, attribute)?.AutoApply?.Contains(source) == true;
+
     /// <summary>
     /// Which of the sources reporting an attribute owns its value: the highest-ranked one that may write it, and
     /// among equals the one that confirmed last. Null when none may.
@@ -144,6 +151,10 @@ public sealed class SourcePriority
             foreach (var duplicate in rule.Sources.Where(s => s is not null).GroupBy(s => s).Where(g => g.Count() > 1))
             {
                 errors.Add($"{name}: source '{duplicate.Key}' is listed more than once");
+            }
+            foreach (var auto in (rule.AutoApply ?? []).Where(a => !rule.Sources.Contains(a)))
+            {
+                errors.Add($"{name}: autoApply source '{auto}' is not one of its sources");
             }
         }
         foreach (var duplicate in rules.Where(r => r.ObjectType is not null && r.Attribute is not null)

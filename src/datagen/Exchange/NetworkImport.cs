@@ -1,3 +1,4 @@
+using Cmdb.Exchange;
 using System.Diagnostics;
 using System.Globalization;
 using Cmdb.Catalog;

@@ -21,6 +21,7 @@ public enum PlanWriteFailure
     NotFound,
     Invalid,
     Conflict,
+    Forbidden,
 }
 
 /// <summary>

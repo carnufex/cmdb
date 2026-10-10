@@ -63,14 +63,14 @@ Objekten matchas på källsystem (`--source`) och id. En import kan därför kö
 - **Ändrade objekt** uppdateras: namn, kod, livscykel, attribut, position, plats i rack och placering. `rackPosition` som saknas fylls i genom stapling (#173).
 - **Länkar** (`circuit-dependencies.csv`, `service-circuits.csv`) mellan objekt från källsystemet följer filen helt när den finns. Länkar som filen inte längre har tas bort. En krets väg byts ut när den skiljer sig från filens.
 - **Kopplingar** matchas på sina två terminaler.
-- **Objekt som bara finns i databasen** räknas i rapporten men tas inte bort. Att avveckla dem är en plan (#216).
+- **Objekt som bara finns i databasen** räknas i rapporten men tas inte bort. Att avveckla dem är en plan. Avstämningen markerar dem (#216, se [avstamning.md](avstamning.md)).
 - **Går inte i en import:** byte av modell på utrustning, byte av kabeltyp och flytt av kabeländar. De rapporteras som fel och görs i en plan.
 
 Allt skrivs i en transaktion med `COPY` till temporära tabeller och mängdbaserade satser. Objekten får `source_system`, `external_id` och `last_confirmed_at`. Varje objekt i filerna får också en källpost med det källan rapporterade per attribut (#215, se [domanmodell.md](domanmodell.md#ursprung-per-attribut-215-adr-0019)). Efteråt läggs en `reload` i ändringsströmmen, så att grafen laddas om, och omfångens synlighet räknas om.
 
 ## Behörighet
 
-Importen är systemarbete som datageneratorn. Den körs som ett eget steg med en egen databasroll och aldrig genom API:t, så ingen användares omfång kringgås. Den ser och skriver allt (`cmdb.scopes = *`). Kör den som ett Job med samma image och katalog som API:t, se [drift.md](drift.md#import-av-ett-befintligt-nat).
+Importen är systemarbete som datageneratorn. Den är till för förstagångsladdning. Därefter stäms källan av genom API:t, under integrationens omfång ([avstamning.md](avstamning.md)). Den körs som ett eget steg med en egen databasroll och aldrig genom API:t, så ingen användares omfång kringgås. Den ser och skriver allt (`cmdb.scopes = *`). Kör den som ett Job med samma image och katalog som API:t, se [drift.md](drift.md#import-av-ett-befintligt-nat).
 
 ## Mätning
 

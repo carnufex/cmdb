@@ -1,0 +1,6 @@
+[
+  { "object": "equipment", "keys": ["attributes.serialNumber"] },
+  { "object": "site", "keys": ["code"] },
+  { "object": "cable", "keys": ["code"] },
+  { "object": "service", "keys": ["code"] }
+]

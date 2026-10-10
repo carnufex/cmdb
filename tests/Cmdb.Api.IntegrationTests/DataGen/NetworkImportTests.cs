@@ -1,3 +1,4 @@
+using Cmdb.Exchange;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Cmdb.Catalog;
@@ -121,7 +122,7 @@ public sealed class NetworkImportTests(ApiFactory factory) : IDisposable
         Copy(Example, _folder);
         Edit(ExchangeFormat.Equipment, "acme-odf-24,in_service,,,\nex-e5", "acme-odf-48,in_service,,,\nex-e5");
         var swapped = await ImportAsync(db, _folder, "system-a");
-        swapped.Errors.ShouldContain(e => e.Object == "ex-e4" && e.Message.Contains("modellen kan inte bytas", StringComparison.Ordinal));
+        swapped.Errors.ShouldContain(e => e.ObjectId == "ex-e4" && e.Message.Contains("modellen kan inte bytas", StringComparison.Ordinal));
     }
 
     [Fact]
