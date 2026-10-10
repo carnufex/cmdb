@@ -35,12 +35,14 @@
         "03-tagg-stannar-pa-service-desk.json": "test_0101m3szgra0fa38qa622k5n4tp7",
         "04-ovrigt-erbjuder-uppringning.json": "test_8201m3szgrh8eqtt761kvjhm1nmf"
       },
-      "agent_id": "agent_4901m3szgyjwexwsqjxav28bnrnt"
+      "agent_id": "agent_4901m3szgyjwexwsqjxav28bnrnt",
+      "secret_id": "t2wDI5FUQmWI1f8aj58q"
     },
     "it": {
       "mcp_server_id": "qmYWUx4CKc6AlQ7TSgbe",
       "agent_id": "agent_8701m3szgwn9emh8237ccyhygr83",
-      "voice_id": "ycdKCM2Fj0Us7dTwCGoM"
+      "voice_id": "ycdKCM2Fj0Us7dTwCGoM",
+      "secret_id": "RRTilVToHxtpe4bHoAZ9"
     },
     "noc": {
       "voice_id": "zA8eaG1JhG82rhuCip6v"
