@@ -26,8 +26,10 @@ public sealed class FibreDrawingTests(ApiFactory factory)
             """);
         var (mx, my) = await Point(db, $"SELECT ST_X(p), ST_Y(p) FROM (SELECT ST_LineInterpolatePoint(geom, 0.25) AS p FROM cable WHERE id = {cable}) c");
 
-        var drawing = (await client.GetFromJsonAsync<FibreDrawing>(
-            FormattableString.Invariant($"/api/fibre/cables/{cable}?x={mx}&y={my}"), Ct))!;
+        // The budget is for warm calls (docs/plan.md), as in #273: the first one pays for JIT.
+        var url = FormattableString.Invariant($"/api/fibre/cables/{cable}?x={mx}&y={my}");
+        await client.GetFromJsonAsync<FibreDrawing>(url, Ct);
+        var drawing = (await client.GetFromJsonAsync<FibreDrawing>(url, Ct))!;
         var c = drawing.Cables.ShouldHaveSingleItem();
         c.Fibres.Count.ShouldBe((int)await Scalar(db, $"SELECT count(*) FROM conductor WHERE cable_id = {cable}"));
         c.Fibres.Select(f => f.Number).ShouldBe(c.Fibres.Select(f => f.Number).Order());
@@ -61,6 +63,8 @@ public sealed class FibreDrawingTests(ApiFactory factory)
             SELECT count(DISTINCT p.cable_id) FROM cable_path p JOIN subduct s ON s.id = p.subduct_id JOIN duct_segment ds ON ds.duct_id = s.duct_id
             WHERE ds.route_segment_id = {segment}
             """);
+        // Warm: the first call also builds the conduit index for the graph (#237).
+        await client.GetFromJsonAsync<FibreDrawing>($"/api/fibre/route-segments/{segment}", Ct);
         var bySegment = (await client.GetFromJsonAsync<FibreDrawing>($"/api/fibre/route-segments/{segment}", Ct))!;
         bySegment.Cables.Count.ShouldBe((int)Math.Min(inSegment, FibreDrawings.MaxCables));
         bySegment.Title.ShouldStartWith("Trasésträcka");
