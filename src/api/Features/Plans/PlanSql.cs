@@ -172,7 +172,7 @@ internal static class PlanSql
         var conflicts = (await ClaimsSql.ConflictsAsync(db, [.. operations.Select(o => o.PlanId).Distinct()], ct)).ToLookup(c => c.OperationId);
         var names = await TraceNames.LoadAsync(db, [.. terminals.Where(t => t > 0)], [], [], ct);
         names.AddPlanned(planned.Terminals);
-        var objects = await ObjectsAsync(db, [.. operations.Where(o => o.Kind is "set_lifecycle" or "rename" or "set_attributes" or "remove" or "set_classification" or "move").Select(o => (o.ObjectType!, o.ObjectId)).Distinct()],
+        var objects = await ObjectsAsync(db, [.. operations.Where(o => o.Kind is "set_lifecycle" or "rename" or "set_attributes" or "remove" or "set_classification" or "move" or "set_conductor_usage").Select(o => (o.ObjectType!, o.ObjectId)).Distinct()],
             scope, ct);
 
         TraceHop Hop(long terminal) =>
@@ -230,6 +230,7 @@ internal static class PlanSql
                     $" med {ObjectRemoval.Objects(op.Payload).Equipment.Length} utrustningar och {ObjectRemoval.Objects(op.Payload).Cables.Length} kablar",
                 "remove" => $"Ta bort {(op.ObjectType == "cable" ? "kabel" : "utrustning")} {target.Code}",
                 "move" => MoveText(op.Payload),
+                "set_conductor_usage" => UsageText(op.Payload, target.Code),
                 _ => $"Byt namn på {target.Code} till {name}",
             };
             if (problem is null && !found)
@@ -253,6 +254,28 @@ internal static class PlanSql
             list.Add(new PlanSite(reader.GetInt64(0), reader.GetDouble(1), reader.GetDouble(2)));
         }
         return list;
+    }
+
+    /// <summary>A stated conductor usage (#238), in words: "Sätt ledare 1–4, 7 i kabel K-000123 till svartfiber".</summary>
+    private static string UsageText(JsonElement p, string cable)
+    {
+        var numbers = p.GetProperty("conductors").EnumerateArray().Select(n => n.GetInt32()).Order().ToList();
+        var runs = new List<string>();
+        for (var i = 0; i < numbers.Count;)
+        {
+            var j = i;
+            while (j + 1 < numbers.Count && numbers[j + 1] == numbers[j] + 1)
+            {
+                j++;
+            }
+            runs.Add(i == j ? $"{numbers[i]}" : $"{numbers[i]}–{numbers[j]}");
+            i = j + 1;
+        }
+        var usage = p.TryGetProperty("usage", out var u) && u.ValueKind == JsonValueKind.String ? u.GetString() : null;
+        var word = usage switch { "dark" => "släckt", "dark_fibre" => "svartfiber", "spare" => "reserv", _ => null };
+        return word is null
+            ? $"Ta bort angiven användning för ledare {string.Join(", ", runs)} i kabel {cable}"
+            : $"Sätt ledare {string.Join(", ", runs)} i kabel {cable} till {word}";
     }
 
     /// <summary>What a move does (#187), in words: the object, where from and where to.</summary>

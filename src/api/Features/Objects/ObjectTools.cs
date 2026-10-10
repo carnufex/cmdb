@@ -44,7 +44,10 @@ public sealed class ObjectTools(RequestDb db, GraphHolder holder, AgentLinks lin
         {
             "site" => await GetSiteEndpoint.LoadAsync(db, id, Scope, ct),
             "equipment" => await EquipmentSlice.LoadAsync(db, id, Scope, ct),
-            "cable" => await GetCableEndpoint.LoadAsync(db, id, Scope, ct),
+            // Agents get each conductor's usage too (#238): lit, dark, leased dark fibre or spare.
+            "cable" => await GetCableEndpoint.LoadAsync(db, id, Scope, ct) is { } cable
+                ? cable with { ConductorUsage = await Conduit.CableConductorsEndpoint.LoadAsync(db, id, Scope, ct) }
+                : null,
             "service" => await GetServiceEndpoint.LoadAsync(db, id, Scope, ct),
             "route-segment" => await Conduit.RouteSegmentEndpoint.LoadAsync(db, id, Scope, ct),
             _ => await GetCircuitEndpoint.LoadAsync(db, id, Scope, ct),

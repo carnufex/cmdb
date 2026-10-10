@@ -365,7 +365,11 @@ export class MapComponent {
               x: e.pixel[0],
               y: e.pixel[1],
               code: String(feature.get('code')),
-              name: feature.get('planned') ? 'Planerad' : (feature.get('name') ?? null),
+              name: feature.get('planned')
+                ? 'Planerad'
+                : feature.get('layer') === 'routes'
+                  ? `${feature.get('ducts')} dukter, ${feature.get('free')} lediga rör`
+                  : (feature.get('name') ?? null),
             }
           : null,
       );

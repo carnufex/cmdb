@@ -7,6 +7,7 @@ import { CatalogKinds } from '../shell/catalog-kinds';
 import { PanelStack } from '../shell/panels';
 import { StatusComponent } from '../shell/status';
 import { Tools } from '../shell/tools';
+import { CapacityComponent } from './capacity';
 import {
   EquipmentDraft,
   emptyEquipment,
@@ -30,7 +31,7 @@ import {
  */
 @Component({
   selector: 'cmdb-query-panel',
-  imports: [StatusComponent],
+  imports: [StatusComponent, CapacityComponent],
   templateUrl: './query-panel.html',
   styleUrl: './query-panel.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
