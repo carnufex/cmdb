@@ -38,6 +38,7 @@ public sealed record PlanOp(long Id, long PlanId, int Seq, string Kind, JsonElem
         "create_site" => new GraphNewSite(Planned.ObjectId(Id)),
         "create_equipment" => new GraphNewEquipment(Planned.ObjectId(Id), Payload.GetProperty("site").GetInt64(),
             [.. Enumerable.Range(1, Planned.PortCount(Payload.GetProperty("typeKey").GetString()!)).Select(n => Planned.Terminal(Id, n))]),
+        "create_circuit" => NetworkLinks.NewCircuit(this),
         "create_cable" => new GraphNewCable(Planned.ObjectId(Id),
             [.. Enumerable.Range(1, Planned.ConductorCount(Payload.GetProperty("typeKey").GetString()!))
                 .Select(k => new GraphNewConductor(Planned.Conductor(Id, k), Planned.Terminal(Id, (2 * k) - 1), Planned.Terminal(Id, 2 * k)))]),
@@ -48,10 +49,12 @@ public sealed record PlanOp(long Id, long PlanId, int Seq, string Kind, JsonElem
     public IEnumerable<long> PlannedReferences => Kind switch
     {
         "connect" or "disconnect" => new[] { A, B }.Where(id => id < 0),
-        "create_equipment" => new[] { Payload.GetProperty("site").GetInt64() }.Where(id => id < 0),
+        "create_equipment" => new[] { Payload.GetProperty("site").GetInt64(), Payload.TryGetProperty("parent", out var parent) && parent.ValueKind == JsonValueKind.Number ? parent.GetInt64() : 0 }
+            .Where(id => id < 0),
         "create_cable" => new[] { Payload.GetProperty("a").GetInt64(), Payload.GetProperty("b").GetInt64() }.Where(id => id < 0),
         "split_cable" or "move" => new[] { Payload.GetProperty("site").GetInt64() }.Where(id => id < 0),
         "set_classification" => new[] { Payload.GetProperty("id").GetInt64() }.Where(id => id < 0),
+        _ when NetworkLinks.Kinds.Contains(Kind) => NetworkLinks.References(this),
         _ => [],
     };
 }
@@ -98,7 +101,7 @@ public sealed record PlanView(PlanChain Chain, Cmdb.Graph.Graph Graph, IReadOnly
 internal static class PlanKinds
 {
     public static readonly string[] Operations =
-        ["connect", "disconnect", "set_lifecycle", "rename", "set_attributes", "create_site", "create_equipment", "create_cable", "split_cable", "remove", "set_classification", "move", "set_conductor_usage"];
+        ["connect", "disconnect", "set_lifecycle", "rename", "set_attributes", "create_site", "create_equipment", "create_cable", "split_cable", "remove", "set_classification", "move", "set_conductor_usage", .. NetworkLinks.Kinds];
 
     public static readonly string[] Connections = ["patch", "splice", "termination", "internal"];
 
@@ -209,6 +212,21 @@ public sealed class PlanViews(SystemDb system)
                 }
                 pending.AddRange(ObjectRemoval.Changes(graph, op).Select(c => (op.Id, c)));
                 Flush();
+            }
+            else if (op.Kind is "set_circuit_path" or "link_circuit" or "link_service")
+            {
+                // Worked out against the view so far (#230): the circuit as it is there, with the path or the link changed.
+                Flush();
+                long Mapped(long id) => map is null ? id : ((GraphNewSite)map(new GraphNewSite(id))).Id;
+                if (NetworkLinks.CircuitChange(graph, op, Mapped) is { } change)
+                {
+                    pending.Add((op.Id, change));
+                    Flush();
+                }
+                else
+                {
+                    problems.TryAdd(op.Id, GraphChangeProblem.UnknownCircuit);
+                }
             }
             else if (op.Kind == "move")
             {

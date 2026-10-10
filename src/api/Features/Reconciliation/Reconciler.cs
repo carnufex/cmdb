@@ -18,12 +18,16 @@ namespace Cmdb.Api.Features.Reconciliation;
 /// scopes. Objects are matched on the source and its id, then on the catalog's matching rules. What the source owns by
 /// the source priority and differs becomes plan operations, in a plan brought into production at once where the source
 /// is trusted with the attribute and one for review otherwise; every other difference is a deviation in the report.
-/// Nothing is written silently and nothing is removed: what the source no longer reports is marked.
+/// Nothing is written silently and nothing is removed: what the source no longer reports is marked. What lies between the
+/// objects (connections, paths, links) is reconciled in <c>ReconcilerLinks.cs</c> (#230).
 /// </summary>
-public sealed class Reconciler(RequestDb db, PlanApplication application)
+public sealed partial class Reconciler(RequestDb db, PlanApplication application)
 {
-    /// <summary>The object types reconciled; the others in the files are counted only, until they have plan operations.</summary>
-    public static readonly string[] ObjectTypes = ["site", "equipment", "cable", "service"];
+    /// <summary>The object types matched and compared, in the order they are: locations need their sites matched.</summary>
+    public static readonly string[] ObjectTypes = ["site", "location", "equipment", "cable", "circuit", "service"];
+
+    /// <summary>The kinds of rows the report counts: the object types and the connections between them.</summary>
+    private static readonly string[] CountedTypes = [.. ObjectTypes, "connection"];
 
     /// <summary>Deviations kept in a run's report; the counts cover all of them.</summary>
     public const int MaxDeviations = 1000;
@@ -34,7 +38,8 @@ public sealed class Reconciler(RequestDb db, PlanApplication application)
 
     private sealed record Diff(string Type, int Row, long Id, string Attribute, JsonNode? Source, JsonNode? Current);
 
-    private sealed record Op(string Kind, string Payload, bool Auto, int Pass);
+    /// <param name="Creates">For a create, the reference (<see cref="NewRef"/>) other operations use for the new object.</param>
+    private sealed record Op(string Kind, string Payload, bool Auto, int Pass, string? Creates = null);
 
     public async Task<ReconciliationReport> RunAsync(ClaimsPrincipal user, UserScope scope, string source, string folder, bool dryRun,
         CancellationToken ct)
@@ -57,6 +62,10 @@ public sealed class Reconciler(RequestDb db, PlanApplication application)
                 ["code"] = s.Code, ["name"] = s.Name, ["siteType"] = s.SiteType, ["lifecycle"] = s.Lifecycle,
                 ["position"] = new JsonArray(s.X, s.Y),
             }, s.Attributes), s))],
+            ["location"] = [.. data.Locations.Select(l => new Incoming(l.Row, l.Id, new()
+            {
+                ["name"] = l.Name, ["kind"] = l.Kind, ["rackUnits"] = l.RackUnits,
+            }, l))],
             ["equipment"] = [.. data.Equipment.Select(e => new Incoming(e.Row, e.Id, Reported(new()
             {
                 ["name"] = e.Name, ["type"] = e.Type, ["lifecycle"] = e.Lifecycle,
@@ -65,6 +74,10 @@ public sealed class Reconciler(RequestDb db, PlanApplication application)
             {
                 ["code"] = c.Code, ["type"] = c.Type, ["lifecycle"] = c.Lifecycle,
             }, c.Attributes), c))],
+            ["circuit"] = [.. data.Circuits.Select(c => new Incoming(c.Row, c.Id, new()
+            {
+                ["code"] = c.Code, ["layer"] = c.Layer, ["lifecycle"] = c.Lifecycle,
+            }, c))],
             ["service"] = [.. data.Services.Select(s => new Incoming(s.Row, s.Id, Reported(new()
             {
                 ["code"] = s.Code, ["name"] = s.Name, ["type"] = s.Type, ["lifecycle"] = s.Lifecycle,
@@ -73,8 +86,10 @@ public sealed class Reconciler(RequestDb db, PlanApplication application)
         var files = new Dictionary<string, string>
         {
             ["site"] = ExchangeFormat.Sites,
+            ["location"] = ExchangeFormat.Locations,
             ["equipment"] = ExchangeFormat.Equipment,
             ["cable"] = ExchangeFormat.Cables,
+            ["circuit"] = ExchangeFormat.Circuits,
             ["service"] = ExchangeFormat.Services,
         };
 
@@ -93,7 +108,9 @@ public sealed class Reconciler(RequestDb db, PlanApplication application)
             var count = report.Count(type);
             count.Reported = rows.Count;
             await LoadAsync(conn, tx, type, rows, ct);
-            var (byId, linked, ambiguous, outside) = await MatchAsync(conn, tx, type, source, scope, ct);
+            var (byId, linked, ambiguous, outside) = type == "location"
+                ? await MatchLocationsAsync(conn, tx, source, scope, data, ct)
+                : await MatchAsync(conn, tx, type, source, scope, ct);
             matched[type] = byId;
             count.Matched = byId.Count;
             count.Linked = linked;
@@ -110,6 +127,10 @@ public sealed class Reconciler(RequestDb db, PlanApplication application)
             {
                 await ConfirmAsync(conn, tx, type, source, ct);
             }
+        }
+        foreach (var type in ObjectTypes)
+        {
+            await MapAsync(conn, tx, type, matched.ContainsKey(type), source, scope, ct);
         }
 
         // What differs: an operation where the source owns the attribute and one exists for it, a deviation otherwise.
@@ -138,11 +159,11 @@ public sealed class Reconciler(RequestDb db, PlanApplication application)
                 }
                 else if (d.Attribute == "lifecycle")
                 {
-                    ops.Add(new("set_lifecycle", JsonSerializer.Serialize(new { type = d.Type, id = d.Id, lifecycle = d.Source!.GetValue<string>() }), auto, 2));
+                    ops.Add(new("set_lifecycle", JsonSerializer.Serialize(new { type = d.Type, id = d.Id, lifecycle = d.Source!.GetValue<string>() }), auto, Passes.Changes));
                 }
                 else if (d.Attribute == "name" && d.Type != "cable")
                 {
-                    ops.Add(new("rename", JsonSerializer.Serialize(new { type = d.Type, id = d.Id, name = d.Source!.GetValue<string>() }), auto, 2));
+                    ops.Add(new("rename", JsonSerializer.Serialize(new { type = d.Type, id = d.Id, name = d.Source!.GetValue<string>() }), auto, Passes.Changes));
                 }
                 else
                 {
@@ -151,7 +172,7 @@ public sealed class Reconciler(RequestDb db, PlanApplication application)
             }
             foreach (var (auto, values) in attributes)
             {
-                ops.Add(new("set_attributes", JsonSerializer.Serialize(new { type = group.Key.Type, id = group.Key.Id, attributes = values }), auto, 2));
+                ops.Add(new("set_attributes", JsonSerializer.Serialize(new { type = group.Key.Type, id = group.Key.Id, attributes = values }), auto, Passes.Changes));
             }
         }
         foreach (var type in ObjectTypes)
@@ -165,7 +186,11 @@ public sealed class Reconciler(RequestDb db, PlanApplication application)
         }
 
         // What the source has that cmdb does not: created in the plan for review, carrying the source and its id.
-        var creations = await CreationsAsync(conn, tx, newRows, matched, data, source, scope, report, ct);
+        ops.AddRange(await CreationsAsync(conn, tx, newRows, data, source, scope, report, ct));
+        // What lies between the objects (#230): connections, circuits with their paths, dependencies, service circuits.
+        await LinksAsync(conn, tx, data, source, newRows.GetValueOrDefault("circuit", []), report, ops, ct);
+        // An operation on an object the review plan creates can only be reviewed with it.
+        ops = [.. ops.Select(o => o.Auto && RefersToNew(o.Payload) ? o with { Auto = false } : o)];
 
         if (!dryRun)
         {
@@ -173,16 +198,16 @@ public sealed class Reconciler(RequestDb db, PlanApplication application)
             var client = user.FindFirstValue(CmdbClaims.Client);
             await CancelPreviousAsync(conn, tx, source, ct);
             var review = ops.Where(o => !o.Auto).ToList();
-            if (review.Count + creations.Sites.Count + creations.Rest.Count > 0)
+            if (review.Count > 0)
             {
                 report.ReviewPlanId = await PlanAsync(conn, tx, $"Avstämning {source} {DateTimeOffset.UtcNow:yyyy-MM-dd HH:mm}",
-                    $"Skillnader mot källan {source} som behöver granskas (#216).", actor, client, creations, review, ct);
+                    $"Skillnader mot källan {source} som behöver granskas (#216).", actor, client, review, ct);
             }
             var auto = ops.Where(o => o.Auto).ToList();
             if (auto.Count > 0)
             {
                 report.AppliedPlanId = await PlanAsync(conn, tx, $"Avstämning {source} {DateTimeOffset.UtcNow:yyyy-MM-dd HH:mm} (betrodd)",
-                    $"Ändringar som källan {source} är betrodd med och som förs in direkt (#216).", actor, client, Creations.Empty, auto, ct);
+                    $"Ändringar som källan {source} är betrodd med och som förs in direkt (#216).", actor, client, auto, ct);
             }
             await tx.CommitAsync(ct);
 
@@ -195,9 +220,13 @@ public sealed class Reconciler(RequestDb db, PlanApplication application)
                 }
             }
         }
-        report.Operations = ops.Count + creations.Sites.Count + creations.Rest.Count;
+        report.Operations = ops.Count;
         return await SaveAsync(user, report, sw, ct);
     }
+
+    private static bool RefersToNew(string payload) =>
+        JsonNode.Parse(payload) is JsonObject node
+        && RefFields.Any(f => node[f] is JsonValue v && v.TryGetValue<string>(out var text) && text.StartsWith("new:", StringComparison.Ordinal));
 
     /// <summary>The source's values in the shape of a source record (ADR-0019): own attributes as attributes.&lt;key&gt;.</summary>
     private static JsonObject Reported(JsonObject values, string attributes)
@@ -212,14 +241,9 @@ public sealed class Reconciler(RequestDb db, PlanApplication application)
         return values;
     }
 
+    /// <summary>Ports come with the equipment type; the source's list of them is not compared (#230).</summary>
     private static IEnumerable<string> NotReconciled(ExchangeData data) =>
-        new (string File, int Rows)[]
-        {
-            (ExchangeFormat.Locations, data.Locations.Count), (ExchangeFormat.Ports, data.Ports.Count),
-            (ExchangeFormat.Connections, data.Connections.Count), (ExchangeFormat.Circuits, data.Circuits.Count),
-            (ExchangeFormat.Hops, data.Hops.Count), (ExchangeFormat.Dependencies, data.Dependencies.Count),
-            (ExchangeFormat.ServiceCircuits, data.ServiceCircuits.Count),
-        }.Where(f => data.Files.Contains(f.File)).Select(f => $"{f.File}: {f.Rows} rader stäms inte av ännu");
+        data.Files.Contains(ExchangeFormat.Ports) ? [$"{ExchangeFormat.Ports}: {data.Ports.Count} rader stäms inte av (portar följer utrustningstypen)"] : [];
 
     private static async Task LoadAsync(NpgsqlConnection conn, NpgsqlTransaction tx, string type, List<Incoming> rows, CancellationToken ct)
     {
@@ -246,8 +270,9 @@ public sealed class Reconciler(RequestDb db, PlanApplication application)
     private static string Visible(string type, string alias, int param) => type switch
     {
         "site" => ScopeSql.Site($"{alias}.id", param),
-        "equipment" => ScopeSql.Site($"{alias}.site_id", param),
+        "equipment" or "location" => ScopeSql.Site($"{alias}.site_id", param),
         "cable" => ScopeSql.Cable($"{alias}.id", param),
+        "circuit" => ScopeSql.Circuit($"{alias}.id", param),
         _ => ScopeSql.Service($"{alias}.id", param),
     };
 
@@ -462,23 +487,18 @@ public sealed class Reconciler(RequestDb db, PlanApplication application)
             ct, source);
     }
 
-    private sealed record Creations(List<(Incoming Row, string Payload)> Sites, List<Op> Rest)
-    {
-        public static Creations Empty { get; } = new([], []);
-    }
-
     /// <summary>
     /// Create operations for what the source has and cmdb does not, checked like a person's: a new code, a position in
-    /// the caller's scopes, sites that exist or are created alongside. What cannot be created in a plan yet is reported.
+    /// the caller's scopes, sites, locations and parents that exist or are created alongside. Objects refer to the ones
+    /// created with them by <see cref="NewRef"/> until the plan gives them ids. What cannot be created is reported.
     /// </summary>
-    private static async Task<Creations> CreationsAsync(NpgsqlConnection conn, NpgsqlTransaction tx, Dictionary<string, List<Incoming>> rows,
-        Dictionary<string, Dictionary<int, long>> matched, ExchangeData data, string source, UserScope scope, Report report, CancellationToken ct)
+    private static async Task<List<Op>> CreationsAsync(NpgsqlConnection conn, NpgsqlTransaction tx, Dictionary<string, List<Incoming>> rows,
+        ExchangeData data, string source, UserScope scope, Report report, CancellationToken ct)
     {
-        var sites = new List<(Incoming, string)>();
+        var ops = new List<Op>();
         var newSites = rows.GetValueOrDefault("site", []);
         var taken = await TakenCodesAsync(conn, tx, "site", [.. newSites.Select(r => ((XSite)r.Source).Code)], ct);
         var inside = await InsideScopeAsync(conn, tx, scope, [.. newSites.Select(r => (XSite)r.Source)], ct);
-        var creatable = new List<Incoming>();
         foreach (var r in newSites)
         {
             var s = (XSite)r.Source;
@@ -492,8 +512,7 @@ public sealed class Reconciler(RequestDb db, PlanApplication application)
             }
             else
             {
-                creatable.Add(r);
-                sites.Add((r, JsonSerializer.Serialize(new
+                ops.Add(Create("site", s.Id, "create_site", JsonSerializer.Serialize(new
                 {
                     code = s.Code,
                     name = s.Name,
@@ -504,45 +523,97 @@ public sealed class Reconciler(RequestDb db, PlanApplication application)
                     lifecycle = s.Lifecycle,
                     source,
                     externalId = s.Id,
-                }, OmitNull)));
+                }, OmitNull), Passes.Sites, report));
             }
         }
-        report.Count("site").New = creatable.Count;
+        report.Count("site").New = ops.Count;
 
-        // Sites by the source's id: matched and known ones by their id in cmdb, new ones by "new:<id>" until the plan gives them one.
-        var siteIds = new Dictionary<string, long>(StringComparer.Ordinal);
-        var sitesByRow = data.Sites.ToDictionary(s => s.Row, s => s.Id);
-        foreach (var (row, id) in matched.GetValueOrDefault("site", []))
+        // Objects by the source's id: matched and known ones by their id in cmdb, new ones by reference.
+        var ids = new Dictionary<string, Dictionary<string, long>>();
+        foreach (var type in new[] { "site", "location", "equipment" })
         {
-            siteIds[sitesByRow[row]] = id;
+            ids[type] = await MapOfAsync(conn, tx, type, ct);
         }
-        foreach (var (ext, id) in await KnownSitesAsync(conn, tx, source, scope, ct))
-        {
-            siteIds.TryAdd(ext, id);
-        }
-        var creating = creatable.Select(r => r.ExternalId).ToHashSet(StringComparer.Ordinal);
-        string? SiteRef(string ext) => siteIds.TryGetValue(ext, out var id) ? id.ToString(CultureInfo.InvariantCulture)
-            : creating.Contains(ext) ? "new:" + ext : null;
+        object? Ref(string type, string ext) => ids[type].TryGetValue(ext, out var id) ? id : report.Creating(type, ext) ? NewRef(type, ext) : null;
 
-        var rest = new List<Op>();
+        // Locations, parents before children.
         var locations = data.Locations.ToDictionary(l => l.Id, StringComparer.Ordinal);
-        var equipment = rows.GetValueOrDefault("equipment", []);
-        foreach (var r in equipment)
+        var newLocations = rows.GetValueOrDefault("location", []);
+        var creatingLocations = newLocations.Select(r => r.ExternalId).ToHashSet(StringComparer.Ordinal);
+        string? LocationParent(string id) => locations.TryGetValue(id, out var l) ? l.Parent : null;
+        var created = 0;
+        foreach (var (r, depth) in newLocations.Select(r => (r, Depth(((XLocation)r.Source).Parent, LocationParent, creatingLocations))).OrderBy(x => x.Item2))
         {
-            var e = (XEquipment)r.Source;
-            if (e.Parent is not null)
+            var l = (XLocation)r.Source;
+            if (Ref("site", l.Site) is not { } site)
             {
-                report.Deviate("equipment", null, r.ExternalId, "placement", null, null, "cannot-create");
+                report.Deviate("location", null, r.ExternalId, "placement", JsonValue.Create(l.Site), null, "unknown-site");
                 continue;
             }
-            if (SiteRef(e.Site) is not { } site)
+            object? parent = null;
+            if (l.Parent is not null && (parent = Ref("location", l.Parent)) is null)
+            {
+                report.Deviate("location", null, r.ExternalId, "placement", JsonValue.Create(l.Parent), null, "unknown-parent");
+                continue;
+            }
+            created++;
+            ops.Add(Create("location", l.Id, "create_location", JsonSerializer.Serialize(new
+            {
+                site,
+                parent,
+                kind = l.Kind,
+                name = l.Name,
+                rackUnits = l.RackUnits,
+                source,
+                externalId = l.Id,
+            }, OmitNull), Passes.Locations + depth, report));
+        }
+        if (rows.ContainsKey("location"))
+        {
+            report.Count("location").New = created;
+        }
+
+        // Equipment in racks, then cards in their parents' slots (#230), parents before the cards in them.
+        var equipment = rows.GetValueOrDefault("equipment", []);
+        var byId = data.Equipment.ToDictionary(e => e.Id, StringComparer.Ordinal);
+        var creatingEquipment = equipment.Select(r => r.ExternalId).ToHashSet(StringComparer.Ordinal);
+        string? EquipmentParent(string id) => byId.TryGetValue(id, out var e) ? e.Parent : null;
+        created = 0;
+        foreach (var (r, depth) in equipment.Select(r => (r, Depth(((XEquipment)r.Source).Parent, EquipmentParent, creatingEquipment))).OrderBy(x => x.Item2))
+        {
+            var e = (XEquipment)r.Source;
+            var attributes = JsonNode.Parse(e.Attributes) is JsonObject { Count: > 0 } a ? a : null;
+            if (Ref("site", e.Site) is not { } site)
             {
                 report.Deviate("equipment", null, r.ExternalId, "placement", JsonValue.Create(e.Site), null, "unknown-site");
                 continue;
             }
+            if (e.Parent is not null)
+            {
+                if (e.Slot is null || Ref("equipment", e.Parent) is not { } parent)
+                {
+                    report.Deviate("equipment", null, r.ExternalId, "placement", JsonValue.Create(e.Parent), null, e.Slot is null ? "no-slot" : "unknown-parent");
+                    continue;
+                }
+                created++;
+                ops.Add(Create("equipment", e.Id, "create_equipment", JsonSerializer.Serialize(new
+                {
+                    site,
+                    typeKey = e.Type,
+                    name = e.Name,
+                    parent,
+                    slot = e.Slot,
+                    attributes,
+                    lifecycle = e.Lifecycle,
+                    source,
+                    externalId = e.Id,
+                }, OmitNull), Passes.Cards + depth, report));
+                continue;
+            }
             var rack = e.Location is { } l && locations.TryGetValue(l, out var loc) ? loc : null;
-            var room = rack?.Parent is { } p && locations.TryGetValue(p, out var parent) ? parent : null;
-            rest.Add(new("create_equipment", JsonSerializer.Serialize(new
+            var room = rack?.Parent is { } p && locations.TryGetValue(p, out var up) ? up : null;
+            created++;
+            ops.Add(Create("equipment", e.Id, "create_equipment", JsonSerializer.Serialize(new
             {
                 site,
                 typeKey = e.Type,
@@ -550,17 +621,17 @@ public sealed class Reconciler(RequestDb db, PlanApplication application)
                 rack = rack?.Name,
                 room = room?.Name,
                 position = e.RackPosition,
-                attributes = JsonNode.Parse(e.Attributes) is JsonObject { Count: > 0 } a ? a : null,
+                attributes,
                 lifecycle = e.Lifecycle,
                 source,
                 externalId = e.Id,
-            }, OmitNull), false, 1));
+            }, OmitNull), Passes.Equipment, report));
         }
-        report.Count("equipment").New = rest.Count;
+        report.Count("equipment").New = created;
 
         var cables = rows.GetValueOrDefault("cable", []);
         var takenCables = await TakenCodesAsync(conn, tx, "cable", [.. cables.Select(r => ((XCable)r.Source).Code)], ct);
-        var newCables = 0;
+        created = 0;
         foreach (var r in cables)
         {
             var c = (XCable)r.Source;
@@ -569,13 +640,13 @@ public sealed class Reconciler(RequestDb db, PlanApplication application)
                 report.Deviate("cable", null, r.ExternalId, "code", JsonValue.Create(c.Code), null, "code-taken");
                 continue;
             }
-            if (SiteRef(c.A) is not { } a || SiteRef(c.B) is not { } b)
+            if (Ref("site", c.A) is not { } a || Ref("site", c.B) is not { } b)
             {
                 report.Deviate("cable", null, r.ExternalId, "ends", null, null, "unknown-site");
                 continue;
             }
-            newCables++;
-            rest.Add(new("create_cable", JsonSerializer.Serialize(new
+            created++;
+            ops.Add(Create("cable", c.Id, "create_cable", JsonSerializer.Serialize(new
             {
                 a,
                 b,
@@ -585,15 +656,38 @@ public sealed class Reconciler(RequestDb db, PlanApplication application)
                 lifecycle = c.Lifecycle,
                 source,
                 externalId = c.Id,
-            }, OmitNull), false, 1));
+            }, OmitNull), Passes.Cables, report));
         }
-        report.Count("cable").New = newCables;
+        report.Count("cable").New = created;
 
-        foreach (var r in rows.GetValueOrDefault("service", []))
+        var services = rows.GetValueOrDefault("service", []);
+        var takenServices = await TakenCodesAsync(conn, tx, "service", [.. services.Select(r => ((XService)r.Source).Code)], ct);
+        created = 0;
+        foreach (var r in services)
         {
-            report.Deviate("service", null, r.ExternalId, "", null, null, "cannot-create");
+            var s = (XService)r.Source;
+            if (takenServices.Contains(s.Code))
+            {
+                report.Deviate("service", null, r.ExternalId, "code", JsonValue.Create(s.Code), null, "code-taken");
+                continue;
+            }
+            created++;
+            ops.Add(Create("service", s.Id, "create_service", JsonSerializer.Serialize(new
+            {
+                code = s.Code,
+                name = s.Name,
+                serviceType = s.Type,
+                attributes = JsonNode.Parse(s.Attributes) is JsonObject { Count: > 0 } at ? at : null,
+                lifecycle = s.Lifecycle,
+                source,
+                externalId = s.Id,
+            }, OmitNull), Passes.Services, report));
         }
-        return new(sites, rest);
+        if (rows.ContainsKey("service"))
+        {
+            report.Count("service").New = created;
+        }
+        return ops;
     }
 
     private static async Task<HashSet<string>> TakenCodesAsync(NpgsqlConnection conn, NpgsqlTransaction tx, string table, string[] codes,
@@ -644,27 +738,6 @@ public sealed class Reconciler(RequestDb db, PlanApplication application)
         return inside;
     }
 
-    /// <summary>Sites the source already knows by its id, that the caller can see, for equipment and cables it reports without them.</summary>
-    private static async Task<Dictionary<string, long>> KnownSitesAsync(NpgsqlConnection conn, NpgsqlTransaction tx, string source, UserScope scope,
-        CancellationToken ct)
-    {
-        await using var cmd = new NpgsqlCommand($"""
-            SELECT r.external_id, r.object_id FROM source_record r JOIN site t ON t.id = r.object_id
-            WHERE r.object_type = 'site' AND r.source_system = $1 AND {Visible("site", "t", 2)}
-            UNION
-            SELECT t.external_id, t.id FROM site t WHERE t.source_system = $1 AND t.external_id IS NOT NULL AND {Visible("site", "t", 2)}
-            """, conn, tx);
-        cmd.Parameters.Add(new() { Value = source });
-        cmd.Parameters.Add(scope.Parameter());
-        var known = new Dictionary<string, long>(StringComparer.Ordinal);
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct))
-        {
-            known.TryAdd(reader.GetString(0), reader.GetInt64(1));
-        }
-        return known;
-    }
-
     /// <summary>A new run supersedes the previous run's plan for review while it is still a draft, so nothing is proposed twice.</summary>
     private static async Task CancelPreviousAsync(NpgsqlConnection conn, NpgsqlTransaction tx, string source, CancellationToken ct)
     {
@@ -680,7 +753,7 @@ public sealed class Reconciler(RequestDb db, PlanApplication application)
 
     /// <summary>A plan with the operations, written in passes since planned ids come from operation ids: sites first.</summary>
     private static async Task<long> PlanAsync(NpgsqlConnection conn, NpgsqlTransaction tx, string name, string description, string actor,
-        string? client, Creations creations, List<Op> ops, CancellationToken ct)
+        string? client, List<Op> ops, CancellationToken ct)
     {
         long plan;
         await using (var cmd = new NpgsqlCommand("""
@@ -693,26 +766,32 @@ public sealed class Reconciler(RequestDb db, PlanApplication application)
             cmd.Parameters.Add(new() { Value = (object?)client ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
             plan = (long)(await cmd.ExecuteScalarAsync(ct))!;
         }
-        var siteOps = await InsertAsync(conn, tx, plan, actor, [.. creations.Sites.Select(s => ("create_site", s.Payload))], ct);
+        // Pass by pass, references to new objects become the planned ids of the operations creating them.
         var planned = new Dictionary<string, long>(StringComparer.Ordinal);
-        for (var i = 0; i < siteOps.Length; i++)
-        {
-            planned["new:" + creations.Sites[i].Row.ExternalId] = Planned.ObjectId(siteOps[i]);
-        }
-        // References to new sites become their planned ids; existing ones are numbers already.
         string Resolve(string payload)
         {
             var node = JsonNode.Parse(payload)!.AsObject();
-            foreach (var key in new[] { "site", "a", "b" })
+            foreach (var key in RefFields)
             {
                 if (node[key] is JsonValue v && v.TryGetValue<string>(out var text))
                 {
-                    node[key] = planned.TryGetValue(text, out var id) ? id : long.Parse(text, CultureInfo.InvariantCulture);
+                    node[key] = planned[text];
                 }
             }
             return node.ToJsonString();
         }
-        await InsertAsync(conn, tx, plan, actor, [.. creations.Rest.Concat(ops).OrderBy(o => o.Pass).Select(o => (o.Kind, Resolve(o.Payload)))], ct);
+        foreach (var pass in ops.GroupBy(o => o.Pass).OrderBy(g => g.Key))
+        {
+            var batch = pass.ToList();
+            var ids = await InsertAsync(conn, tx, plan, actor, [.. batch.Select(o => (o.Kind, Resolve(o.Payload)))], ct);
+            for (var i = 0; i < ids.Length; i++)
+            {
+                if (batch[i].Creates is { } created)
+                {
+                    planned[created] = Planned.ObjectId(ids[i]);
+                }
+            }
+        }
         return plan;
     }
 
@@ -797,7 +876,14 @@ public sealed class Reconciler(RequestDb db, PlanApplication application)
             }
         }
 
-        public ReconciliationReport Build(double elapsedMs) => new(0, source, dryRun, [.. ObjectTypes.Where(_counts.ContainsKey).Select(t => _counts[t])],
+        private readonly HashSet<string> _creating = new(StringComparer.Ordinal);
+
+        /// <summary>Notes that the plan creates the object the source knows by <paramref name="ext"/>.</summary>
+        public void Create(string type, string ext) => _creating.Add(NewRef(type, ext));
+
+        public bool Creating(string type, string ext) => _creating.Contains(NewRef(type, ext));
+
+        public ReconciliationReport Build(double elapsedMs) => new(0, source, dryRun, [.. CountedTypes.Where(_counts.ContainsKey).Select(t => _counts[t])],
             Operations, _reasons, [.. _deviations], Errors, NotReconciled, ReviewPlanId, AppliedPlanId, AutoApplyProblem, elapsedMs);
     }
 }

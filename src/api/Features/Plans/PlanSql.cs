@@ -136,6 +136,8 @@ internal static class PlanSql
             "site" => $"SELECT EXISTS (SELECT 1 FROM site s WHERE s.id = $1 AND {ScopeSql.Site("s.id", 2)})",
             "equipment" => $"SELECT EXISTS (SELECT 1 FROM equipment e WHERE e.id = $1 AND {ScopeSql.Site("e.site_id", 2)})",
             "service" => $"SELECT EXISTS (SELECT 1 FROM service s WHERE s.id = $1 AND {ScopeSql.Service("s.id", 2)})",
+            "location" => $"SELECT EXISTS (SELECT 1 FROM location l WHERE l.id = $1 AND {ScopeSql.Site("l.site_id", 2)})",
+            "circuit" => $"SELECT EXISTS (SELECT 1 FROM circuit r WHERE r.id = $1 AND {ScopeSql.Circuit("r.id", 2)})",
             _ => $"SELECT EXISTS (SELECT 1 FROM cable c WHERE c.id = $1 AND {ScopeSql.Cable("c.id", 2)})",
         };
         await using var cmd = db.CreateCommand(sql);
@@ -175,6 +177,9 @@ internal static class PlanSql
         var objects = await ObjectsAsync(db, [.. operations.Where(o => o.Kind is "set_lifecycle" or "rename" or "set_attributes" or "remove" or "set_classification" or "move" or "set_conductor_usage").Select(o => (o.ObjectType!, o.ObjectId)).Distinct()],
             scope, ct);
 
+        // Circuits and services that path and link operations name (#230).
+        var linkNames = await LinkNamesAsync(db, [.. operations.Where(o => o.Kind is "set_circuit_path" or "link_circuit" or "link_service")], scope, ct);
+
         TraceHop Hop(long terminal) =>
             graph.TryGetNode(terminal, out var node) && !Visible(graph, mask, node) ? TraceNames.Placeholder(null) : names.Hop(terminal, null);
 
@@ -202,6 +207,14 @@ internal static class PlanSql
                 var splitText = $"Sätt in {site?.Code} {site?.Name} i kabel {op.Payload.GetProperty("code").GetString()}: " +
                     $"{total - terminated} ledare skarvas igenom" + (terminated > 0 ? $", {terminated} termineras i siten" : "");
                 list.Add(new PlanOperationView(op.Id, op.PlanId, op.Seq, op.Kind, splitText, [], partA, null, null, null, problem,
+                    op.CreatedBy, op.CreatedAt, [], false));
+                continue;
+            }
+            if (op.Kind is "set_circuit_path" or "link_circuit" or "link_service")
+            {
+                string Name(string type, long id) => planned.Objects.TryGetValue((type, id), out var known) ? known.Code
+                    : linkNames.TryGetValue((type, id), out var code) ? code : $"#{id}";
+                list.Add(new PlanOperationView(op.Id, op.PlanId, op.Seq, op.Kind, NetworkLinks.Text(op, Name), [], null, null, null, null, problem,
                     op.CreatedBy, op.CreatedAt, [], false));
                 continue;
             }
@@ -256,6 +269,35 @@ internal static class PlanSql
         return list;
     }
 
+    private static readonly string[] CircuitFields = ["id", "circuit", "carrier"];
+
+    /// <summary>Codes of the circuits and services path and link operations refer to, within the caller's scopes.</summary>
+    private static async Task<Dictionary<(string, long), string>> LinkNamesAsync(NpgsqlDataSource db, List<PlanOp> ops, UserScope scope,
+        CancellationToken ct)
+    {
+        var names = new Dictionary<(string, long), string>();
+        if (ops.Count == 0)
+        {
+            return names;
+        }
+        var circuits = ops.SelectMany(o => CircuitFields.Where(f => o.Payload.TryGetProperty(f, out _)).Select(f => o.Payload.GetProperty(f).GetInt64()))
+            .Where(id => id > 0).Distinct().ToArray();
+        var services = ops.Where(o => o.Kind == "link_service").Select(o => o.Payload.GetProperty("service").GetInt64()).Where(id => id > 0).Distinct().ToArray();
+        await using var cmd = db.CreateCommand($"""
+            SELECT 'circuit', r.id, r.code FROM circuit r WHERE r.id = ANY($1) AND {ScopeSql.Circuit("r.id", 3)}
+            UNION ALL SELECT 'service', s.id, s.code FROM service s WHERE s.id = ANY($2) AND {ScopeSql.Service("s.id", 3)}
+            """);
+        cmd.Parameters.Add(new() { Value = circuits });
+        cmd.Parameters.Add(new() { Value = services });
+        cmd.Parameters.Add(scope.Parameter());
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            names[(reader.GetString(0), reader.GetInt64(1))] = reader.GetString(2);
+        }
+        return names;
+    }
+
     /// <summary>A stated conductor usage (#238), in words: "Sätt ledare 1–4, 7 i kabel K-000123 till svartfiber".</summary>
     private static string UsageText(JsonElement p, string cable)
     {
@@ -307,12 +349,16 @@ internal static class PlanSql
             UNION ALL SELECT 'equipment', e.id, e.name, NULL, e.lifecycle::text, {ScopeSql.Site("e.site_id", 4)} FROM equipment e WHERE e.id = ANY($2)
             UNION ALL SELECT 'cable', c.id, c.code, NULL, c.lifecycle::text, {ScopeSql.Cable("c.id", 4)} FROM cable c WHERE c.id = ANY($3)
             UNION ALL SELECT 'service', v.id, v.code, v.name, 'in_service', {ScopeSql.Service("v.id", 4)} FROM service v WHERE v.id = ANY($5)
+            UNION ALL SELECT 'location', l.id, l.name, l.kind, l.lifecycle::text, {ScopeSql.Site("l.site_id", 4)} FROM location l WHERE l.id = ANY($6)
+            UNION ALL SELECT 'circuit', r.id, r.code, NULL, r.lifecycle::text, {ScopeSql.Circuit("r.id", 4)} FROM circuit r WHERE r.id = ANY($7)
             """);
         cmd.Parameters.Add(new() { Value = refs.Where(r => r.Type == "site").Select(r => r.Id).ToArray() });
         cmd.Parameters.Add(new() { Value = refs.Where(r => r.Type == "equipment").Select(r => r.Id).ToArray() });
         cmd.Parameters.Add(new() { Value = refs.Where(r => r.Type == "cable").Select(r => r.Id).ToArray() });
         cmd.Parameters.Add(scope.Parameter());
         cmd.Parameters.Add(new() { Value = refs.Where(r => r.Type == "service").Select(r => r.Id).ToArray() });
+        cmd.Parameters.Add(new() { Value = refs.Where(r => r.Type == "location").Select(r => r.Id).ToArray() });
+        cmd.Parameters.Add(new() { Value = refs.Where(r => r.Type == "circuit").Select(r => r.Id).ToArray() });
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
         {

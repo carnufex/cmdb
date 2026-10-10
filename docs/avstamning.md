@@ -17,7 +17,7 @@ curl https://<cmdb>/api/reconciliations/<id>
 
 ## Vad som stäms av
 
-Siter, utrustning, kablar och tjänster, det vill säga objekten som har planoperationer. Locations, portar, kopplingar, kretsar och deras hopp, beroenden och tjänstekretsar läses och kontrolleras, men räknas bara i rapporten (`notReconciled`) tills de har egna operationer (#230).
+Siter, locations, utrustning (även kort), kablar, kretsar och tjänster, och det som ligger mellan dem: kopplingar, kretsarnas vägar (hopp), beroenden mellan kretsar och tjänsternas kretsar (#230). Portar jämförs inte: de följer utrustningstypen, och filen räknas bara i rapporten (`notReconciled`). Kanaler på hopp (`vlan:100`) läses men jämförs inte.
 
 Filerna kontrolleras som i importen. Med ett enda fel jämförs ingenting, och felen står i rapporten. Arkivet får bara innehålla utbytesformatets filer, var och en en gång, högst 256 MB packat och 2 GB uppackat.
 
@@ -34,7 +34,10 @@ Filerna kontrolleras som i importen. Med ett enda fel jämförs ingenting, och f
    ```
 
    Reglerna prövas i ordning, och den första som hittar exakt ett objekt kopplar ihop det med källan. Två eller fler träffar är en avvikelse (`ambiguous`), aldrig en gissning. Nycklar är objektets fält med enkla värden (`code`, `name` …) eller egna attribut. Länkar och positioner (`placement`, `ends`, `route`, `position`) går inte att matcha på. Dolda attribut används inte för den som inte ser dem.
-3. **Inget av det:** objektet är nytt.
+3. **Locations** känns igen på källa och id, och annars på site, typ (`kind`) och namn, där siten är den som källans site-id leder till.
+4. **Inget av det:** objektet är nytt.
+
+Kopplingar och hopp pekar på terminaler, och de matchas som i importen: en port på källans utrustning (utrustningens id och portnamnet) eller en ledarände i källans kabel (kabelns id, ledarnummer och sida). Utrustning och kablar översätts genom det som matchades i körningen och det som källan rapporterat förut, inom anroparens omfång.
 
 ## Skillnader
 
@@ -45,7 +48,10 @@ Varje attribut som källan rapporterar jämförs med objektet. Vem som äger att
   - `owned-by-other`: en högre prioriterad källa rapporterar samma objekt.
   - `not-allowed`: regeln för attributet nämner inte källan.
   - `no-operation`: ingen planoperation ändrar attributet ännu (kod, typ, position, placering, kabelns sträckning).
-- **Nytt i källan** blir `create_site`, `create_equipment` och `create_cable` med källans id, så att nästa körning känner igen objektet. Utrustning läggs i det rack på siten som har källans namn på sin location, och racket skapas i rummet med källans namn när det saknas. Det som inte kan skapas än (kort, tjänster, utrustning i en site som varken finns eller skapas) blir avvikelser.
+- **Nytt i källan** blir `create_site`, `create_location`, `create_equipment`, `create_cable`, `create_service` och `create_circuit` med källans id, så att nästa körning känner igen objektet. Objekt som skapas i samma plan pekar på varandra: en location i en ny location, utrustning på en ny site, ett kort i ny utrustning. Utrustning läggs i det rack på siten som har källans namn på sin location, och ett kort (`parent` och `slot`) i sin förälders slot. En ny krets skapas med den väg som dess hopp leder till, och utan hopp som går att hitta väntar den (`no-path`). Det som pekar på något som varken finns eller skapas blir en avvikelse (`unknown-site`, `unknown-parent`, `no-slot`, `code-taken`).
+- **Kopplingar:** en kopplingsfil är hela sanningen om kopplingarna mellan källans objekt. En ny koppling blir `connect`. En koppling mellan två av källans terminaler som inte längre finns i filen blir `disconnect`, alltid i planen för granskning. En koppling med annan typ (`patch`, `splice` …) är en avvikelse (`no-operation`). En rad vars terminal inte går att hitta blir en avvikelse (`unknown-terminal`), till exempel en port på utrustning som skapas i samma körning: den stäms av i nästa körning, när planen är införd.
+- **Kretsar:** en väg som skiljer sig blir `set_circuit_path`. Beroenden blir `link_circuit` och tjänsternas kretsar `link_service`, att lägga till eller ta bort, med samma regel som kopplingarna: filen är hela sanningen om länkarna mellan källans objekt.
+- **Ägarskap för länkarna:** `source-priority.json` tar även `connection` (`kind`), `circuit` (`path`, `carriers`) och `service` (`circuits`), så att en källa kan nekas eller betros med dem som med attribut. En operation som pekar på ett objekt som planen för granskning skapar granskas alltid med det.
 - **Saknas i källan:** ett objekt som källan rapporterat förut, men inte i den här filen, markeras på källposten (`missing_since`) och rapporteras. Inget tas bort. Att avveckla det är en plan som en människa lägger.
 - **Bekräftat:** källposten och `last_confirmed_at` skrivs direkt, utan plan. Det är uppgifter om källan, inte om nätet.
 
@@ -71,7 +77,7 @@ Varje attribut som källan rapporterar jämförs med objektet. Vem som äger att
 
 Varje körning sparas i `reconciliation` och returneras:
 
-- **`counts`** per objekttyp: rapporterade, matchade, kopplade genom en regel, nya, ändrade, oförändrade, avvikelser, saknade och utanför omfånget.
+- **`counts`** per objekttyp, och för kopplingar (`connection`): rapporterade, matchade, kopplade genom en regel, nya, ändrade, oförändrade, avvikelser, saknade och utanför omfånget.
 - **`reasons`** räknar alla avvikelser per skäl, och **`deviations`** listar de första 1 000.
 - **`reviewPlanId`** och **`appliedPlanId`** är planerna, **`errors`** felen i filerna och **`elapsedMs`** tiden.
 
@@ -86,3 +92,22 @@ Det syntetiska nätet i full skala (seed 1) exporterat och importerat som `acme-
 | 1 216 ändrade serienummer och 2 247 ändrade namn på utrustning | 72 s |
 
 I den sista körningen fördes serienumren in direkt i den betrodda planen, och namnen lades som 2 247 `rename` i planen för granskning. Skillnaden mellan provkörningen och körningen är att källposterna bekräftas.
+
+Med kopplingar, kretsar och länkar (#230): samma nät (seed 1, full skala) exporterat och importerat som `acme-nms`, och sedan stämt av med alla filer, det vill säga även 3 010 766 kopplingar, 117 025 kretsar med 1 147 288 hopp, 131 362 beroenden och 65 681 tjänstekretsar, lokalt i Postgres 17 med PostGIS (`ReconciliationBenchmark`, se nedan):
+
+| Körning | Tid |
+|---|---|
+| Provkörning, inget ändrat | 59 s |
+| Inget ändrat (bekräftar 614 117 källposter) | 79 s |
+| Var 3 000:e koppling borta och var 1 000:e krets med omvänd väg | 85 s |
+
+Den sista körningen gav 1 003 `disconnect` och 118 `set_circuit_path` i planen för granskning. Jämförelsen av kopplingar och vägar görs i SQL mot temporära tabeller, så det är bara skillnaderna som lämnar databasen.
+
+```bash
+# Mät själv: exportera, importera i en egen databas och kör benchmarken mot den
+dotnet run --project src/datagen -c Release -- export --to /tmp/full --scale full --seed 1
+ConnectionStrings__Cmdb="Host=127.0.0.1;Port=15432;Database=cmdb_rec;Username=cmdb;Password=…" \
+  dotnet run --project src/datagen -c Release -- import --from /tmp/full --source acme-nms
+CMDB_RECONCILE_BENCH="Host=127.0.0.1;Port=15432;Database=cmdb_rec;Username=cmdb;Password=…;Command Timeout=0|/tmp/full" \
+  dotnet test tests/Cmdb.Api.IntegrationTests -c Release -- --filter-class "*ReconciliationBenchmark"
+```
