@@ -63,6 +63,20 @@ Slutsatser:
 - **Ändringar skalar.** Satser som flyttar kopplingar, ändrar objekt, lägger till, tar bort, flyttar eller bygger om utrustning och kablar, eller ändrar kretsar blir ett delta (#81, #119, #121, #123, se [arkitektur.md](arkitektur.md)): millisekunder oavsett nätets storlek. Deltat kompakteras in i arrayerna vart tionde minut eller vid 50 000 noder. Utan borttag tar det under en sekund även i 4× och toppen är högst 1,1 gånger grafens storlek. Med borttag numreras arrayerna om, och toppen blir cirka 1,5 gånger grafens storlek.
 - **Ombyggnad från rader är en reservväg.** Den sker bara när en sats rader inte passar deltat (till exempel en borttagen terminal som en krets fortfarande går genom). Tiden och toppen växer linjärt, och toppen är ungefär tre gånger grafens storlek. Podgränsen bestäms ändå av laddningen vid start och av den ovanliga ombyggnaden, tills API-tabellen ovan har mätts om. I full skala räcker 2 GiB (topp 1,6 GB). I 2× behövs cirka 4 GiB och i 4× cirka 7 GiB.
 
+### Kanalisation i full skala (#235)
+
+Uppmätt 2026-10-10 lokalt (docker compose, utvecklingsmaskin), seed 1:
+
+| | Antal | COPY |
+|---|---|---|
+| Brunnar (siter) | 2 331 | – |
+| Trasésträckor | 42 940 | 0,2 s |
+| Dukter | 50 138 | 0,1 s |
+| Rör | 218 024 | 0,3 s |
+| Kabelvägar | 47 431 | 0,1 s |
+
+Generatorn bygger kanalisationen på ungefär 0,2 s av totalt 2,0 s, och hela laddningen tar 65,5 s. `scripts/perf.sh --target local` håller budgeten med kanalisationen laddad: snabbsök p95 23 ms och kartplatta p95 16 ms. Kanalisationen läses ännu inte av några frågor; plattor och påverkan per sträcka mäts i #236 och #237.
+
 ## Prestandabudget
 
 | Interaktion | Mål (p95, full skala) |

@@ -226,7 +226,13 @@ Kablar ligger i subdukter i dukter, som ligger i trasé mellan siter. Kanalisati
 
 - **Brunnar** är siter av sitetypen `manhole` (Brunn), med position, livscykel, platser och omfång som andra siter.
 - **Dukttyper** är katalogdata som kabeltyperna: en ny storlek är en fil, inte en migrering. Mappen `duct-types/` är valfri, också i en extern katalog. Fel anger filen och regeln, till exempel filnamn som inte matchar nyckeln, inga rör eller ett rör som är större än dukten.
-- **Läs- och skrivytor** kommer i #235–#238: datageneratorn, kartan och tvärsnittet, påverkan per sträcka, ledaranvändning och ledig kapacitet.
+- **Datageneratorn** (#235) lägger kablarna i kanalisation när katalogen har dukttyper:
+  - **Gemensamma stråk:** stamnät och ringar dras i stråk längs ett rutnät med en brunn ungefär var tionde kilometer. Kablar åt samma håll delar trasé, så ett navs länkar och ringar lämnar det i samma stråk. Ett stråk som skulle gå över hav byts mot en egen trasé.
+  - **Accesskablar:** en egen trasé längs sin sträckning, delad med andra kablar mellan samma två siter.
+  - **Kablarnas geometri** är deras trasésträckors.
+  - **Dukter:** stråken får multidukter med marginal. En enskild kabel får skyddsrör eller en multidukt, och en del accesstrasé får en mikrorörsbunt med blåsfiber.
+  - **Resten av nätet** är oförändrat för samma frö (egen slumpkälla), utom de långa kablarnas sträckning.
+- **Läs- och skrivytor** kommer i #236–#238: kartan och tvärsnittet, påverkan per sträcka, ledaranvändning och ledig kapacitet.
 
 ## Livscykel
 

@@ -17,6 +17,7 @@ internal sealed partial class NetworkBuilder
         ["blå", "orange", "grön", "brun", "grå", "vit", "röd", "svart", "gul", "violett", "rosa", "turkos"];
 
     private readonly Random _rng;
+    private readonly int _seed;
     private readonly Scale _scale;
     private readonly TypeCatalog _catalog;
     private readonly CatalogProfile _profile;
@@ -37,6 +38,7 @@ internal sealed partial class NetworkBuilder
     private NetworkBuilder(int seed, Scale scale, TypeCatalog catalog)
     {
         _rng = new Random(seed);
+        _seed = seed;
         _scale = scale;
         _catalog = catalog;
         _profile = new CatalogProfile(catalog);
@@ -173,6 +175,10 @@ internal sealed partial class NetworkBuilder
             {
                 WireAccessGeneric(site);
             }
+        }
+        if (_profile.CorridorDuct is not null)
+        {
+            BuildConduit([.. backboneCables, .. ringCables.SelectMany(r => r)]);
         }
         return _net;
     }

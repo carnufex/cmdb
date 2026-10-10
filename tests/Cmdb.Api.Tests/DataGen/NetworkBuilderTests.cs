@@ -21,7 +21,9 @@ public sealed class NetworkBuilderTests
     [Fact]
     public void Has_the_requested_number_of_sites_of_every_kind()
     {
-        Small.Sites.Count.ShouldBe(Scale.Small.Sites);
+        // Manholes in the conduit (#235) come on top of the network's sites.
+        Small.Sites.Count(s => s.Kind != SiteKind.Manhole).ShouldBe(Scale.Small.Sites);
+        Small.Sites.Count(s => s.Kind == SiteKind.Manhole).ShouldBeGreaterThan(0);
         Small.Sites.Count(s => s.Kind == SiteKind.Hub).ShouldBe(Scale.Small.Hubs);
         Small.Sites.Count(s => s.Kind == SiteKind.Aggregation).ShouldBe(Scale.Small.Aggregations);
         Small.Sites.Select(s => s.Kind).Distinct().Count().ShouldBeGreaterThanOrEqualTo(4);
@@ -39,7 +41,7 @@ public sealed class NetworkBuilderTests
     public void Names_are_codes_and_neutral_words_only()
     {
         Small.Sites.Select(s => s.Code).ShouldBeUnique();
-        Small.Sites.ShouldAllBe(s => System.Text.RegularExpressions.Regex.IsMatch(s.Code, "^(HUB|AGG|RAD|SKP|SKV)-[0-9]+$"));
+        Small.Sites.ShouldAllBe(s => System.Text.RegularExpressions.Regex.IsMatch(s.Code, "^(HUB|AGG|RAD|SKP|SKV|BR)-[0-9]+$"));
     }
 
     [Fact]

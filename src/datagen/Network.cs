@@ -9,6 +9,9 @@ internal enum SiteKind
     Radio,
     Cabinet,
     Splice,
+
+    /// <summary>A manhole where conduit corridors meet (ADR-0014, #235).</summary>
+    Manhole,
 }
 
 internal enum ConnectionKind : byte
@@ -102,7 +105,8 @@ internal sealed class Cable
     public required string Code { get; init; }
     public required Site A { get; init; }
     public required Site B { get; init; }
-    public required double[] Coordinates { get; init; }
+    /// <summary>The route; a cable laid in conduit gets the route of its route segments (#235).</summary>
+    public required double[] Coordinates { get; set; }
     public required string Lifecycle { get; init; }
     public required long FirstConductor { get; init; }
     public required long FirstEndTerminal { get; init; }
@@ -145,6 +149,17 @@ internal readonly record struct Hop(long CircuitId, int Seq, long TerminalId, lo
 
 internal sealed record ServiceRow(long Id, string Code, string Name, string Type, string Attributes, string Lifecycle);
 
+/// <summary>A stretch of trench or other conduit between two sites (ADR-0014); <see cref="Coordinates"/> run from A to B.</summary>
+internal sealed record RouteSegmentRow(long Id, string Code, long A, long B, string Construction, string? Owner, double[] Coordinates, string Lifecycle);
+
+/// <summary>A duct on one route segment.</summary>
+internal sealed record DuctRow(long Id, string Code, string TypeKey, long Segment, string Lifecycle);
+
+internal readonly record struct SubductRow(long Id, long Duct, int Number, string? Color, string Occupancy);
+
+/// <summary>Subduct number <see cref="Seq"/> of a cable's way from its A end.</summary>
+internal readonly record struct CablePathRow(long Cable, int Seq, long Subduct);
+
 /// <summary>Everything the generator produced, in insertion order. Ids are final.</summary>
 internal sealed class Network
 {
@@ -162,6 +177,10 @@ internal sealed class Network
     public List<(long Circuit, long Carrier)> Dependencies { get; } = [];
     public List<ServiceRow> Services { get; } = [];
     public List<(long Service, long Circuit)> ServiceCircuits { get; } = [];
+    public List<RouteSegmentRow> RouteSegments { get; } = [];
+    public List<DuctRow> Ducts { get; } = [];
+    public List<SubductRow> Subducts { get; } = [];
+    public List<CablePathRow> CablePaths { get; } = [];
 
     public long Terminals { get; set; }
 
@@ -183,5 +202,9 @@ internal sealed class Network
         ("circuits", Circuits.Count),
         ("circuit hops", Hops.Count),
         ("services", Services.Count),
+        ("route segments", RouteSegments.Count),
+        ("ducts", Ducts.Count),
+        ("subducts", Subducts.Count),
+        ("cable paths", CablePaths.Count),
     ];
 }

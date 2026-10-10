@@ -42,6 +42,8 @@ internal sealed class CatalogProfile
                 : withRole.Count == 0 ? throw new InvalidOperationException($"The catalog has no site type with the role '{role}'.")
                 : kind == SiteKind.Cabinet ? withRole[^1] : withRole[0];
         }
+        // Manholes (#235): the catalog's "manhole" type, otherwise its first splice point type.
+        _siteTypes[SiteKind.Manhole] = catalog.FindSiteType("manhole") is not null ? "manhole" : _siteTypes[SiteKind.Splice];
         Synthetic = SyntheticModels.All(k => catalog.Find(k) is not null) && SyntheticCables.All(k => catalog.FindCable(k) is not null)
             && SyntheticSiteTypes.All(t => _siteTypes[t.Kind] == t.Key);
 
@@ -69,7 +71,24 @@ internal sealed class CatalogProfile
             throw new InvalidOperationException("The catalog has no active model (a category without the roles card, termination or power, with two ports or more).");
         }
         ServiceType = catalog.ServiceTypes.Select(t => t.Key).FirstOrDefault() ?? "ethernet";
+
+        // Conduit (#235, ADR-0014): only when the catalog has duct types. Corridors get the duct with the most tubes a fibre
+        // cable fits in (10 mm or more inside), single cables the duct with the fewest tubes, blown fibre the one with the most.
+        var ducts = catalog.DuctTypes.OrderBy(t => t.Key, StringComparer.Ordinal).ToList();
+        if (ducts.Count > 0)
+        {
+            CorridorDuct = ducts.Where(t => t.Subducts.InnerDiameterMm >= 10).MaxBy(t => t.Subducts.Count) ?? ducts.MaxBy(t => t.Subducts.Count);
+            AccessDuct = ducts.MinBy(t => t.Subducts.Count);
+            MicroDuct = ducts.MaxBy(t => t.Subducts.Count);
+        }
     }
+
+    /// <summary>The duct along shared corridors; null when the catalog has no duct types and cables lie free.</summary>
+    public DuctType? CorridorDuct { get; }
+
+    public DuctType? AccessDuct { get; }
+
+    public DuctType? MicroDuct { get; }
 
     public TypeCatalog Catalog { get; }
 
