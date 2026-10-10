@@ -52,6 +52,19 @@ public static class ScopeCatalog
             GrantedBy = "demo-projektledare",
             ApprovedBy = "demo-behorighetsagare",
         },
+        new()
+        {
+            // An integration has its own scope like a person (#217, ADR-0021): the reference adapter's monitoring system
+            // covers the same area as Region Nord, and sees the plans reconciliation makes so it can bring in the trusted one.
+            Key = "overvakning-nord",
+            Name = "Övervakning Nord",
+            Area = Wkt.Read("POLYGON((200000 6950000, 1000000 6950000, 1000000 7800000, 200000 7800000, 200000 6950000))"),
+            Groups = ["cmdb-integration-acme-monitor"],
+            Plans = ["*"],
+            Reason = "Avstämning mot övervakningssystemet i norr (demo, referensadapter).",
+            GrantedBy = "demo-behorighetsagare",
+            ApprovedBy = "demo-sakerhetschef",
+        },
     ];
 
     /// <summary>Inserts or updates the demo scopes by key and refreshes what they show.</summary>

@@ -45,14 +45,20 @@ public static class CliApp
           plans                               Planer du kan se
           plan <plan:ID>                      En plans ändringar mot produktion
           whoami                              Vem du är och ditt behörighetsomfång
+          sync <adapter> [--dry-run] [--source S] [--config FIL] [--out MAPP]
+                                              Läs ett källsystem och stäm av det mot cmdb (#217); utan adapter listas de
+          reconciliations                     Tidigare avstämningar
+          reconciliation <id>                 En avstämnings rapport
           login | logout                      Logga in i webbläsaren (PKCE) eller glöm inloggningen
 
         Inloggning: CMDB_TOKEN, eller CMDB_CLIENT_ID + CMDB_USERNAME + CMDB_PASSWORD för ett tjänstekonto, eller cmdb login.
+        Adaptrar: inställningar i CMDB_SYNC_<ADAPTER>_<NYCKEL> eller --config, hemligheter bara i miljön (docs/adaptrar.md).
         Felkoder: 0 ok, 1 fel användning, 2 finns inte, 3 inte inloggad eller behörig, 4 annat fel.
         """;
 
+    /// <param name="sourceHttp">The client adapters reach their source systems with; by default a client of its own.</param>
     public static async Task<int> RunAsync(string[] args, TextWriter output, TextWriter error, HttpClient? http = null,
-        IReadOnlyDictionary<string, string?>? environment = null, CancellationToken ct = default)
+        IReadOnlyDictionary<string, string?>? environment = null, HttpClient? sourceHttp = null, CancellationToken ct = default)
     {
         var env = environment ?? Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>()
             .ToDictionary(e => (string)e.Key, e => (string?)e.Value, StringComparer.Ordinal);
@@ -74,7 +80,10 @@ public static class CliApp
 
         var url = new Uri(parsed.Option("url") ?? env.GetValueOrDefault("CMDB_URL") ?? "https://cmdb.rosenvall.se");
         var owned = http is null;
-        http ??= new HttpClient();
+        // Reconciling a large source takes minutes (#216), longer than HttpClient's default 100 s.
+        http ??= new HttpClient { Timeout = parsed.Command == "sync" ? TimeSpan.FromMinutes(30) : TimeSpan.FromSeconds(100) };
+        var ownsSource = sourceHttp is null && parsed.Command == "sync";
+        sourceHttp ??= ownsSource ? new HttpClient { Timeout = TimeSpan.FromMinutes(5) } : http;
         try
         {
             var auth = new Auth(http, url, env);
@@ -89,6 +98,10 @@ public static class CliApp
                 parsed = parsed with { Command = "whoami" };
             }
             var client = new Api(http, url, token);
+            if (parsed.Command == "sync")
+            {
+                return await Sync.SyncCommand.RunAsync(parsed, client, env, sourceHttp, output, error, ct);
+            }
             await Commands.RunAsync(parsed, client, output, ct);
             return ExitCodes.Ok;
         }
@@ -107,6 +120,10 @@ public static class CliApp
             if (owned)
             {
                 http.Dispose();
+            }
+            if (ownsSource)
+            {
+                sourceHttp.Dispose();
             }
         }
     }
@@ -135,7 +152,7 @@ public sealed record Arguments(string? Command, IReadOnlyList<string> Positional
     public string Required(int index, string what) =>
         index < Positional.Count ? Positional[index] : throw new CliException(ExitCodes.Usage, $"Ange {what}. Se cmdb help.");
 
-    private static readonly HashSet<string> Flags = ["json"];
+    private static readonly HashSet<string> Flags = ["json", "dry-run"];
 
     public static Arguments Parse(string[] args)
     {
@@ -194,12 +211,16 @@ public sealed class Api(HttpClient http, Uri baseUrl, string? token)
     public Task<JsonNode> PostAsync(string path, object body, CancellationToken ct) =>
         SendAsync(new HttpRequestMessage(HttpMethod.Post, new Uri(baseUrl, path)) { Content = JsonContent.Create(body) }, ct);
 
+    /// <summary>POSTs a body as is, e.g. a multipart form with a file; the caller owns the content.</summary>
+    public Task<JsonNode> PostContentAsync(string path, HttpContent content, CancellationToken ct) =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Post, new Uri(baseUrl, path)) { Content = content }, ct, disposeContent: false);
+
     /// <summary>A link that opens the object in the web app.</summary>
     public string Link(string type, long id) => new Uri(baseUrl, $"/?p={type}:{id}").ToString();
 
-    private async Task<JsonNode> SendAsync(HttpRequestMessage request, CancellationToken ct)
+    private async Task<JsonNode> SendAsync(HttpRequestMessage request, CancellationToken ct, bool disposeContent = true)
     {
-        using (request)
+        using (disposeContent ? request : null)
         {
             if (token is not null)
             {

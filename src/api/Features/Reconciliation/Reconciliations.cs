@@ -1,4 +1,6 @@
+using System.ComponentModel;
 using System.IO.Compression;
+using System.Security.Claims;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -7,6 +9,8 @@ using Cmdb.Api.Features.Plans;
 using Cmdb.Exchange;
 using FastEndpoints;
 using Microsoft.AspNetCore.Mvc;
+using ModelContextProtocol;
+using ModelContextProtocol.Server;
 
 namespace Cmdb.Api.Features.Reconciliation;
 
@@ -52,8 +56,9 @@ public sealed record ReconciliationReport(long Id, string Source, bool DryRun, I
     IReadOnlyDictionary<string, int> Reasons, IReadOnlyList<ReconciliationDeviation> Deviations, IReadOnlyList<string> Errors,
     IReadOnlyList<string> NotReconciled, long? ReviewPlanId, long? AppliedPlanId, string? AutoApplyProblem, double ElapsedMs);
 
+/// <param name="Errors">Errors in the files; such a run compared nothing.</param>
 public sealed record ReconciliationSummary(long Id, string Source, string RunBy, DateTimeOffset StartedAt, bool DryRun, double ElapsedMs,
-    long? ReviewPlanId, long? AppliedPlanId);
+    long? ReviewPlanId, long? AppliedPlanId, int Errors);
 
 public sealed class ReconcileRequest
 {
@@ -130,7 +135,7 @@ public sealed class ReconcileEndpoint(Reconciler reconciler) : Endpoint<Reconcil
     public override void Configure()
     {
         Post("/reconciliations");
-        Roles("cmdb-full");
+        Roles("cmdb-full", "cmdb-integration");
         AllowFileUploads();
         Options(b => b.WithMetadata(new RequestSizeLimitAttribute(Reconciliations.MaxUpload))
             .WithMetadata(new RequestFormLimitsAttribute { MultipartBodyLengthLimit = Reconciliations.MaxUpload }));
@@ -174,56 +179,82 @@ public sealed class ReconciliationIdRequest
 }
 
 /// <summary>
-/// Earlier runs, newest first. A report is built inside the scopes of whoever ran it, so a caller sees their own runs,
-/// and an unrestricted caller every run.
+/// Earlier runs and their reports. A report is built inside the scopes of whoever ran it, so a caller sees their own
+/// runs, and an unrestricted caller every run. Reading needs no role, like other reads (ADR-0021).
 /// </summary>
-public sealed class ListReconciliationsEndpoint(RequestDb db) : EndpointWithoutRequest<List<ReconciliationSummary>>
+public static class ReconciliationReads
 {
-    public override void Configure()
-    {
-        Get("/reconciliations");
-        Roles("cmdb-full");
-    }
-
-    public override async Task HandleAsync(CancellationToken ct)
+    public static async Task<List<ReconciliationSummary>> ListAsync(RequestDb db, ClaimsPrincipal user, UserScope scope, CancellationToken ct)
     {
         await using var cmd = db.CreateCommand("""
-            SELECT id, source_system, run_by, started_at, dry_run, elapsed_ms, review_plan_id, applied_plan_id FROM reconciliation
+            SELECT id, source_system, run_by, started_at, dry_run, elapsed_ms, review_plan_id, applied_plan_id,
+                   coalesce(jsonb_array_length(report->'errors'), 0) FROM reconciliation
             WHERE $1 OR run_by = $2 ORDER BY id DESC LIMIT 100
             """);
-        cmd.Parameters.Add(new() { Value = HttpContext.Scope().Unrestricted });
-        cmd.Parameters.Add(new() { Value = PlanSql.Actor(User) });
+        cmd.Parameters.Add(new() { Value = scope.Unrestricted });
+        cmd.Parameters.Add(new() { Value = PlanSql.Actor(user) });
         var runs = new List<ReconciliationSummary>();
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
         {
             runs.Add(new(reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetFieldValue<DateTimeOffset>(3), reader.GetBoolean(4),
-                reader.GetDouble(5), reader.IsDBNull(6) ? null : reader.GetInt64(6), reader.IsDBNull(7) ? null : reader.GetInt64(7)));
+                reader.GetDouble(5), reader.IsDBNull(6) ? null : reader.GetInt64(6), reader.IsDBNull(7) ? null : reader.GetInt64(7), reader.GetInt32(8)));
         }
-        await Send.OkAsync(runs, ct);
+        return runs;
+    }
+
+    public static async Task<ReconciliationReport?> GetAsync(RequestDb db, ClaimsPrincipal user, UserScope scope, long id, CancellationToken ct)
+    {
+        await using var cmd = db.CreateCommand("SELECT report::text FROM reconciliation WHERE id = $1 AND ($2 OR run_by = $3)");
+        cmd.Parameters.Add(new() { Value = id });
+        cmd.Parameters.Add(new() { Value = scope.Unrestricted });
+        cmd.Parameters.Add(new() { Value = PlanSql.Actor(user) });
+        return await cmd.ExecuteScalarAsync(ct) is string json
+            ? JsonSerializer.Deserialize<ReconciliationReport>(json, Reconciliations.Json)! with { Id = id }
+            : null;
     }
 }
 
-/// <summary>One run's report; see <see cref="ListReconciliationsEndpoint"/> for who may read it.</summary>
+public sealed class ListReconciliationsEndpoint(RequestDb db) : EndpointWithoutRequest<List<ReconciliationSummary>>
+{
+    public override void Configure() => Get("/reconciliations");
+
+    public override async Task HandleAsync(CancellationToken ct) =>
+        await Send.OkAsync(await ReconciliationReads.ListAsync(db, User, HttpContext.Scope(), ct), ct);
+}
+
 public sealed class GetReconciliationEndpoint(RequestDb db) : Endpoint<ReconciliationIdRequest, ReconciliationReport>
 {
-    public override void Configure()
-    {
-        Get("/reconciliations/{id}");
-        Roles("cmdb-full");
-    }
+    public override void Configure() => Get("/reconciliations/{id}");
 
     public override async Task HandleAsync(ReconciliationIdRequest req, CancellationToken ct)
     {
-        await using var cmd = db.CreateCommand("SELECT report::text FROM reconciliation WHERE id = $1 AND ($2 OR run_by = $3)");
-        cmd.Parameters.Add(new() { Value = req.Id });
-        cmd.Parameters.Add(new() { Value = HttpContext.Scope().Unrestricted });
-        cmd.Parameters.Add(new() { Value = PlanSql.Actor(User) });
-        if (await cmd.ExecuteScalarAsync(ct) is not string json)
+        if (await ReconciliationReads.GetAsync(db, User, HttpContext.Scope(), req.Id, ct) is not { } report)
         {
             await Send.NotFoundAsync(ct);
             return;
         }
-        await Send.OkAsync(JsonSerializer.Deserialize<ReconciliationReport>(json, Reconciliations.Json)! with { Id = req.Id }, ct);
+        await Send.OkAsync(report, ct);
     }
+}
+
+/// <summary>Reconciliation reports for agents (#217): what a source system differs in, and the plans it made.</summary>
+[McpServerToolType]
+public sealed class ReconciliationTools(RequestDb db, IHttpContextAccessor http)
+{
+    [McpServerTool(Name = "list_reconciliations", Title = "Avstämningar", ReadOnly = true, Idempotent = true, OpenWorld = false)]
+    [Description("Earlier reconciliations of source systems against cmdb (#216), newest first: source, who ran it, whether it was a dry " +
+        "run, and the plan for review and the plan brought in at once. Your own runs, or all when your scope is unrestricted.")]
+    public Task<List<ReconciliationSummary>> ListReconciliations(CancellationToken ct = default) =>
+        ReconciliationReads.ListAsync(db, http.HttpContext!.User, http.HttpContext.Scope(), ct);
+
+    [McpServerTool(Name = "get_reconciliation", Title = "Avstämningsrapport", ReadOnly = true, Idempotent = true, OpenWorld = false)]
+    [Description("One reconciliation's report: per object type what the source reported, matched, linked, created, changed and no " +
+        "longer reports; deviations with the source's and cmdb's value and why they did not become changes; errors in the files. " +
+        "Open the plans with preview_plan.")]
+    public async Task<ReconciliationReport> GetReconciliation(
+        [Description("The reconciliation's id, from list_reconciliations.")] long id,
+        CancellationToken ct = default) =>
+        await ReconciliationReads.GetAsync(db, http.HttpContext!.User, http.HttpContext.Scope(), id, ct)
+            ?? throw new McpException($"Avstämning {id} finns inte, eller kördes av någon annan.");
 }

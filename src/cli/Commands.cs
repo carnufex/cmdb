@@ -24,6 +24,8 @@ internal static class Commands
             "plans" => await PlansAsync(api, ct),
             "plan" => await PlanAsync(args, api, ct),
             "whoami" => await WhoAmIAsync(api, ct),
+            "reconciliations" => await ReconciliationsAsync(api, ct),
+            "reconciliation" => await ReconciliationAsync(args, api, ct),
             _ => throw new CliException(ExitCodes.Usage, $"Okänt kommando: {args.Command}. Se cmdb help."),
         };
         await output.WriteAsync(args.Json ? json.ToJsonString(Indented) + Environment.NewLine : text);
@@ -232,6 +234,24 @@ internal static class Commands
     }
 
     /// <summary>A reference as given, or an exact code found with the quick search.</summary>
+    private static async Task<(JsonNode, string)> ReconciliationsAsync(Api api, CancellationToken ct)
+    {
+        var runs = await api.GetAsync("/api/reconciliations", ct);
+        return (runs, Sync.ReconciliationText.List(runs));
+    }
+
+    private static async Task<(JsonNode, string)> ReconciliationAsync(Arguments args, Api api, CancellationToken ct)
+    {
+        var text = args.Required(0, "en avstämning, till exempel 12 eller reconciliation:12");
+        if (!long.TryParse(text.StartsWith("reconciliation:", StringComparison.Ordinal) ? text["reconciliation:".Length..] : text,
+                NumberStyles.None, CultureInfo.InvariantCulture, out var id))
+        {
+            throw new CliException(ExitCodes.Usage, $"Ingen avstämning: {text}.");
+        }
+        var report = await api.GetAsync($"/api/reconciliations/{id}", ct);
+        return (report, Sync.ReconciliationText.Report(report));
+    }
+
     private static async Task<Ref> ResolveAsync(string text, Api api, CancellationToken ct)
     {
         if (Ref.TryParse(text, out var r))

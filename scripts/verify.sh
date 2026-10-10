@@ -49,6 +49,7 @@ if [[ $IMAGES -eq 1 ]]; then
   docker build -f src/api/Dockerfile -t cmdb-api:verify .
   docker build -t cmdb-web:verify src/web
   docker build -f src/datagen/Dockerfile -t cmdb-datagen:verify .
+  docker build -f src/cli/Dockerfile -t cmdb-cli:verify .
 fi
 
 step "OK"
