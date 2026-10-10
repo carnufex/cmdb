@@ -189,6 +189,71 @@ public sealed class PlanToolTests(ApiFactory factory)
         preview.GetProperty("readyToApply").GetBoolean().ShouldBeTrue();
     }
 
+    [Fact]
+    public async Task An_agent_plans_locations_a_card_a_service_and_a_circuit_with_its_links()
+    {
+        var (db, api) = await NetworkAsync(35);
+        await using var dbScope = db;
+        await using var apiScope = api;
+        await using var agent = await ConnectAsync(api, AgentToken());
+        async Task<long> Scalar(string sql)
+        {
+            await using var cmd = db.CreateCommand(sql);
+            return Convert.ToInt64(await cmd.ExecuteScalarAsync(Ct), System.Globalization.CultureInfo.InvariantCulture);
+        }
+        var hub = await Scalar("SELECT min(id) FROM site WHERE site_type = 'hub'");
+        var chassis = await Scalar("SELECT min(e.id) FROM equipment e JOIN equipment_type t ON t.id = e.equipment_type_id AND t.key = 'acme-cr-8'");
+        var free = Enumerable.Range(1, 8).Select(n => n.ToString(System.Globalization.CultureInfo.InvariantCulture))
+            .First(s => Scalar($"SELECT count(*) FROM equipment WHERE parent_id = {chassis} AND slot = '{s}'").Result == 0);
+        var carrier = await Scalar("SELECT min(id) FROM circuit WHERE layer = 'physical'");
+        var ports = new List<long>();
+        await using (var cmd = db.CreateCommand("""
+            SELECT p.terminal_id FROM port p JOIN equipment e ON e.id = p.equipment_id
+            WHERE NOT EXISTS (SELECT 1 FROM connection c WHERE p.terminal_id IN (c.a_terminal_id, c.b_terminal_id))
+            ORDER BY e.site_id, p.terminal_id LIMIT 2
+            """))
+        await using (var reader = await cmd.ExecuteReaderAsync(Ct))
+        {
+            while (await reader.ReadAsync(Ct))
+            {
+                ports.Add(reader.GetInt64(0));
+            }
+        }
+        var plan = Json(await agent.CallToolAsync("create_plan", new Dictionary<string, object?> { ["name"] = "Från källsystemet" }, cancellationToken: Ct))
+            .GetProperty("ref").GetString()!;
+        async Task<JsonElement> Add(Dictionary<string, object?> operation) => Json(await agent.CallToolAsync("add_to_plan", new Dictionary<string, object?>
+        {
+            ["plan"] = plan,
+            ["operations"] = new[] { operation },
+        }, cancellationToken: Ct)).GetProperty("added")[0];
+
+        var room = (await Add(new() { ["kind"] = "create_location", ["site"] = $"site:{hub}", ["locationKind"] = "room", ["name"] = "Agentrum" }))
+            .GetProperty("target").GetString()!;
+        room.ShouldStartWith("location:-");
+        var rack = await Add(new() { ["kind"] = "create_location", ["site"] = $"site:{hub}", ["parent"] = room, ["locationKind"] = "rack", ["name"] = "Agentrack", ["rackUnits"] = 42 });
+        rack.GetProperty("summary").GetString()!.ShouldStartWith("Ny plats Agentrack (rack)");
+        var card = await Add(new() { ["kind"] = "create_equipment", ["parent"] = $"equipment:{chassis}", ["slot"] = free, ["typeKey"] = "acme-lc-24x", ["name"] = "Agentkort" });
+        card.GetProperty("target").GetString()!.ShouldStartWith("equipment:-");
+        var service = (await Add(new() { ["kind"] = "create_service", ["code"] = "TJ-AGENT-1", ["name"] = "Agentens tjänst", ["serviceType"] = "ethernet" }))
+            .GetProperty("target").GetString()!;
+        var circuit = (await Add(new() { ["kind"] = "create_circuit", ["code"] = "LOG-AGENT-1", ["layer"] = "logical", ["hops"] = ports }))
+            .GetProperty("target").GetString()!;
+        circuit.ShouldStartWith("circuit:-");
+        (await Add(new() { ["kind"] = "link_circuit", ["target"] = circuit, ["carrier"] = $"circuit:{carrier}" })).GetProperty("summary").GetString()!.ShouldContain("LOG-AGENT-1");
+        (await Add(new() { ["kind"] = "link_service", ["target"] = service, ["circuit"] = circuit })).GetProperty("summary").GetString()!.ShouldContain("TJ-AGENT-1");
+        (await Add(new() { ["kind"] = "link_service", ["target"] = service, ["circuit"] = circuit, ["remove"] = true }))
+            .GetProperty("summary").GetString()!.ShouldContain("inte längre");
+
+        var preview = Json(await agent.CallToolAsync("preview_plan", new Dictionary<string, object?> { ["plan"] = plan }, cancellationToken: Ct));
+        preview.GetProperty("problems").GetInt32().ShouldBe(0);
+        // A card in a taken slot is refused, like for a person.
+        (await agent.CallToolAsync("add_to_plan", new Dictionary<string, object?>
+        {
+            ["plan"] = plan,
+            ["operations"] = new[] { new Dictionary<string, object?> { ["kind"] = "create_equipment", ["parent"] = $"equipment:{chassis}", ["slot"] = free, ["typeKey"] = "acme-lc-24x", ["name"] = "Kort 2" } },
+        }, cancellationToken: Ct)).IsError.ShouldBe(true);
+    }
+
     private async Task<(NpgsqlDataSource Db, WebApplicationFactory<Program> Api)> NetworkAsync(int seed)
     {
         var db = await factory.NewDatabaseAsync();
