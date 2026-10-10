@@ -2,6 +2,7 @@ import { inject, Injectable } from '@angular/core';
 import { Auth } from '../auth/auth';
 import { GraphView } from '../graph/graph-view';
 import { FrontPanelView } from '../objects/front-panel-view';
+import { RackView } from '../objects/rack-panel';
 import { GRID, HOME_EXTENT } from '../map/map-grid';
 import { MapView } from '../map/map-view';
 import { examples, QueryFields, toRequest } from '../query/query-model';
@@ -36,6 +37,7 @@ export class PerfRunner {
   private readonly mapView = inject(MapView);
   private readonly graphView = inject(GraphView);
   private readonly frontPanelView = inject(FrontPanelView);
+  private readonly rackView = inject(RackView);
 
   async run(onProgress: (p: Progress) => void, signal: AbortSignal): Promise<Measurement[]> {
     const results: Measurement[] = [];
@@ -203,6 +205,20 @@ export class PerfRunner {
           'panel',
           `Frontpanel med bild (bildtid, ${model}, ${ports} portar)`,
           frames.map((f) => ({ server: null, browser: f })),
+          33,
+          'mål ≥ 30 fps, ej i budgeten',
+        ),
+      );
+    }
+    // The rack last shown in the rack view (#255), drawn with its pictures: a port marked every frame, both sides.
+    if (this.rackView.lastRack !== null) {
+      onProgress({ label: 'Rackvy: markerar portar', done: 0, total: 1 });
+      const r = (await this.rackView.measure(signal))!;
+      results.push(
+        summarize(
+          'rack',
+          `Rackvy (bildtid, ${r.rack}, ${r.units} U, ${r.equipment} enheter, ${r.ports} portar)`,
+          r.frames.map((f) => ({ server: null, browser: f })),
           33,
           'mål ≥ 30 fps, ej i budgeten',
         ),

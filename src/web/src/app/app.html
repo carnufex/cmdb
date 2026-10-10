@@ -181,6 +181,8 @@
       <aside class="tool" aria-label="Nyheter"><cmdb-changelog-panel /></aside>
     } @else if (tools.open() === 'voice') {
       <aside class="tool" aria-label="Driftagent"><cmdb-voice-panel /></aside>
+    } @else if (tools.open() === 'rack') {
+      <aside class="tool" aria-label="Rackvy"><cmdb-rack-panel /></aside>
     } @else if (tools.open() === 'perf') {
       <aside class="tool wide" aria-label="Prestanda"><cmdb-perf-panel /></aside>
     }

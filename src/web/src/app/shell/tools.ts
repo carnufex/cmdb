@@ -4,7 +4,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { map } from 'rxjs';
 
 /** Tools opened from the toolbar. They sit over the left edge of the lens, never on top of the panel stack. */
-export type Tool = 'query' | 'perf' | 'tree' | 'plans' | 'grid' | 'changelog' | 'voice';
+export type Tool = 'query' | 'perf' | 'tree' | 'plans' | 'grid' | 'changelog' | 'voice' | 'rack';
 
 /**
  * How much room a tool takes (#251): a panel over the map, half the screen beside it, or the whole workspace under
@@ -27,7 +27,11 @@ export const toolSpecs: Record<Tool, ToolSpec> = {
   changelog: { sizes: ['panel', 'half'], initial: 'panel' },
   voice: { sizes: ['panel'], initial: 'panel' },
   perf: { sizes: ['panel', 'half', 'workspace'], initial: 'panel' },
+  rack: { sizes: ['half', 'workspace'], initial: 'workspace' },
 };
+
+/** What a tool shows, in the address beside it: the rack view's rack (#255). Cleared when the tool closes. */
+const toolParams: Record<string, readonly string[]> = { rack: ['rack'] };
 
 export const toolSizeNames: Record<ToolSize, string> = {
   panel: 'Panel',
@@ -100,6 +104,15 @@ export class Tools {
     }
   }
 
+  /** Opens a tool on something, such as the rack view on a rack (#255): `show('rack', { rack: '12' })`. */
+  show(tool: Tool, params: Record<string, string>): void {
+    this.navigate(
+      tool,
+      this.open() === tool ? this.size() : preferredSize(tool, storage()),
+      params,
+    );
+  }
+
   close(): void {
     this.navigate(null, null);
   }
@@ -126,9 +139,19 @@ export class Tools {
     }
   }
 
-  private navigate(tool: Tool | null, size: ToolSize | null): void {
+  private navigate(
+    tool: Tool | null,
+    size: ToolSize | null,
+    params: Record<string, string> = {},
+  ): void {
+    // Another tool's parameters go with it.
+    const cleared = Object.fromEntries(
+      Object.entries(toolParams)
+        .filter(([owner]) => owner !== tool)
+        .flatMap(([, names]) => names.map((n) => [n, null])),
+    );
     void this.router.navigate([], {
-      queryParams: { tool, size: tool && size !== 'panel' ? size : null },
+      queryParams: { ...cleared, ...params, tool, size: tool && size !== 'panel' ? size : null },
       queryParamsHandling: 'merge',
     });
   }
