@@ -19,7 +19,7 @@ internal static class Loader
     ];
 
     private static readonly string[] IdentityTables =
-        ["site", "location", "equipment", "terminal", "cable", "conductor", "connection", "channel", "service", "circuit"];
+        ["site", "location", "equipment", "terminal", "cable", "conductor", "connection", "channel", "service", "circuit", "route_segment", "duct", "subduct"];
 
     public static async Task LoadAsync(NpgsqlDataSource db, Network net, bool reset, TextWriter log, bool fast = true, bool scenarios = false,
         CancellationToken ct = default)
@@ -66,6 +66,7 @@ internal static class Loader
 
         var equipmentTypes = await Ids(conn, "SELECT key, id FROM equipment_type", ct);
         var cableTypes = await Ids(conn, "SELECT key, id FROM cable_type", ct);
+        var ductTypes = await Ids(conn, "SELECT key, id FROM duct_type", ct);
 
         await Copy(conn, log, "site", "id, code, name, site_type, geom, lifecycle", net.Sites, (w, s) =>
         {
@@ -170,6 +171,60 @@ internal static class Loader
                 w.Write(e.Conductor);
                 w.Write(e.Side, NpgsqlDbType.Char);
             }, ct);
+
+        // Conduit (#235, ADR-0014).
+        await Copy(conn, log, "route_segment", "id, code, a_site_id, b_site_id, construction, owner, geom, lifecycle", net.RouteSegments, (w, r) =>
+        {
+            w.Write(r.Id);
+            w.Write(r.Code);
+            w.Write(r.A);
+            w.Write(r.B);
+            w.Write(r.Construction);
+            if (r.Owner is null)
+            {
+                w.WriteNull();
+            }
+            else
+            {
+                w.Write(r.Owner);
+            }
+            w.Write(LineString(r.Coordinates), NpgsqlDbType.Bytea);
+            w.Write(r.Lifecycle, NpgsqlDbType.Text);
+        }, ct);
+        await Copy(conn, log, "duct", "id, code, duct_type_id, lifecycle", net.Ducts, (w, d) =>
+        {
+            w.Write(d.Id);
+            w.Write(d.Code);
+            w.Write(ductTypes[d.TypeKey]);
+            w.Write(d.Lifecycle, NpgsqlDbType.Text);
+        }, ct);
+        await Copy(conn, log, "duct_segment", "duct_id, seq, route_segment_id", net.Ducts, (w, d) =>
+        {
+            w.Write(d.Id);
+            w.Write(0);
+            w.Write(d.Segment);
+        }, ct);
+        await Copy(conn, log, "subduct", "id, duct_id, number, color, occupancy", net.Subducts, (w, s) =>
+        {
+            w.Write(s.Id);
+            w.Write(s.Duct);
+            w.Write(s.Number);
+            if (s.Color is null)
+            {
+                w.WriteNull();
+            }
+            else
+            {
+                w.Write(s.Color);
+            }
+            w.Write(s.Occupancy);
+        }, ct);
+        await Copy(conn, log, "cable_path", "cable_id, seq, subduct_id", net.CablePaths, (w, c) =>
+        {
+            w.Write(c.Cable);
+            w.Write(c.Seq);
+            w.Write(c.Subduct);
+        }, ct);
 
         await Copy(conn, log, "connection", "id, a_terminal_id, b_terminal_id, kind, lifecycle",
             net.Connections.Select((c, i) => (Id: i + 1L, Connection: c)), (w, c) =>
