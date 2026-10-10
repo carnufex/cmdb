@@ -51,15 +51,8 @@ internal sealed class Site
     /// <summary>The rack all equipment on the site is mounted in (0 for splice points).</summary>
     public long RackId { get; set; }
 
-    public string SiteType => Kind switch
-    {
-        SiteKind.Hub => "hub",
-        SiteKind.Aggregation => "aggregation",
-        SiteKind.Radio => "radio",
-        SiteKind.Cabinet => "cabinet",
-        SiteKind.Splice => "splice",
-        _ => throw new InvalidOperationException(),
-    };
+    /// <summary>The catalog's site type for <see cref="Kind"/>, by role (#219).</summary>
+    public string SiteType { get; set; } = "";
 
     public double DistanceTo(Site other) => Math.Sqrt(((X - other.X) * (X - other.X)) + ((Y - other.Y) * (Y - other.Y)));
 }
@@ -155,6 +148,9 @@ internal sealed record ServiceRow(long Id, string Code, string Name, string Type
 /// <summary>Everything the generator produced, in insertion order. Ids are final.</summary>
 internal sealed class Network
 {
+    /// <summary>The catalog the network was built from; the loader syncs it into the database.</summary>
+    public TypeCatalog Catalog { get; set; } = TypeCatalog.Current;
+
     public List<Site> Sites { get; } = [];
     public List<LocationRow> Locations { get; } = [];
     public List<Equipment> Equipment { get; } = [];

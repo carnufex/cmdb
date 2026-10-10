@@ -122,7 +122,7 @@ Sitetyper och utrustningskategorier är katalogdata med nyckel, visningsnamn och
 | `termination` | kategori | Terminerar fibrer (ODF): där mönster och ruttförslag landar ledare. |
 | `power` | kategori | Reservkraft: riskvyn kollar batteriernas ålder. |
 
-En typ kan ha flera roller eller ingen. Okända roller, dubbla nycklar och sitemallar med okänd sitetyp ger fel vid laddning. Avancerad sökning och MCP `describe_catalog` visar namn och roller, och webben hämtar dem från `GET /api/catalog/kinds`. Datageneratorn bygger fortfarande det syntetiska nätet mot den syntetiska katalogens nycklar.
+En typ kan ha flera roller eller ingen. Okända roller, dubbla nycklar och sitemallar med okänd sitetyp ger fel vid laddning. Avancerad sökning och MCP `describe_catalog` visar namn och roller, och webben hämtar dem från `GET /api/catalog/kinds`. Datageneratorn väljer också sitetyper efter roll (se [Syntetiskt nät mot en egen katalog](#syntetiskt-nät-mot-en-egen-katalog)).
 
 ### Attributscheman för siter, kablar och tjänster (#211)
 
@@ -167,6 +167,23 @@ Den syntetiska katalogen i `catalog/` byggs in i API:t och datageneratorn och an
 - Valideringen och synken till databasen är densamma oavsett källa. Fel anger katalogens mapp, filen och regeln, och processen startar inte.
 - En satt men saknad mapp är ett fel, inte en tom katalog. Utan variabeln används den inbäddade katalogen.
 - Katalogen läses en gång när processen startar. En ändrad katalog börjar gälla vid nästa utrullning, när migreringssteget synkar den.
+
+#### Syntetiskt nät mot en egen katalog (#219)
+
+Datageneratorn bygger ett syntetiskt nät mot den katalog den startas med, även en egen (`CMDB_CATALOG_PATH`), utan kodändring. Topologin är densamma: nav med stamnät, aggregeringsringar och accessgrenar.
+
+- **Sitetyper efter roll:** nav, aggregeringsnod, access och skarvpunkt hämtas ur katalogens roller (#208). Radiositer får den första accesstypen och skåp den sista.
+- **Kablar efter medium:** stamnätet får den största fiberkabeln, ringarna den minsta med minst 96 fibrer, accessgrenarna den minsta som räcker. Kopparkabel läggs bara om katalogen har en. När den största fiberkabeln är liten serverar en gren högst så många siter som kabeln har fibrer.
+- **Den syntetiska katalogen** (alla dess modeller finns) ger hela nätet som tidigare: radiosektorer, våglängder och VLAN över routrar och switchar, med samma fingeravtryck för samma frö.
+- **En annan katalog** ger ett generiskt nät:
+  - Kablar termineras på modeller med rollen `termination`.
+  - Varje site utom skarvpunkter får en aktiv modell, det vill säga en kategori utan rollerna card, termination och power, med minst två portar. Accessiter får den med minst portar, nav och aggregeringsnoder den med flest, och fler enheter när portarna tar slut.
+  - Nav och aggregeringsnoder får en kraftmodell om katalogen har en.
+  - Varje länk blir en fysisk krets genom ODF:erna. Varje accessite får en tjänst (katalogens första tjänstetyp, annars `ethernet`) på en logisk krets över grenen och aggregeringsnodens ring.
+  - Kort genereras inte.
+- **Attribut** för okända modeller och tjänster genereras ur typens JSON Schema: alla obligatoriska egenskaper, och valfria enkla egenskaper utan mönster, inom sina gränser.
+- **Krav på katalogen:** minst en sitetyp per roll, en fiberkabel, en modell med rollen `termination` och en aktiv modell. Saknas något stannar generatorn med ett fel som säger vad.
+- **Demoscenarierna** ([demo-scenarier.md](demo-scenarier.md)) hittar nav och aggregeringsnoder efter roll, men kräver tjänster av typen `mobile-backhaul` och hoppar annars över.
 
 ## Livscykel
 

@@ -27,7 +27,7 @@ internal static class Loader
         await CmdbDatabase.MigrateAsync(db, ct);
         await using (var context = CmdbDatabase.CreateContext(db))
         {
-            await CatalogSync.SyncAsync(context, TypeCatalog.Current, ct);
+            await CatalogSync.SyncAsync(context, net.Catalog, ct);
             await Cmdb.Database.Scopes.ScopeCatalog.SyncAsync(context, ct);
             await Cmdb.Database.Voice.VoiceCallerCatalog.SyncAsync(context, ct);
         }
@@ -254,11 +254,11 @@ internal static class Loader
         if (scenarios)
         {
             // The operations agent's demo scenarios (#132) change the generated network, so only the demo loads them.
-            await DemoScenarios.SeedAsync(conn, log, ct);
+            await DemoScenarios.SeedAsync(conn, log, ct, net.Catalog);
         }
         await Cmdb.Database.Scopes.ScopeVisibility.RefreshAsync(db, ct);
         log.WriteLine($"  scopes  {sw.Elapsed.TotalSeconds,6:0.0} s");
-        await DemoPlans.SeedAsync(conn, log, ct);
+        await DemoPlans.SeedAsync(conn, log, ct, net.Catalog);
         sw.Restart();
         // Rack positions (#173): the generator places equipment in racks; stacking them gives each its units.
         await Exec(conn, Cmdb.Database.RackStacking.Backfill, ct);

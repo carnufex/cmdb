@@ -110,6 +110,37 @@ public sealed class LoaderTests(ApiFactory factory)
         (reader.GetInt64(0), reader.GetInt64(1), reader.GetInt64(2)).ShouldBe((1L, 2L, 2L));
     }
 
+    [Fact]
+    public async Task Builds_and_loads_a_network_from_an_external_catalog_with_its_own_types()
+    {
+        // The test catalog (#207) names its site types and categories differently and has one switch, one ODF and one fibre (#219).
+        var catalog = TypeCatalog.Load(CatalogSource.FromPath(Path.Combine(AppContext.BaseDirectory, "TestCatalog")));
+        var network = NetworkBuilder.Build(1, Scale.Small, catalog);
+        Fingerprint.Of(NetworkBuilder.Build(1, Scale.Small, catalog)).ShouldBe(Fingerprint.Of(network));
+        network.Sites.Select(s => s.SiteType).Distinct().Order().ShouldBe(["brunn", "karna", "kundskap", "nod"]);
+        network.Equipment.Select(e => e.Type.Key).Distinct().Order().ShouldBe(["globex-odf-8", "globex-sw-4"]);
+        network.Cables.ShouldAllBe(c => c.Type.Key == "globex-fiber-8");
+        network.Equipment.ShouldAllBe(e => catalog.ValidateAttributes(e.Type.Key, System.Text.Json.JsonDocument.Parse(e.Attributes, default).RootElement).Count == 0);
+
+        await using var db = await factory.NewDatabaseAsync();
+        // The demo scenarios find the hubs and aggregation nodes by role; without mobile backhaul services they step aside.
+        await Loader.LoadAsync(db, network, reset: false, TextWriter.Null, fast: false, scenarios: true, ct: Ct);
+
+        (await Count(db, "site")).ShouldBe(network.Sites.Count);
+        (await Count(db, "connection")).ShouldBe(network.Connections.Count);
+        await using var conn = await db.OpenConnectionAsync(Ct);
+        (await IntegrityCheck.RunAsync(conn, TextWriter.Null, Ct)).ShouldBeEmpty();
+        // Every access site has a service on a logical circuit that rides its link and its aggregation node's ring.
+        await using var cmd = db.CreateCommand("""
+            SELECT (SELECT count(*) FROM site WHERE site_type = 'kundskap'),
+                   (SELECT count(DISTINCT sc.service_id) FROM service_circuit sc JOIN circuit c ON c.id = sc.circuit_id AND c.layer = 'logical'
+                    WHERE (SELECT count(*) FROM circuit_dependency d WHERE d.circuit_id = c.id) = 2)
+            """);
+        await using var reader = await cmd.ExecuteReaderAsync(Ct);
+        await reader.ReadAsync(Ct);
+        reader.GetInt64(1).ShouldBe(reader.GetInt64(0));
+    }
+
     [Theory]
     [InlineData(55.40, 13.35)]
     [InlineData(59.33, 18.07)]

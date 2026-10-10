@@ -10,9 +10,12 @@ internal static class DemoPlans
 {
     private const string Author = "datagen";
 
-    public static async Task SeedAsync(NpgsqlConnection conn, TextWriter log, CancellationToken ct)
+    public static async Task SeedAsync(NpgsqlConnection conn, TextWriter log, CancellationToken ct, Cmdb.Catalog.TypeCatalog? catalog = null)
     {
-        var hub = await RowAsync(conn, "SELECT id, code, name FROM site WHERE site_type = 'hub' ORDER BY id LIMIT 1", ct);
+        // The first hub, by role (#219).
+        var hubs = (catalog ?? Cmdb.Catalog.TypeCatalog.Current).SiteTypesWith(Cmdb.Catalog.CatalogRoles.Hub);
+        var types = hubs.Length == 0 ? "NULL" : string.Join(", ", hubs.Select(h => $"'{h}'"));
+        var hub = await RowAsync(conn, $"SELECT id, code, name FROM site WHERE site_type IN ({types}) ORDER BY id LIMIT 1", ct);
         if (hub is null)
         {
             return;
