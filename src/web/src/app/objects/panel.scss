@@ -8,6 +8,9 @@
   border-bottom: var(--line);
 
   .kind {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
     font-size: var(--text-xs);
     text-transform: uppercase;
     letter-spacing: 0.04em;

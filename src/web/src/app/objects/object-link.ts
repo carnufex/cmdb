@@ -8,6 +8,7 @@ import {
   signal,
 } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
+import { IconComponent, objectIcons } from '../shell/icons';
 import { PanelStack } from '../shell/panels';
 import { StatusComponent } from '../shell/status';
 import { asLifecycle, ObjectRef, ObjectSummary, typeLabels } from './models';
@@ -20,7 +21,7 @@ const HOVER_DELAY_MS = 450;
  */
 @Component({
   selector: 'cmdb-link',
-  imports: [StatusComponent],
+  imports: [StatusComponent, IconComponent],
   template: `
     @if (ref().id === 0) {
       <!-- Outside the caller's access scope (#22): nothing to open, nothing to show. -->
@@ -29,8 +30,11 @@ const HOVER_DELAY_MS = 450;
       }}</span>
     } @else if (ref().id < 0) {
       <!-- Planned in the active plan (#107): not in production yet, so there is no panel to open. -->
-      <span class="planned" title="Planerad i planen, finns inte i produktion än"
-        ><span class="mono">{{ ref().code }}</span>
+      <span class="planned" title="Planerad i planen, finns inte i produktion än">
+        @if (icon()) {
+          <cmdb-icon class="icon" [name]="icons[ref().type]" />
+        }
+        <span class="mono">{{ ref().code }}</span>
         @if (showName() && ref().name) {
           {{ ref().name }}
         }
@@ -44,6 +48,9 @@ const HOVER_DELAY_MS = 450;
         (focus)="startHover()"
         (blur)="endHover()"
       >
+        @if (icon()) {
+          <cmdb-icon class="icon" [name]="icons[ref().type]" />
+        }
         <span class="mono">{{ ref().code }}</span>
         @if (showName() && ref().name) {
           <span class="name">{{ ref().name }}</span>
@@ -53,7 +60,7 @@ const HOVER_DELAY_MS = 450;
     @if (card(); as c) {
       <div class="card" role="tooltip">
         <div class="head">
-          <span class="type">{{ typeLabels[c.type] }}</span>
+          <span class="type"><cmdb-icon [name]="icons[c.type]" />{{ typeLabels[c.type] }}</span>
           <cmdb-status [value]="c.lifecycle" />
         </div>
         <div class="code mono">{{ c.code }}</div>
@@ -78,7 +85,7 @@ const HOVER_DELAY_MS = 450;
     a {
       display: inline-flex;
       gap: var(--space-2);
-      align-items: baseline;
+      align-items: center;
       max-width: 100%;
       color: var(--text);
       text-decoration: none;
@@ -86,6 +93,10 @@ const HOVER_DELAY_MS = 450;
       &:hover {
         border-bottom-color: var(--text-muted);
       }
+    }
+    .icon {
+      align-self: center;
+      color: var(--text-muted);
     }
     .name {
       color: var(--text-muted);
@@ -112,6 +123,9 @@ const HOVER_DELAY_MS = 450;
       align-items: center;
     }
     .type {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-1);
       font-size: var(--text-xs);
       text-transform: uppercase;
       letter-spacing: 0.04em;
@@ -152,9 +166,12 @@ export class ObjectLinkComponent implements OnDestroy {
 
   readonly ref = input.required<ObjectRef>();
   readonly showName = input(false);
+  /** The type's icon before the code (#249); off where the row already says what it is. */
+  readonly icon = input(true);
 
   protected readonly card = signal<ObjectSummary | null>(null);
   protected readonly typeLabels = typeLabels;
+  protected readonly icons = objectIcons;
   protected readonly asLifecycle = asLifecycle;
 
   private timer?: ReturnType<typeof setTimeout>;

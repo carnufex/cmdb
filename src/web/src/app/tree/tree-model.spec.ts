@@ -70,11 +70,15 @@ describe('content tree', () => {
     ]);
     expect(rows[3].expandable).toBe(true); // has ports and a card, not loaded yet
     expect(rows[4].expandable).toBe(false);
+    // Location kinds in Swedish, never the key (#249); the icons follow the kinds and categories.
+    expect(rows.slice(1, 3).map((r) => r.node.detail)).toEqual(['Byggnad', 'Rack']);
+    expect(rows.map((r) => r.node.typeKey)).toEqual(['hub', 'building', 'rack', 'router', 'power']);
 
     const chassisNode = root.children[0].children[0].children[0];
     chassisNode.children = equipmentChildren(chassis);
     chassisNode.lazy = false;
     expect(chassisNode.children.map((c) => c.label)).toEqual(['LC-24X 1', 'con', 'mgmt']);
+    expect(chassisNode.children[0].typeKey).toBe('card');
     expect(pathTo(root, 'port:2')).toEqual([
       'site:1',
       'location:10',

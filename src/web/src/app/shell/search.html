@@ -36,7 +36,7 @@
             (click)="pick(item)"
             (mouseenter)="active.set(i)"
           >
-            <span class="type">Åtgärd</span>
+            <span class="type"><cmdb-icon name="action" />Åtgärd</span>
             <span class="main">{{ item.command.label }}</span>
             <span class="detail">{{ item.command.hint }}</span>
           </li>
@@ -50,7 +50,9 @@
             (click)="pick(item)"
             (mouseenter)="active.set(i)"
           >
-            <span class="type">{{ typeLabels[item.hit.type] }}</span>
+            <span class="type"
+              ><cmdb-icon [name]="icons[item.hit.type]" />{{ typeLabels[item.hit.type] }}</span
+            >
             <span class="main">
               <span class="code mono">{{ item.hit.code }}</span>
               @if (item.hit.name) {

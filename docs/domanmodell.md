@@ -122,7 +122,9 @@ Sitetyper och utrustningskategorier är katalogdata med nyckel, visningsnamn och
 | `termination` | kategori | Terminerar fibrer (ODF): där mönster och ruttförslag landar ledare. |
 | `power` | kategori | Reservkraft: riskvyn kollar batteriernas ålder. |
 
-En typ kan ha flera roller eller ingen. Okända roller, dubbla nycklar och sitemallar med okänd sitetyp ger fel vid laddning. Avancerad sökning och MCP `describe_catalog` visar namn och roller, och webben hämtar dem från `GET /api/catalog/kinds`. Datageneratorn väljer också sitetyper efter roll (se [Syntetiskt nät mot en egen katalog](#syntetiskt-nät-mot-en-egen-katalog)).
+En typ kan ha flera roller eller ingen. Okända roller, dubbla nycklar och sitemallar med okänd sitetyp ger fel vid laddning.
+
+En sitetyp eller kategori kan också ange en **ikon** (`"icon": "tower"`), som webben visar överallt där ett objekt av typen nämns (#249). Utan ikon får typen sin rolls: `hub`, `aggregation`, `cabinet` (access), `splice` (skarvpunkt), `card`, `odf` (termination), `power`, och annars `site` eller `equipment`. Namnen är webbens ikonuppsättning (se [ux.md](ux.md#ikoner)), och ett okänt namn ger fel vid laddning. Avancerad sökning och MCP `describe_catalog` visar namn och roller, och webben hämtar dem från `GET /api/catalog/kinds`. Datageneratorn väljer också sitetyper efter roll (se [Syntetiskt nät mot en egen katalog](#syntetiskt-nät-mot-en-egen-katalog)).
 
 ### Attributscheman för siter, kablar och tjänster (#211)
 

@@ -1,10 +1,13 @@
 import { portStatus, PortStatus } from '../objects/front-panel-model';
 import { EquipmentDetail, ObjectRef, SiteDetail } from '../objects/models';
+import { locationKindName } from '../shell/icons';
 
 /** A node in the content tree (#17): site → location → equipment → card → port. */
 export interface TreeNode {
   key: string;
   kind: 'site' | 'location' | 'equipment' | 'port';
+  /** What the icon follows (#249): the site type, the location kind or the equipment category; 'card' for a card. */
+  typeKey: string | null;
   label: string;
   detail: string | null;
   /** The object a click opens; ports open their equipment. */
@@ -31,12 +34,14 @@ export const equipmentKey = (id: number) => `equipment:${id}`;
 
 function equipmentNode(
   e: { id: number; name: string; lifecycle: string },
+  typeKey: string,
   detail: string,
   lazy: boolean,
 ): TreeNode {
   return {
     key: equipmentKey(e.id),
     kind: 'equipment',
+    typeKey,
     label: e.name,
     detail,
     ref: { type: 'equipment', id: e.id, code: e.name },
@@ -53,13 +58,15 @@ export function siteTree(site: SiteDetail): TreeNode {
     locations.set(l.id, {
       key: `location:${l.id}`,
       kind: 'location',
+      typeKey: l.kind,
       label: l.name,
-      detail: l.kind,
+      detail: locationKindName(l.kind),
       ref: null,
       lifecycle: null,
       children: l.equipment.map((e) =>
         equipmentNode(
           e,
+          e.category,
           `${e.model}${e.cards ? ` · ${e.cards} kort` : ''}`,
           e.ports > 0 || e.cards > 0,
         ),
@@ -70,6 +77,7 @@ export function siteTree(site: SiteDetail): TreeNode {
   const root: TreeNode = {
     key: `site:${site.id}`,
     kind: 'site',
+    typeKey: site.siteType,
     label: site.code,
     detail: site.name,
     ref: { type: 'site', id: site.id, code: site.code, name: site.name },
@@ -94,6 +102,7 @@ export function equipmentChildren(detail: EquipmentDetail): TreeNode[] {
   const cards = detail.cards.map((c) =>
     equipmentNode(
       { id: c.card.id, name: c.card.code, lifecycle: String(c.card.lifecycle ?? 'in_service') },
+      'card',
       `slot ${c.slot}`,
       true,
     ),
@@ -103,6 +112,7 @@ export function equipmentChildren(detail: EquipmentDetail): TreeNode[] {
     .map<TreeNode>((p) => ({
       key: `port:${p.terminalId}`,
       kind: 'port',
+      typeKey: null,
       label: p.name,
       detail: p.connections.length ? p.connections.map((c) => c.peer.label).join(', ') : null,
       ref: { type: 'equipment', id: detail.id, code: detail.name },

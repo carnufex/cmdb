@@ -114,10 +114,40 @@ public sealed class TypeCatalogTests
     [InlineData("""[{ "key": "nav", "name": "Nav", "roles": [] }, { "key": "nav", "name": "Nav 2", "roles": [] }]""", "'nav' is used more than once")]
     [InlineData("""[{ "key": "Nav!", "name": "Nav", "roles": [] }]""", "key 'Nav!'")]
     [InlineData("""[{ "key": "nav", "name": " ", "roles": [] }]""", "'nav' needs a name")]
+    [InlineData("""[{ "key": "nav", "name": "Nav", "roles": [], "icon": "castle" }]""", "'nav' has unknown icon 'castle'")]
     public void Broken_site_types_are_rejected(string siteTypes, string expected)
     {
         Should.Throw<InvalidOperationException>(() => TypeCatalog.Parse([], siteTypesJson: siteTypes)).Message.ShouldContain($"site-types.json: ");
         Should.Throw<InvalidOperationException>(() => TypeCatalog.Parse([], siteTypesJson: siteTypes)).Message.ShouldContain(expected);
+    }
+
+    [Fact]
+    public void Site_types_and_categories_have_their_own_icon_or_their_roles()
+    {
+        CatalogIcons.For(Catalog.FindSiteType("radio")!).ShouldBe("tower");
+        CatalogIcons.For(Catalog.FindSiteType("cabinet")!).ShouldBe("cabinet");
+        CatalogIcons.For(Catalog.FindSiteType("hub")!).ShouldBe("hub");
+        CatalogIcons.For(Catalog.Categories.Single(c => c.Key == "odf")).ShouldBe("odf");
+        CatalogIcons.For(Catalog.Categories.Single(c => c.Key == "router")).ShouldBe("router");
+        CatalogIcons.For(new EquipmentCategory("ram", "Ram", [])).ShouldBe("equipment");
+        Should.Throw<InvalidOperationException>(() => TypeCatalog.Parse([], categoriesJson: """[{ "key": "x", "name": "X", "roles": [], "icon": "y" }]"""))
+            .Message.ShouldContain("unknown icon 'y'");
+    }
+
+    [Fact]
+    public void The_catalog_knows_the_same_icons_as_the_web_app()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Cmdb.slnx")))
+        {
+            dir = dir.Parent;
+        }
+        Assert.SkipWhen(dir is null, "Not run from the repository.");
+        var source = File.ReadAllText(Path.Combine(dir!.FullName, "src", "web", "src", "app", "shell", "icons.ts"));
+        var block = source[source.IndexOf("export const icons = {", StringComparison.Ordinal)..source.IndexOf("} as const;", StringComparison.Ordinal)];
+        var names = System.Text.RegularExpressions.Regex.Matches(block, @"^\s+'?([a-z-]+)'?:", System.Text.RegularExpressions.RegexOptions.Multiline)
+            .Select(m => m.Groups[1].Value);
+        names.Order().ShouldBe(CatalogIcons.Names.Order());
     }
 
     [Fact]

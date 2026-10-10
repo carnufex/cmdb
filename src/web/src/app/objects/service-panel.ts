@@ -2,6 +2,7 @@ import { httpResource } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, effect, inject, input } from '@angular/core';
 import { CatalogKinds } from '../shell/catalog-kinds';
 import { PanelStack } from '../shell/panels';
+import { IconComponent } from '../shell/icons';
 import { StatusComponent } from '../shell/status';
 import { apiPath, ServiceDetail } from './models';
 import { ClassificationComponent } from './classification';
@@ -11,11 +12,19 @@ import { traceId } from './trace-model';
 
 @Component({
   selector: 'cmdb-service-panel',
-  imports: [SourcesComponent, ClassificationComponent, ObjectLinkComponent, StatusComponent],
+  imports: [
+    IconComponent,
+    SourcesComponent,
+    ClassificationComponent,
+    ObjectLinkComponent,
+    StatusComponent,
+  ],
   template: `
     @if (service.value(); as s) {
       <header class="header">
-        <div class="kind">Tjänst · {{ kinds.serviceTypeName(s.serviceType) }}</div>
+        <div class="kind">
+          <cmdb-icon name="service" />Tjänst · {{ kinds.serviceTypeName(s.serviceType) }}
+        </div>
         <div class="code mono">{{ s.code }}</div>
         <div class="title">{{ s.name }}</div>
         <div class="meta">
