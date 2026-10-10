@@ -57,7 +57,7 @@ public sealed class ReconciliationTests(ApiFactory factory) : IDisposable
         // Locations, connections, circuits and their links are reconciled too (#230) and agree; only ports are not.
         report.NotReconciled.ShouldHaveSingleItem().ShouldStartWith(ExchangeFormat.Ports);
         report.Counts.Single(c => c.ObjectType == "connection").ShouldSatisfyAllConditions(
-            c => c.Reported.ShouldBe(4), c => c.New.ShouldBe(0), c => c.Missing.ShouldBe(0));
+            c => c.Reported.ShouldBe(4), c => c.Matched.ShouldBe(4), c => c.New.ShouldBe(0), c => c.Missing.ShouldBe(0));
         (report.Counts.Single(c => c.ObjectType == "location").Matched, report.Counts.Single(c => c.ObjectType == "circuit").Matched).ShouldBe((4, 2));
 
         // A new run supersedes the previous plan for review instead of proposing the same thing twice.

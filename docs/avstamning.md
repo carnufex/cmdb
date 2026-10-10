@@ -92,3 +92,22 @@ Det syntetiska nätet i full skala (seed 1) exporterat och importerat som `acme-
 | 1 216 ändrade serienummer och 2 247 ändrade namn på utrustning | 72 s |
 
 I den sista körningen fördes serienumren in direkt i den betrodda planen, och namnen lades som 2 247 `rename` i planen för granskning. Skillnaden mellan provkörningen och körningen är att källposterna bekräftas.
+
+Med kopplingar, kretsar och länkar (#230): samma nät (seed 1, full skala) exporterat och importerat som `acme-nms`, och sedan stämt av med alla filer, det vill säga även 3 010 766 kopplingar, 117 025 kretsar med 1 147 288 hopp, 131 362 beroenden och 65 681 tjänstekretsar, lokalt i Postgres 17 med PostGIS (`ReconciliationBenchmark`, se nedan):
+
+| Körning | Tid |
+|---|---|
+| Provkörning, inget ändrat | 59 s |
+| Inget ändrat (bekräftar 614 117 källposter) | 79 s |
+| Var 3 000:e koppling borta och var 1 000:e krets med omvänd väg | 85 s |
+
+Den sista körningen gav 1 003 `disconnect` och 118 `set_circuit_path` i planen för granskning. Jämförelsen av kopplingar och vägar görs i SQL mot temporära tabeller, så det är bara skillnaderna som lämnar databasen.
+
+```bash
+# Mät själv: exportera, importera i en egen databas och kör benchmarken mot den
+dotnet run --project src/datagen -c Release -- export --to /tmp/full --scale full --seed 1
+ConnectionStrings__Cmdb="Host=127.0.0.1;Port=15432;Database=cmdb_rec;Username=cmdb;Password=…" \
+  dotnet run --project src/datagen -c Release -- import --from /tmp/full --source acme-nms
+CMDB_RECONCILE_BENCH="Host=127.0.0.1;Port=15432;Database=cmdb_rec;Username=cmdb;Password=…;Command Timeout=0|/tmp/full" \
+  dotnet test tests/Cmdb.Api.IntegrationTests -c Release -- --filter-class "*ReconciliationBenchmark"
+```

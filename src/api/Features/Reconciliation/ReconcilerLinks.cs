@@ -248,6 +248,7 @@ public sealed partial class Reconciler
         var external = data.Connections.ToDictionary(c => c.Row);
         var added = new List<(long A, long B, string Kind, int N)>();
         var differs = 0;
+        var unknown = 0;
         await using (var cmd = new NpgsqlCommand("""
             SELECT r.n, r.lo, r.hi, r.kind, c.kind::text
             FROM r_connection r
@@ -263,6 +264,7 @@ public sealed partial class Reconciler
                 var name = $"{c.A} – {c.B}";
                 if (reader.IsDBNull(1) || reader.IsDBNull(2))
                 {
+                    unknown++;
                     report.Deviate("connection", null, name, "terminal", null, null, "unknown-terminal");
                 }
                 else if (reader.IsDBNull(4))
@@ -293,7 +295,9 @@ public sealed partial class Reconciler
         }
         count.New = added.Count;
         count.Missing = gone.Count;
+        count.Matched = count.Reported - added.Count - unknown;
         count.Changed = differs;
+        count.Unchanged = count.Matched - differs;
         foreach (var (a, b, kind, n) in added)
         {
             if (owned)
