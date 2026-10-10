@@ -232,7 +232,11 @@ Kablar ligger i subdukter i dukter, som ligger i trasé mellan siter. Kanalisati
   - **Kablarnas geometri** är deras trasésträckors.
   - **Dukter:** stråken får multidukter med marginal. En enskild kabel får skyddsrör eller en multidukt, och en del accesstrasé får en mikrorörsbunt med blåsfiber.
   - **Resten av nätet** är oförändrat för samma frö (egen slumpkälla), utom de långa kablarnas sträckning.
-- **Läs- och skrivytor** kommer i #236–#238: kartan och tvärsnittet, påverkan per sträcka, ledaranvändning och ledig kapacitet.
+- **I kartan** (#236): kryssrutan *Kanalisation* i teckenförklaringen visar trasén som ett eget lager under nätet (`GET /api/tiles/conduit/{z}/{x}/{y}`), så nätets plattor och deras budget är opåverkade. Stråken (sträckor vid en brunn) syns på alla zoomnivåer, övriga från detaljnivån. Bredden visar antalet dukter, och luftledningar är streckade.
+- **Sträckpanelen** (`GET /api/route-segments/{id}`) visar anläggningssätt, ändar, ägare och varje dukt som ett tvärsnitt ritat ur dukttypens mall. Rörens beläggning visas som prick och text: tom, reserverad (en aktiv reservation av röret), kabel eller blåsfiber. Kabeln i röret är en länk.
+- **Kabelpanelen** visar kabelns väg genom kanalisationen (`GET /api/cables/{id}/path`): sträcka, dukt och rör från A-änden.
+- **Omfång:** en sträcka syns när dess geometri skär något av anroparens områden (`scope_route_segment`, materialiserad med de andra omfångstabellerna), och i plattorna klipps den vid områdets kant. Dukter och rör följer sin sträcka. En kabel utanför omfånget visas som *upptagen* utan namn, och en sträcka utanför omfånget i en kabels väg visas som dold.
+- **Läs- och skrivytor** som återstår: påverkan per sträcka (#237), ledaranvändning och ledig kapacitet (#238).
 
 ## Livscykel
 

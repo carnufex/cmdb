@@ -20,7 +20,7 @@ import { CatalogKinds } from '../shell/catalog-kinds';
 import { PanelStack } from '../shell/panels';
 import { StatusComponent } from '../shell/status';
 import { ImpactListComponent } from './impact-list';
-import { apiPath, CableDetail, Impact } from './models';
+import { apiPath, CableDetail, Impact, ObjectRef } from './models';
 import { ObjectLinkComponent } from './object-link';
 import { SourcesComponent } from './sources';
 
@@ -61,6 +61,24 @@ import { SourcesComponent } from './sources';
           <dd><cmdb-link [ref]="c.b" [showName]="true" /></dd>
         </dl>
       </section>
+      @if (path.value()?.length) {
+        <section>
+          <h3>Väg i kanalisationen ({{ path.value()!.length }} sträckor)</h3>
+          <ol class="conduit-path">
+            @for (step of path.value()!; track step.seq) {
+              <li>
+                <cmdb-link [ref]="step.segment" />
+                @if (step.subduct) {
+                  <span class="muted">
+                    {{ step.duct }} rör {{ step.subduct
+                    }}{{ step.color ? ' (' + step.color + ')' : '' }}
+                  </span>
+                }
+              </li>
+            }
+          </ol>
+        </section>
+      }
       @if (attributes().length) {
         <section>
           <h3>Attribut</h3>
@@ -190,6 +208,14 @@ import { SourcesComponent } from './sources';
   `,
   styleUrl: './panel.scss',
   styles: `
+    .conduit-path {
+      margin: 0;
+      padding-left: var(--space-4);
+      font-size: var(--text-sm);
+    }
+    .conduit-path li {
+      padding: 1px 0;
+    }
     .muted {
       margin: 0;
       color: var(--text-muted);
@@ -302,6 +328,17 @@ export class CablePanelComponent {
   readonly id = input.required<string>();
 
   protected readonly cable = httpResource<CableDetail>(() => `/api/${apiPath.cable}/${this.id()}`);
+  /** The cable's way through the conduit (#236). */
+  protected readonly path = httpResource<
+    {
+      seq: number;
+      segment: ObjectRef;
+      construction: string | null;
+      duct: string;
+      subduct: number;
+      color: string | null;
+    }[]
+  >(() => `/api/${apiPath.cable}/${this.id()}/path`);
   /** Loaded after the cable itself: impact analysis has its own, larger budget. */
   protected readonly impact = httpResource<Impact>(() => {
     return this.cable.value()

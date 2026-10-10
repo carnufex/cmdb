@@ -34,6 +34,7 @@ public sealed class CmdbDbContext(DbContextOptions<CmdbDbContext> options) : DbC
     public DbSet<AccessScope> AccessScopes => Set<AccessScope>();
     public DbSet<ScopeSite> ScopeSites => Set<ScopeSite>();
     public DbSet<ScopeCable> ScopeCables => Set<ScopeCable>();
+    public DbSet<ScopeRouteSegment> ScopeRouteSegments => Set<ScopeRouteSegment>();
     public DbSet<ScopeCircuit> ScopeCircuits => Set<ScopeCircuit>();
     public DbSet<ScopeService> ScopeServices => Set<ScopeService>();
     public DbSet<Plan> Plans => Set<Plan>();

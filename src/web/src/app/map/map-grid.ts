@@ -54,3 +54,8 @@ export function networkTileGrid(): TileGrid {
 export function tileUrl(z: number, x: number, y: number): string {
   return `/api/tiles/${z}/${x}/${y}`;
 }
+
+/** The conduit's own tiles (#236): route segments, apart from the network's. */
+export function conduitTileUrl(z: number, x: number, y: number): string {
+  return `/api/tiles/conduit/${z}/${x}/${y}`;
+}

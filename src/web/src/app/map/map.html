@@ -23,6 +23,14 @@
     </ul>
   }
   <label class="cls">
+    <input
+      type="checkbox"
+      [checked]="conduitShown()"
+      (change)="conduitShown.set($any($event.target).checked)"
+    />
+    Kanalisation
+  </label>
+  <label class="cls">
     Klassning
     <select
       [value]="classMin()"
