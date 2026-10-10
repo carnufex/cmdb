@@ -19,6 +19,16 @@ public static class NetworkLinks
 
     public static readonly string[] LocationKinds = ["building", "room", "rack", "position"];
 
+    /// <summary>A location kind in words (#267), as the content tree shows it.</summary>
+    public static string? KindName(string? kind) => kind switch
+    {
+        "building" => "byggnad",
+        "room" => "rum",
+        "rack" => "rack",
+        "position" => "position",
+        _ => kind,
+    };
+
     private static readonly JsonSerializerOptions OmitNull = new() { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull };
 
     public static CircuitLayer? Layer(string? layer) => layer switch
@@ -317,7 +327,7 @@ public static class NetworkLinks
         var remove = p.TryGetProperty("remove", out var r) && r.ValueKind == JsonValueKind.True;
         return op.Kind switch
         {
-            "create_location" => $"Ny plats {p.GetProperty("name").GetString()} ({p.GetProperty("kind").GetString()}) på {name("site", p.GetProperty("site").GetInt64())}",
+            "create_location" => $"Ny plats {p.GetProperty("name").GetString()} ({KindName(p.GetProperty("kind").GetString())}) på {name("site", p.GetProperty("site").GetInt64())}",
             "create_service" => $"Ny tjänst {p.GetProperty("code").GetString()} {p.GetProperty("name").GetString()}",
             "create_circuit" => $"Ny krets {p.GetProperty("code").GetString()} ({p.GetProperty("layer").GetString()}, {Hops(p).Length} hopp)",
             "set_circuit_path" => $"Ny väg för krets {name("circuit", p.GetProperty("id").GetInt64())} ({Hops(p).Length} hopp)",

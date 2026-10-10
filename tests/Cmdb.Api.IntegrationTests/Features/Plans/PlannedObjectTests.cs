@@ -489,6 +489,10 @@ public sealed class PlannedObjectTests(ApiFactory factory)
         var room = (await AddAsync(client, plan.Id, new { kind = "create_location", siteId = hub, locationKind = "room", name = "Rum 9" })).Target!.Id;
         var rack = await AddAsync(client, plan.Id, new { kind = "create_location", siteId = hub, parentId = room, locationKind = "rack", name = "Rack 9", rackUnits = 42 });
         rack.Summary.ShouldContain("Rack 9");
+        // The site by code and name and the kind in words (#267).
+        var hubCode = await Text(db, $"SELECT code FROM site WHERE id = {hub}");
+        rack.Summary.ShouldStartWith($"Ny plats Rack 9 (rack) på {hubCode} ");
+        (await client.GetFromJsonAsync<PlanDetail>($"/api/plans/{plan.Id}", Ct))!.Operations[0].Summary.ShouldStartWith($"Ny plats Rum 9 (rum) på {hubCode}");
 
         // A card in a free slot of a chassis; a slot that is taken or missing is refused.
         var chassis = await Scalar(db, "SELECT min(e.id) FROM equipment e JOIN equipment_type t ON t.id = e.equipment_type_id AND t.key = 'acme-cr-8'");

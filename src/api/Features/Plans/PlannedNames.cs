@@ -18,6 +18,7 @@ public sealed class PlannedNames
     // Where planned equipment stands and planned cables end, so describing an operation is a lookup, not a scan over
     // every planned terminal (a 10 000-site import has millions, #170).
     private readonly Dictionary<long, ObjectRef> _equipmentSites = [];
+    private readonly Dictionary<long, ObjectRef> _locationSites = [];
     private readonly Dictionary<long, List<string?>> _cableEnds = [];
 
     public static async Task<PlannedNames> BuildAsync(NpgsqlDataSource db, IReadOnlyList<PlanOp> operations, CancellationToken ct)
@@ -32,7 +33,7 @@ public sealed class PlannedNames
         // Existing sites the planned equipment and cables sit at.
         var existing = creates.SelectMany(o => o.Kind switch
         {
-            "create_equipment" => [o.Payload.GetProperty("site").GetInt64()],
+            "create_equipment" or "create_location" => [o.Payload.GetProperty("site").GetInt64()],
             "create_cable" => new[] { o.Payload.GetProperty("a").GetInt64(), o.Payload.GetProperty("b").GetInt64() },
             "split_cable" => new[] { o.Payload.GetProperty("site").GetInt64(), o.Payload.GetProperty("aSite").GetInt64(), o.Payload.GetProperty("bSite").GetInt64() },
             _ => [],
@@ -63,6 +64,7 @@ public sealed class PlannedNames
                     break;
                 case "create_location":
                     names.Objects[("location", id)] = new ObjectRef("location", id, p.GetProperty("name").GetString()!, p.GetProperty("kind").GetString(), "planned");
+                    names._locationSites[id] = Site(p.GetProperty("site").GetInt64());
                     break;
                 case "create_service":
                     names.Objects[("service", id)] = new ObjectRef("service", id, p.GetProperty("code").GetString()!, p.GetProperty("name").GetString(), "planned");
@@ -151,7 +153,9 @@ public sealed class PlannedNames
                 {
                     var type = op.Kind["create_".Length..];
                     var created = Objects[(type, id)];
-                    return (NetworkLinks.Text(op, (t, x) => Objects.TryGetValue((t, x), out var o) ? o.Code : $"#{x}"), created);
+                    var site = _locationSites.GetValueOrDefault(id);
+                    return (NetworkLinks.Text(op, (t, x) => t == "site" && site is not null ? $"{site.Code} {site.Name}".TrimEnd()
+                        : Objects.TryGetValue((t, x), out var o) ? o.Code : $"#{x}"), created);
                 }
             case "create_equipment":
                 {
