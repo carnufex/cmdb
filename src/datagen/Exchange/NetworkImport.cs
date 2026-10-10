@@ -420,6 +420,8 @@ internal static class NetworkImport
             await Exec(conn, "SET LOCAL cmdb.bulk = 'off'", ct);
             await Exec(conn, "INSERT INTO graph_change (kind, key) VALUES ('reload', 0)", ct);
             await tx.CommitAsync(ct);
+            // Rows written in bulk leave the search indexes loosely packed (#245); rebuilt without blocking, the database is in use.
+            await Cmdb.Database.SearchIndexes.RebuildAsync(conn, concurrently: true, ct);
             await Exec(conn, "ANALYZE", ct);
         }
 

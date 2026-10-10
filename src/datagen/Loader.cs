@@ -319,6 +319,9 @@ internal static class Loader
         sw.Restart();
         // Rack positions (#173): the generator places equipment in racks; stacking them gives each its units.
         await Exec(conn, Cmdb.Database.RackStacking.Backfill, ct);
+        // The bulk rows left the search indexes loosely packed (#245); the load has the database to itself.
+        var indexes = await Cmdb.Database.SearchIndexes.RebuildAsync(conn, concurrently: false, ct);
+        log.WriteLine($"  reindex {indexes} search indexes {sw.Elapsed.TotalSeconds,6:0.0} s");
         await Exec(conn, "ANALYZE", ct);
         log.WriteLine($"  analyze {sw.Elapsed.TotalSeconds,6:0.0} s");
     }
