@@ -8,7 +8,8 @@ Running the script again brings ElevenLabs in line with the repo; the ids of wha
 
 Environment:
   ELEVENLABS_API_KEY   the workspace's API key (Bitwarden)
-  CMDB_VOICE_SECRET    the bearer secret of /voice/mcp (Bitwarden CMDB_VOICE_SECRET)
+  CMDB_VOICE_SECRET_NOC, CMDB_VOICE_SECRET_SERVICEDESK, CMDB_VOICE_SECRET_IT
+                       the bearer secret of each voice endpoint, one per agent (#181; Bitwarden, same names)
   CMDB_URL             optional, default https://cmdb.rosenvall.se
 
 Usage: python agent/deploy.py
@@ -74,12 +75,16 @@ def library_voice(holder: dict, spec: dict) -> str:
     return holder["voice_id"]
 
 
-def secret(state: dict) -> str:
-    value = os.environ["CMDB_VOICE_SECRET"]
-    if state.get("secret_id"):
-        request("PATCH", f"/v1/convai/secrets/{state['secret_id']}", {"type": "update", "name": "cmdb-voice-secret", "value": value})
-        return state["secret_id"]
-    return request("POST", "/v1/convai/secrets", {"type": "new", "name": "cmdb-voice-secret", "value": value})["secret_id"]
+def secret(holder: dict, channel: str) -> str:
+    """The workspace secret for one voice endpoint (#181): each endpoint takes only its own, so one leaked secret opens one
+    agent's tools."""
+    value = os.environ[f"CMDB_VOICE_SECRET_{channel.upper()}"]
+    name = f"cmdb-voice-secret-{channel}"
+    if holder.get("secret_id"):
+        request("PATCH", f"/v1/convai/secrets/{holder['secret_id']}", {"type": "update", "name": name, "value": value})
+        return holder["secret_id"]
+    holder["secret_id"] = request("POST", "/v1/convai/secrets", {"type": "new", "name": name, "value": value})["secret_id"]
+    return holder["secret_id"]
 
 
 def mcp_server(state: dict, secret_id: str, name: str = "cmdb-driftagent", path: str = "/voice/mcp",
@@ -93,8 +98,10 @@ def mcp_server(state: dict, secret_id: str, name: str = "cmdb-driftagent", path:
         "transport": "STREAMABLE_HTTP",
         "approval_policy": "auto_approve_all",
         "secret_token": {"secret_id": secret_id},
-        # The call's id binds a verification to this call only (ADR-0015).
-        "request_headers": {"X-Conversation-Id": {"variable_name": "system__conversation_id"}},
+        # The call's id binds a verification to this call only (ADR-0015); the agent's id lets the endpoint check that the
+        # call comes from its own agent (#181).
+        "request_headers": {"X-Conversation-Id": {"variable_name": "system__conversation_id"},
+                            "X-Agent-Id": {"variable_name": "system__agent_id"}},
         "pre_tool_speech": "auto",
         "response_timeout_secs": 15,
     }
@@ -315,13 +322,14 @@ def upsert(holder: dict, body: dict) -> str:
 def main() -> None:
     state = json.loads(STATE.read_text(encoding="utf-8")) if STATE.exists() else {}
     state["voice_id"] = voice(state)
-    state["secret_id"] = secret(state)
-    state["mcp_server_id"] = mcp_server(state, state["secret_id"])
     agents = state.setdefault("agents", {})
     desk, it = agents.setdefault("servicedesk", {}), agents.setdefault("it", {})
-    desk["mcp_server_id"] = mcp_server(desk, state["secret_id"], "cmdb-servicedesk", "/voice/servicedesk/mcp",
+    # The NOC agent's secret keeps the id the shared secret had, so the old one is replaced, not left behind.
+    state["secret_id"] = secret(state, "noc")
+    state["mcp_server_id"] = mcp_server(state, state["secret_id"])
+    desk["mcp_server_id"] = mcp_server(desk, secret(desk, "servicedesk"), "cmdb-servicedesk", "/voice/servicedesk/mcp",
                                        "Service desk (syntetisk data): passertaggar, verifiering, kö och uppringning.")
-    it["mcp_server_id"] = mcp_server(it, state["secret_id"], "cmdb-it-sjalvhjalp", "/voice/it/mcp",
+    it["mcp_server_id"] = mcp_server(it, secret(it, "it"), "cmdb-it-sjalvhjalp", "/voice/it/mcp",
                                      "IT-självhjälp (syntetisk data): lösenord, utrustning, verifiering, kö och uppringning.")
     kb, stale = knowledge_base(state)
     noc_tests, desk_tests = tests(state), tests(desk, HERE / "tests" / "servicedesk")
