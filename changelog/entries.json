@@ -223,5 +223,318 @@
       121
     ],
     "published": false
+  },
+  {
+    "key": "2026-09-30-driftagent-rost",
+    "version": "sha-c5a851e",
+    "date": "2026-09-30",
+    "category": "nytt",
+    "title": "Ring driftagenten och få svar om felet",
+    "body": "Du kan ringa driftagenten och fråga om en station, vad ett fel påverkar och vilka ärenden som är öppna. Den kontrollerar vem du är innan den lämnar ut känsliga uppgifter och kan skapa ett ärende åt dig.",
+    "action": null,
+    "issues": [
+      132,
+      133,
+      134,
+      135
+    ],
+    "published": false
+  },
+  {
+    "key": "2026-09-30-proaktiva-samtal",
+    "version": "sha-7b7c975",
+    "date": "2026-09-30",
+    "category": "nytt",
+    "title": "Driftagenten ringer upp om en risk",
+    "body": "Från driftagentens panel kan du låta agenten ringa upp om en risk den har hittat. Panelen visar också vad agenten sparar i tid och pengar.",
+    "action": null,
+    "issues": [
+      137,
+      138
+    ],
+    "published": false
+  },
+  {
+    "key": "2026-09-30-vaxel",
+    "version": "sha-aa66467",
+    "date": "2026-09-30",
+    "category": "nytt",
+    "title": "En växel som kopplar vidare rätt",
+    "body": "Den som ringer möts av en växel som kopplar vidare till driftagenten eller till IT-supporten, beroende på ärendet. Agenterna heter Sebastian på driften och Elin på IT och har egna röster.",
+    "action": null,
+    "issues": [
+      151,
+      157
+    ],
+    "published": false
+  },
+  {
+    "key": "2026-09-30-driftlage",
+    "version": "sha-c0d5f91",
+    "date": "2026-09-30",
+    "category": "nytt",
+    "title": "Driftläge i kartan under samtalet",
+    "body": "Medan driftagenten pratar med någon visar kartan stationen och vad felet påverkar: kablar och siter som tappar sin väg och falsk redundans. Pågående arbeten och risker visas också.",
+    "action": null,
+    "issues": [
+      156
+    ],
+    "published": false
+  },
+  {
+    "key": "2026-10-01-arenden-karta",
+    "version": "sha-608e838",
+    "date": "2026-10-01",
+    "category": "nytt",
+    "title": "Ärendens påverkan i kartan",
+    "body": "Varje öppet ärende kan visa sin påverkan i kartan, och ett löst ärende kan stängas från driftagentens panel.",
+    "action": null,
+    "issues": [
+      161
+    ],
+    "published": false
+  },
+  {
+    "key": "2026-10-01-planer-site-i-kabel",
+    "version": "sha-3859df5",
+    "date": "2026-10-01",
+    "category": "nytt",
+    "title": "Sätt in en site i en befintlig kabel",
+    "body": "I en plan kan du sätta in en ny site i en befintlig kabel. Alla fibrer skarvas igenom i siten, så tjänster och kretsar fortsätter att gå som förut.",
+    "action": null,
+    "issues": [
+      168
+    ],
+    "published": false
+  },
+  {
+    "key": "2026-10-01-planer-ta-bort",
+    "version": "sha-e9933d6",
+    "date": "2026-10-01",
+    "category": "nytt",
+    "title": "Ta bort site, utrustning eller kabel i en plan",
+    "body": "En site, en utrustning eller en kabel som inte bär några kretsar kan tas bort i en plan. Tar du bort en site följer dess utrustning och kablar med.",
+    "action": null,
+    "issues": [
+      172
+    ],
+    "published": false
+  },
+  {
+    "key": "2026-10-01-ny-site-i-kartan",
+    "version": "sha-62bec60",
+    "date": "2026-10-01",
+    "category": "förbättrat",
+    "title": "Placera en ny site där du klickar",
+    "body": "När du lägger till en site i en plan klickar du i kartan där den ska stå. Planen föreslår också närliggande kablar att ansluta den till.",
+    "action": null,
+    "issues": [
+      167,
+      169
+    ],
+    "published": false
+  },
+  {
+    "key": "2026-10-01-import-till-plan",
+    "version": "sha-a0fc362",
+    "date": "2026-10-01",
+    "category": "nytt",
+    "title": "Importera siter och kablar till en plan",
+    "body": "Du kan läsa in många siter och kablar på en gång från en CSV- eller GeoJSON-fil till en plan. Allt kontrolleras först, och kommer in bara om allt stämmer.",
+    "action": null,
+    "issues": [
+      170,
+      174
+    ],
+    "published": false
+  },
+  {
+    "key": "2026-10-05-rack",
+    "version": "sha-bdf66c1",
+    "date": "2026-10-05",
+    "category": "nytt",
+    "title": "Rack, rum och plats för utrustning",
+    "body": "Ny utrustning kan placeras i ett visst rack, rum och höjdenhet. Siten visar racken framifrån, så att du ser vad som sitter var och vad som är ledigt.",
+    "action": null,
+    "issues": [
+      173
+    ],
+    "published": false
+  },
+  {
+    "key": "2026-10-05-klassning",
+    "version": "sha-c36b6d8",
+    "date": "2026-10-05",
+    "category": "nytt",
+    "title": "Klassning av objekt med krav per nivå",
+    "body": "Siter, utrustning, kablar och tjänster kan klassas, till exempel efter hur kritiska de är. En site ärver nivå från det den bär, och krav som inte är uppfyllda visas som risker.",
+    "action": null,
+    "issues": [
+      176,
+      177,
+      178
+    ],
+    "published": false
+  },
+  {
+    "key": "2026-10-05-klassning-planer",
+    "version": "sha-6a9bac4",
+    "date": "2026-10-05",
+    "category": "nytt",
+    "title": "Planer visar vad de gör med klassningen",
+    "body": "En plan visar om den höjer någon sites nivå och vilka krav som då inte uppfylls, med förslag på åtgärder och andra siter. Kartan har ett lager som färgar siter och kablar efter nivå.",
+    "action": null,
+    "issues": [
+      179,
+      180
+    ],
+    "published": false
+  },
+  {
+    "key": "2026-10-05-ruttforslag",
+    "version": "sha-1ffcdce",
+    "date": "2026-10-05",
+    "category": "nytt",
+    "title": "Förslag på väg genom befintliga kablar",
+    "body": "Mellan två siter föreslår planen en väg över kablar med lediga fibrer, eller en ny kabel. Vägen läggs in i planen som skarvar.",
+    "action": null,
+    "issues": [
+      171
+    ],
+    "published": false
+  },
+  {
+    "key": "2026-10-05-flytta",
+    "version": "sha-f788743",
+    "date": "2026-10-05",
+    "category": "nytt",
+    "title": "Flytta utrustning och kabeländar",
+    "body": "I en plan kan du flytta utrustning till ett annat rack eller en annan site, och flytta en kabels ände till en annan site.",
+    "action": null,
+    "issues": [
+      187
+    ],
+    "published": false
+  },
+  {
+    "key": "2026-10-09-panelbilder",
+    "version": "sha-30b212d",
+    "date": "2026-10-09",
+    "category": "förbättrat",
+    "title": "Bilder av utrustningens front och baksida",
+    "body": "Utrustning visas med en bild av fronten och baksidan där modellen har en, och portarna är klickbara på bilden.",
+    "action": null,
+    "issues": [
+      214
+    ],
+    "published": false
+  },
+  {
+    "key": "2026-10-09-kallor",
+    "version": "sha-2f80195",
+    "date": "2026-10-09",
+    "category": "nytt",
+    "title": "Se vilka källsystem som rapporterat ett objekt",
+    "body": "Objektets panel visar vilka källsystem som har rapporterat det, när och med vilka värden, och vilken källa som äger vilket fält.",
+    "action": null,
+    "issues": [
+      215
+    ],
+    "published": false
+  },
+  {
+    "key": "2026-10-10-kanalisation",
+    "version": "sha-af61209",
+    "date": "2026-10-10",
+    "category": "nytt",
+    "title": "Kanalisation i kartan",
+    "body": "Kartan visar trasésträckor med dukter och subdukter. En sträcka visar sitt tvärsnitt, och en kabel visar vägen den tar genom kanalisationen.",
+    "action": null,
+    "issues": [
+      234,
+      235,
+      236,
+      243
+    ],
+    "published": false
+  },
+  {
+    "key": "2026-10-10-schakt",
+    "version": "sha-1604e85",
+    "date": "2026-10-10",
+    "category": "nytt",
+    "title": "Vad ett schakt genom en sträcka påverkar",
+    "body": "För en trasésträcka ser du vilka kablar, kretsar och tjänster som påverkas om någon gräver av den. Planerade schakt visar vilka sträckor de korsar.",
+    "action": null,
+    "issues": [
+      237
+    ],
+    "published": false
+  },
+  {
+    "key": "2026-10-10-kapacitet",
+    "version": "sha-a8b39b9",
+    "date": "2026-10-10",
+    "category": "nytt",
+    "title": "Ledig kapacitet i rör och fibrer",
+    "body": "Fibrer kan markeras som mörka, uthyrda eller reserv i en plan, och tända fibrer räknas fram. Du ser hur mycket plats som är ledig i rör och kablar.",
+    "action": null,
+    "issues": [
+      238
+    ],
+    "published": false
+  },
+  {
+    "key": "2026-10-10-avstamning",
+    "version": "sha-76fac68",
+    "date": "2026-10-10",
+    "category": "nytt",
+    "title": "Stäm av mot källsystemen",
+    "body": "En export från ett källsystem kan jämföras med CMDB:n. Skillnader i siter, utrustning, kablar, kopplingar, kretsar och tjänster blir en plan att granska, och det som källan är betrodd med förs in direkt.",
+    "action": null,
+    "issues": [
+      216,
+      230
+    ],
+    "published": false
+  },
+  {
+    "key": "2026-10-10-sok-efter-import",
+    "version": "sha-75d3467",
+    "date": "2026-10-10",
+    "category": "rättat",
+    "title": "Sökningen är snabb även efter stora inläsningar",
+    "body": "Snabbsöket kunde bli långsamt efter att ett helt nät lästs in. Nu byggs sökindexen om efteråt.",
+    "action": null,
+    "issues": [
+      245
+    ],
+    "published": false
+  },
+  {
+    "key": "2026-10-11-ikoner",
+    "version": "sha-b36b5ac",
+    "date": "2026-10-11",
+    "category": "förbättrat",
+    "title": "Ikoner för allt som finns i nätet",
+    "body": "Siter, platser, utrustning, kablar, kretsar, tjänster och planer har egna ikoner överallt där de nämns. Platsens typ står på svenska i innehållsträdet.",
+    "action": null,
+    "issues": [
+      249
+    ],
+    "published": false
+  },
+  {
+    "key": "2026-10-11-agenter-planer",
+    "version": "sha-a0dfa1d",
+    "date": "2026-10-11",
+    "category": "förbättrat",
+    "title": "AI-agenter föreslår fler sorters ändringar",
+    "body": "AI-agenter kan nu föreslå nya platser, kort, tjänster och kretsar och koppla kretsar till varandra i en plan, som en människa sedan granskar.",
+    "action": null,
+    "issues": [
+      268
+    ],
+    "published": false
   }
 ]
