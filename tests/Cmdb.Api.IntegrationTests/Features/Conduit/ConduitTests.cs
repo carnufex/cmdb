@@ -102,6 +102,8 @@ public sealed class ConduitTests(ApiFactory factory)
             WHERE EXISTS (SELECT 1 FROM conductor k JOIN conductor_end e ON e.conductor_id = k.id JOIN circuit_hop h ON h.terminal_id = e.terminal_id WHERE k.cable_id = p.cable_id)
             GROUP BY ds.route_segment_id ORDER BY count(*) DESC, ds.route_segment_id LIMIT 1
             """);
+        // The budget is for warm calls (docs/plan.md): the first one pays for JIT and cold caches (#273).
+        await client.GetFromJsonAsync<Cmdb.Api.Features.Objects.Impact>($"/api/route-segments/{segment}/impact", Ct);
         var impact = (await client.GetFromJsonAsync<Cmdb.Api.Features.Objects.Impact>($"/api/route-segments/{segment}/impact", Ct))!;
         impact.Cables!.Count.ShouldBeGreaterThan(1);
         impact.ElapsedMs.ShouldBeLessThan(200);
