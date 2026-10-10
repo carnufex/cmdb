@@ -10,16 +10,16 @@ namespace Cmdb.DataGen;
 /// hub and access branches around each aggregation site. The topology is random within a coarse outline of
 /// the country and does not follow any real network. See issue #6.
 /// </summary>
-internal sealed class NetworkBuilder
+internal sealed partial class NetworkBuilder
 {
     private const int MaxBranchDepth = 3;
-    private static readonly int[] FiberSizes = [12, 24, 48, 96, 144, 288];
     private static readonly string[] FiberColors =
         ["blå", "orange", "grön", "brun", "grå", "vit", "röd", "svart", "gul", "violett", "rosa", "turkos"];
 
     private readonly Random _rng;
     private readonly Scale _scale;
     private readonly TypeCatalog _catalog;
+    private readonly CatalogProfile _profile;
     private readonly Territory _territory = new();
     private readonly Network _net = new();
     private readonly Dictionary<(string Type, string? Slot), PortLayout> _layouts = [];
@@ -39,6 +39,8 @@ internal sealed class NetworkBuilder
         _rng = new Random(seed);
         _scale = scale;
         _catalog = catalog;
+        _profile = new CatalogProfile(catalog);
+        _net.Catalog = catalog;
         _net.Terminals = 0;
     }
 
@@ -76,6 +78,11 @@ internal sealed class NetworkBuilder
         public List<Equipment> Chassis { get; } = [];
         public List<long> FreeRouterPorts { get; } = [];
         public int NextCardSlot { get; set; }
+
+        // Generic network (#219): the site's active equipment, filled port by port.
+        public List<Equipment> Devices { get; } = [];
+        public int NextDevicePort { get; set; }
+        public long RingStart { get; set; }
     }
 
     private Network Run()
@@ -83,47 +90,57 @@ internal sealed class NetworkBuilder
         var hubs = PlaceHubs();
         var aggregations = PlaceAggregations(hubs);
         var access = PlaceAccess(aggregations);
-        BuildBranches(aggregations, access);
+        // A generic catalog's largest fibre bounds how many sites a branch can serve, one fibre each (#219).
+        BuildBranches(aggregations, access, _profile.Synthetic ? int.MaxValue : _profile.Fibres[^1].ConductorCount);
         ClassifyAccess(access);
         var rings = BuildRings(hubs, aggregations);
         var backbone = BuildBackbone(hubs);
 
         foreach (var site in _net.Sites)
         {
-            EquipSite(site);
+            if (_profile.Synthetic)
+            {
+                EquipSite(site);
+            }
+            else
+            {
+                EquipGeneric(site);
+            }
         }
+        var backboneType = _profile.Fibres[^1];
+        var ringType = _profile.Fibre(96);
 
         // ODFs are sized for everything that terminates on the site, so cables share them.
         foreach (var (a, b) in backbone)
         {
-            _state[a.Id].OdfNeed += 288;
-            _state[b.Id].OdfNeed += 288;
+            _state[a.Id].OdfNeed += backboneType.ConductorCount;
+            _state[b.Id].OdfNeed += backboneType.ConductorCount;
         }
         foreach (var site in rings.SelectMany(r => r))
         {
-            _state[site.Id].OdfNeed += 2 * 96;
+            _state[site.Id].OdfNeed += 2 * ringType.ConductorCount;
         }
         foreach (var site in access)
         {
-            var size = _catalog.FindCable(FiberCable(2 * Links(site)))!.ConductorCount;
+            var size = _profile.Fibre(2 * Links(site)).ConductorCount;
             _state[site.Id].OdfNeed += site.Kind == SiteKind.Splice ? 0 : size;
             _state[site.Parent!.Id].OdfNeed += site.Parent.Kind == SiteKind.Splice ? 0 : size;
         }
 
         // Cables: backbone, rings, access branches (child to parent), then copper distribution.
-        var backboneCables = backbone.Select(e => NewCable("fiber-288", e.A, e.B)).ToList();
+        var backboneCables = backbone.Select(e => NewCable(backboneType.Key, e.A, e.B)).ToList();
         var ringCables = rings.Select(ring => Enumerable.Range(0, ring.Count)
-            .Select(i => NewCable("fiber-96", ring[i], ring[(i + 1) % ring.Count]))
+            .Select(i => NewCable(ringType.Key, ring[i], ring[(i + 1) % ring.Count]))
             .ToList()).ToList();
         foreach (var site in access)
         {
-            site.Uplink = NewCable(FiberCable(2 * Links(site)), site, site.Parent!);
+            site.Uplink = NewCable(_profile.Fibre(2 * Links(site)).Key, site, site.Parent!);
         }
         foreach (var site in access.Where(s => s.Kind == SiteKind.Cabinet && s.Depth >= 2))
         {
-            if (_rng.NextDouble() < 0.1)
+            if (_rng.NextDouble() < 0.1 && _profile.Copper is { } copper)
             {
-                NewCable("copper-50", site, site.Parent!, terminate: false);
+                NewCable(copper.Key, site, site.Parent!, terminate: false);
             }
         }
         foreach (var site in access.Where(s => s.Kind == SiteKind.Splice))
@@ -133,7 +150,14 @@ internal sealed class NetworkBuilder
 
         for (var i = 0; i < backbone.Count; i++)
         {
-            WireBackbone(backbone[i].A, backbone[i].B, backboneCables[i]);
+            if (_profile.Synthetic)
+            {
+                WireBackbone(backbone[i].A, backbone[i].B, backboneCables[i]);
+            }
+            else
+            {
+                WireBackboneGeneric(backbone[i].A, backbone[i].B, backboneCables[i]);
+            }
         }
         for (var r = 0; r < rings.Count; r++)
         {
@@ -141,7 +165,14 @@ internal sealed class NetworkBuilder
         }
         foreach (var site in access)
         {
-            WireAccess(site);
+            if (_profile.Synthetic)
+            {
+                WireAccess(site);
+            }
+            else
+            {
+                WireAccessGeneric(site);
+            }
         }
         return _net;
     }
@@ -215,8 +246,11 @@ internal sealed class NetworkBuilder
         return access;
     }
 
-    /// <summary>Each access site hangs off the nearest already connected site of its aggregation, at most three hops out.</summary>
-    private static void BuildBranches(List<Site> aggregations, List<Site> access)
+    /// <summary>
+    /// Each access site hangs off the nearest already connected site of its aggregation, at most three hops out, and only
+    /// where the branch it joins serves fewer than <paramref name="capacity"/> sites.
+    /// </summary>
+    private static void BuildBranches(List<Site> aggregations, List<Site> access, int capacity)
     {
         var byAggregation = access.GroupBy(s => s.Aggregation!.Id).ToDictionary(g => g.Key, g => g.ToList());
         foreach (var aggregation in aggregations)
@@ -226,10 +260,21 @@ internal sealed class NetworkBuilder
                 continue;
             }
             var connected = new List<Site> { aggregation };
+            var load = new Dictionary<Site, int>();
+            Site Root(Site s)
+            {
+                while (s.Parent != aggregation)
+                {
+                    s = s.Parent!;
+                }
+                return s;
+            }
             foreach (var site in members.OrderBy(s => s.DistanceTo(aggregation)).ThenBy(s => s.Id))
             {
-                var parent = connected.Where(c => c.Depth < MaxBranchDepth).MinBy(site.DistanceTo)!;
+                var parent = connected.Where(c => c.Depth < MaxBranchDepth && (c == aggregation || load[Root(c)] < capacity)).MinBy(site.DistanceTo)!;
                 site.Parent = parent;
+                var root = parent == aggregation ? site : Root(parent);
+                load[root] = load.GetValueOrDefault(root) + 1;
                 site.Depth = parent.Depth + 1;
                 parent.Children.Add(site);
                 connected.Add(site);
@@ -271,6 +316,7 @@ internal sealed class NetworkBuilder
             var n = NextCode(prefix);
             site.Code = $"{prefix}-{n:000000}";
             site.Name = $"{name} {n}";
+            site.SiteType = _profile.SiteType(site.Kind);
         }
     }
 
@@ -340,20 +386,7 @@ internal sealed class NetworkBuilder
             return;
         }
 
-        var (building, room, racks) = site.Kind switch
-        {
-            SiteKind.Hub => ("Byggnad A", "Nodrum", 6),
-            SiteKind.Aggregation => ("Byggnad A", "Nodrum", 3),
-            SiteKind.Radio => ("Teknikbod", "Utrustningsrum", 1),
-            _ => ("Skåp", "Skåpsutrymme", 1),
-        };
-        var buildingId = NewLocation(site, null, "building", building, null);
-        var roomId = NewLocation(site, buildingId, "room", room, null);
-        for (var r = 1; r <= racks; r++)
-        {
-            state.Racks.Add(NewLocation(site, roomId, "rack", $"Rack {r}", 42));
-        }
-        site.RackId = state.Racks[0];
+        Locate(site, state);
 
         switch (site.Kind)
         {
@@ -402,6 +435,25 @@ internal sealed class NetworkBuilder
             default:
                 break;
         }
+    }
+
+    /// <summary>A building, a room and racks: six on a hub, three on an aggregation node, one elsewhere.</summary>
+    private void Locate(Site site, SiteState state)
+    {
+        var (building, room, racks) = site.Kind switch
+        {
+            SiteKind.Hub => ("Byggnad A", "Nodrum", 6),
+            SiteKind.Aggregation => ("Byggnad A", "Nodrum", 3),
+            SiteKind.Radio => ("Teknikbod", "Utrustningsrum", 1),
+            _ => ("Skåp", "Skåpsutrymme", 1),
+        };
+        var buildingId = NewLocation(site, null, "building", building, null);
+        var roomId = NewLocation(site, buildingId, "room", room, null);
+        for (var r = 1; r <= racks; r++)
+        {
+            state.Racks.Add(NewLocation(site, roomId, "rack", $"Rack {r}", 42));
+        }
+        site.RackId = state.Racks[0];
     }
 
     private void EquipRadio(Site site, SiteState state)
@@ -526,7 +578,8 @@ internal sealed class NetworkBuilder
             ParentId = parentId,
             Slot = slot,
             Name = $"{site.Code} {type.Model} {n}",
-            Attributes = Attributes.For(typeKey, type.Category, id, site, _rng, sector, label),
+            Attributes = _profile.Synthetic ? Attributes.For(typeKey, type.Category, id, site, _rng, sector, label)
+                : SchemaAttributes.For(type.Attributes, id, site, _rng, label),
             Lifecycle = site.Lifecycle,
             FirstTerminal = _net.Terminals + 1,
             Layout = layout,
@@ -538,10 +591,10 @@ internal sealed class NetworkBuilder
 
     // ---------------------------------------------------------------- cables
 
-    private static int Links(Site site) =>
-        (site.Kind switch { SiteKind.Radio => 2, SiteKind.Cabinet => 1, _ => 0 }) + site.Children.Sum(Links);
-
-    private static string FiberCable(int needed) => $"fiber-{FiberSizes.First(s => s >= Math.Max(needed, 24))}";
+    /// <summary>Fibres a site and its branch need: two for a radio site and one for a cabinet, one per site in the generic network.</summary>
+    private int Links(Site site) =>
+        (site.Kind switch { SiteKind.Splice => 0, _ when !_profile.Synthetic => 1, SiteKind.Radio => 2, SiteKind.Cabinet => 1, _ => 0 })
+        + site.Children.Sum(Links);
 
     private Cable NewCable(string typeKey, Site a, Site b, bool terminate = true)
     {
@@ -598,7 +651,9 @@ internal sealed class NetworkBuilder
             if (state.Odf is null || state.NextOdfPort >= state.Odf.Ports.Count)
             {
                 var remaining = Math.Max(state.OdfNeed, count - i);
-                state.Odf = Add(site, remaining >= 96 ? "acme-odf-96" : remaining > 24 ? "acme-odf-48" : "acme-odf-24", label: $"ODF {site.Code}");
+                var odf = !_profile.Synthetic ? _profile.Termination(remaining).Key
+                    : remaining >= 96 ? "acme-odf-96" : remaining > 24 ? "acme-odf-48" : "acme-odf-24";
+                state.Odf = Add(site, odf, label: $"ODF {site.Code}");
                 state.NextOdfPort = 0;
             }
             ports[i] = state.Odf.TerminalAt(state.NextOdfPort++);
@@ -747,8 +802,9 @@ internal sealed class NetworkBuilder
             path.Add(ring[0]);
 
             var hops = new List<long>();
-            var arrive = Traverse(path, pathCables, state.Router!.Terminal("xe-0/1/1"), hops, site);
-            var hubPort = HubPort(ring[0]);
+            var start = _profile.Synthetic ? state.Router!.Terminal("xe-0/1/1") : state.RingStart = DevicePort(site);
+            var arrive = Traverse(path, pathCables, start, hops, site);
+            var hubPort = _profile.Synthetic ? HubPort(ring[0]) : DevicePort(ring[0]);
             Connect(arrive, hubPort, ConnectionKind.Patch, ring[0]);
             hops.Add(hubPort);
             state.HubPort = hubPort;
@@ -837,7 +893,7 @@ internal sealed class NetworkBuilder
 
     private Site NewSite(SiteKind kind, double x, double y, string code, string name)
     {
-        var site = new Site { Id = _net.Sites.Count + 1, Code = code, Name = name, Kind = kind, X = x, Y = y };
+        var site = new Site { Id = _net.Sites.Count + 1, Code = code, Name = name, Kind = kind, X = x, Y = y, SiteType = _profile.SiteType(kind) };
         _net.Sites.Add(site);
         return site;
     }

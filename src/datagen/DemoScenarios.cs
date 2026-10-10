@@ -22,8 +22,13 @@ public static class DemoScenarios
     public const string Contractor = "Markentreprenad Exempel AB";
     public const int BatteryYear = 2013;
 
-    public static async Task SeedAsync(NpgsqlConnection conn, TextWriter log, CancellationToken ct)
+    public static async Task SeedAsync(NpgsqlConnection conn, TextWriter log, CancellationToken ct, Cmdb.Catalog.TypeCatalog? catalog = null)
     {
+        // Site types and the battery by role (#219), so a catalog with its own names gets the scenarios too.
+        catalog ??= Cmdb.Catalog.TypeCatalog.Current;
+        var hubs = Sql(catalog.SiteTypesWith(Cmdb.Catalog.CatalogRoles.Hub));
+        var aggregations = Sql(catalog.SiteTypesWith(Cmdb.Catalog.CatalogRoles.Aggregation));
+        var power = Sql(catalog.CategoriesWith(Cmdb.Catalog.CatalogRoles.Power));
         await using var tx = await conn.BeginTransactionAsync(ct);
 
         // Run again: take the previous backups away first.
@@ -47,8 +52,8 @@ public static class DemoScenarios
             CREATE INDEX ON passes (site_id);
             CREATE INDEX ON passes (circuit_id);
             """, ct);
-        var station = await RowAsync(conn, """
-            SELECT s.id, s.code FROM passes x JOIN site s ON s.id = x.site_id AND s.site_type = 'aggregation'
+        var station = await RowAsync(conn, $"""
+            SELECT s.id, s.code FROM passes x JOIN site s ON s.id = x.site_id AND s.site_type IN ({aggregations})
             GROUP BY s.id, s.code ORDER BY count(*) DESC, s.id LIMIT 1
             """, ct);
         if (station is null)
@@ -60,8 +65,8 @@ public static class DemoScenarios
         // Reserve power on the sites that would have it (#179): hubs a day, aggregation nodes eight hours, and the station only two,
         // which is what makes it fall short of the requirements of the critical level.
         await ExecAsync(conn, $$"""
-            UPDATE site SET attributes = attributes || jsonb_build_object('backupHours', CASE site_type WHEN 'hub' THEN 24 ELSE 8 END)
-            WHERE site_type IN ('hub', 'aggregation');
+            UPDATE site SET attributes = attributes || jsonb_build_object('backupHours', CASE WHEN site_type IN ({{hubs}}) THEN 24 ELSE 8 END)
+            WHERE site_type IN ({{hubs}}) OR site_type IN ({{aggregations}});
             UPDATE site SET attributes = attributes || '{"backupHours": 2}'::jsonb WHERE id = {{stationId}};
             """, ct);
 
@@ -153,12 +158,16 @@ public static class DemoScenarios
         await ExecAsync(conn, $$"""
             UPDATE equipment SET attributes = attributes - 'installationYear' WHERE attributes ? 'installationYear';
             UPDATE equipment SET attributes = attributes || '{"installationYear": {{BatteryYear}}}'::jsonb
-            WHERE id = (SELECT e.id FROM equipment e JOIN equipment_type t ON t.id = e.equipment_type_id AND t.key = 'acme-bat-100'
-                        ORDER BY e.site_id <> {{stationId}}, e.id LIMIT 1);
+            WHERE id = (SELECT e.id FROM equipment e JOIN equipment_type t ON t.id = e.equipment_type_id AND t.category IN ({{power}})
+                        ORDER BY t.key <> 'acme-bat-100', e.site_id <> {{stationId}}, e.id LIMIT 1);
             """, ct);
         await tx.CommitAsync(ct);
         log.WriteLine($"  scenarios  {Station} = {stationCode}, false backup {falseBackup[2]}, backup {trueBackup[2]}");
     }
+
+    /// <summary>Catalog keys as an SQL list; NULL for none, which matches nothing.</summary>
+    private static string Sql(IEnumerable<string> keys) =>
+        keys.Any() ? string.Join(", ", keys.Select(k => "'" + k.Replace("'", "''", StringComparison.Ordinal) + "'")) : "NULL";
 
     /// <summary>A second logical circuit for the service, on the given physical carrier and along its hops.</summary>
     private static Task BackupAsync(NpgsqlConnection conn, long service, string serviceCode, long carrier, CancellationToken ct) =>
