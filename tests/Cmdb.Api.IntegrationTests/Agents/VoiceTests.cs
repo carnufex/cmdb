@@ -283,6 +283,37 @@ public sealed partial class VoiceTests(ApiFactory factory)
     }
 
     [Fact]
+    public async Task Each_voice_endpoint_takes_only_its_own_secret_and_its_own_agent()
+    {
+        // One secret and one agent id per endpoint (#181).
+        await using var api = factory.WithWebHostBuilder(b => b
+            .UseSetting("Voice:Secrets:Noc", "noc-secret").UseSetting("Voice:Secrets:ServiceDesk", "desk-secret").UseSetting("Voice:Secrets:It", "it-secret")
+            .UseSetting("Voice:Agents:Noc", "agent_noc").UseSetting("Voice:Agents:ServiceDesk", "agent_desk").UseSetting("Voice:Agents:It", "agent_it"));
+        async Task<HttpStatusCode> Status(string path, string secret, string? agent)
+        {
+            using var http = Http(api, NewCall(), secret);
+            if (agent is not null)
+            {
+                http.DefaultRequestHeaders.Add("X-Agent-Id", agent);
+            }
+            using var body = new StringContent("""{"jsonrpc":"2.0","id":1,"method":"tools/list"}""", System.Text.Encoding.UTF8, "application/json");
+            using var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = body };
+            request.Headers.Accept.ParseAdd("application/json");
+            request.Headers.Accept.ParseAdd("text/event-stream");
+            return (await http.SendAsync(request, Ct)).StatusCode;
+        }
+        foreach (var (path, secret, agent) in new[] { ("/voice/mcp", "noc-secret", "agent_noc"), ("/voice/servicedesk/mcp", "desk-secret", "agent_desk"), ("/voice/it/mcp", "it-secret", "agent_it") })
+        {
+            (await Status(path, secret, agent)).ShouldBe(HttpStatusCode.OK, path);
+            // Another endpoint's secret, the old shared one, another agent, or none: refused.
+            (await Status(path, secret == "noc-secret" ? "it-secret" : "noc-secret", agent)).ShouldBe(HttpStatusCode.Unauthorized, path);
+            (await Status(path, ApiFactory.VoiceSecret, agent)).ShouldBe(HttpStatusCode.Unauthorized, path);
+            (await Status(path, secret, agent == "agent_noc" ? "agent_desk" : "agent_noc")).ShouldBe(HttpStatusCode.Unauthorized, path);
+            (await Status(path, secret, null)).ShouldBe(HttpStatusCode.Unauthorized, path);
+        }
+    }
+
+    [Fact]
     public async Task Each_voice_agent_gets_only_its_own_tools()
     {
         var (_, api) = await NetworkFixture.WithScenariosAsync(factory);
