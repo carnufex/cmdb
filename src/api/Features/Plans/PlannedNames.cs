@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Cmdb.Api.Features.Objects;
 using Cmdb.Api.Features.Trace;
 using Cmdb.Catalog;
@@ -60,6 +61,15 @@ public sealed class PlannedNames
                 case "create_site":
                     names.Objects[("site", id)] = new ObjectRef("site", id, p.GetProperty("code").GetString()!, p.GetProperty("name").GetString(), "planned");
                     break;
+                case "create_location":
+                    names.Objects[("location", id)] = new ObjectRef("location", id, p.GetProperty("name").GetString()!, p.GetProperty("kind").GetString(), "planned");
+                    break;
+                case "create_service":
+                    names.Objects[("service", id)] = new ObjectRef("service", id, p.GetProperty("code").GetString()!, p.GetProperty("name").GetString(), "planned");
+                    break;
+                case "create_circuit":
+                    names.Objects[("circuit", id)] = new ObjectRef("circuit", id, p.GetProperty("code").GetString()!, p.GetProperty("layer").GetString(), "planned");
+                    break;
                 case "create_equipment":
                     {
                         var name = p.GetProperty("name").GetString()!;
@@ -69,7 +79,8 @@ public sealed class PlannedNames
                         names._equipmentSites[id] = site;
                         if (TypeCatalog.Current.Find(p.GetProperty("typeKey").GetString()!) is { } type)
                         {
-                            foreach (var port in PortExpansion.Expand(type))
+                            var slot = p.TryGetProperty("slot", out var s) && s.ValueKind == JsonValueKind.String ? s.GetString() : null;
+                            foreach (var port in PortExpansion.Expand(type, slot))
                             {
                                 var terminal = Planned.Terminal(op.Id, port.Position);
                                 names.Terminals[terminal] = new TraceHop(terminal, "port", null, $"{name} · {port.Name} (planerad)", equipment, null, site, null);
@@ -135,6 +146,12 @@ public sealed class PlannedNames
                 {
                     var site = Objects[("site", id)];
                     return ($"Ny site {site.Code} {site.Name} ({p.GetProperty("siteType").GetString()})", site);
+                }
+            case "create_location" or "create_service" or "create_circuit":
+                {
+                    var type = op.Kind["create_".Length..];
+                    var created = Objects[(type, id)];
+                    return (NetworkLinks.Text(op, (t, x) => Objects.TryGetValue((t, x), out var o) ? o.Code : $"#{x}"), created);
                 }
             case "create_equipment":
                 {

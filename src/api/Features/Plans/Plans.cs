@@ -138,6 +138,36 @@ public sealed class AddOperationRequest
 
     /// <summary>set_conductor_usage: dark, dark_fibre or spare; null clears what was stated.</summary>
     public string? Usage { get; set; }
+
+    /// <summary>create_equipment: the equipment a card sits in (#230); create_location: the parent location.</summary>
+    public long? ParentId { get; set; }
+
+    /// <summary>create_equipment: the slot a card sits in.</summary>
+    public string? Slot { get; set; }
+
+    /// <summary>create_location: building, room, rack or position.</summary>
+    public string? LocationKind { get; set; }
+
+    /// <summary>create_location: a rack's height in units.</summary>
+    public int? RackUnits { get; set; }
+
+    /// <summary>create_service: the service type.</summary>
+    public string? ServiceType { get; set; }
+
+    /// <summary>create_circuit: physical, transmission or logical.</summary>
+    public string? Layer { get; set; }
+
+    /// <summary>create_circuit, set_circuit_path: the terminals in order, existing or planned.</summary>
+    public long[]? Hops { get; set; }
+
+    /// <summary>link_circuit: the circuit the circuit (objectId) rides on.</summary>
+    public long? CarrierId { get; set; }
+
+    /// <summary>link_service: the circuit the service (objectId) runs on.</summary>
+    public long? CircuitId { get; set; }
+
+    /// <summary>link_circuit, link_service: take the link away instead of adding it.</summary>
+    public bool Remove { get; set; }
 }
 
 public sealed class AddOperationValidator : Validator<AddOperationRequest>
@@ -226,11 +256,13 @@ public sealed class AddOperationValidator : Validator<AddOperationRequest>
         });
         When(r => r.Kind == "create_equipment", () =>
         {
-            RuleFor(r => r.SiteId).NotNull().NotEqual(0);
+            RuleFor(r => r.SiteId).NotNull().NotEqual(0).When(r => r.ParentId is null);
+            RuleFor(r => r.Slot).NotEmpty().MaximumLength(20).When(r => r.ParentId is not null);
             RuleFor(r => r.Name).NotEmpty().MaximumLength(200);
             RuleFor(r => r.Rack).MaximumLength(100);
             RuleFor(r => r.TypeKey).Must(k => k is not null && Cmdb.Catalog.TypeCatalog.Current.Find(k) is not null && !Cmdb.Catalog.TypeCatalog.Current.TypeHas(k, Cmdb.Catalog.CatalogRoles.Card))
-                .WithMessage("typeKey is an equipment model that is not a card (describe_catalog lists them).");
+                .When(r => r.ParentId is null)
+                .WithMessage("typeKey is an equipment model that is not a card (describe_catalog lists them); a card needs parentId and slot.");
         });
         When(r => r.Kind == "create_cable", () =>
         {
@@ -238,9 +270,43 @@ public sealed class AddOperationValidator : Validator<AddOperationRequest>
             RuleFor(r => r.BSiteId).NotNull().NotEqual(0).NotEqual(r => r.ASiteId).WithMessage("A cable joins two different sites.");
             RuleFor(r => r.TypeKey).Must(k => Planned.ConductorCount(k ?? "") > 0).WithMessage("typeKey is a cable type in the catalog.");
         });
+        When(r => r.Kind == "create_location", () =>
+        {
+            RuleFor(r => r.SiteId).NotNull().NotEqual(0);
+            RuleFor(r => r.LocationKind).Must(k => NetworkLinks.LocationKinds.Contains(k)).WithMessage("locationKind is building, room, rack or position.");
+            RuleFor(r => r.Name).NotEmpty().MaximumLength(200);
+            RuleFor(r => r.RackUnits).InclusiveBetween(1, 60).When(r => r.RackUnits is not null);
+        });
+        When(r => r.Kind == "create_service", () =>
+        {
+            RuleFor(r => r.Code).NotEmpty().MaximumLength(50);
+            RuleFor(r => r.Name).NotEmpty().MaximumLength(200);
+            RuleFor(r => r.ServiceType).NotEmpty().MaximumLength(50);
+        });
+        When(r => r.Kind == "create_circuit", () =>
+        {
+            RuleFor(r => r.Code).NotEmpty().MaximumLength(50);
+            RuleFor(r => r.Layer).Must(l => NetworkLinks.Layer(l) is not null).WithMessage("layer is physical, transmission or logical.");
+            RuleFor(r => r.Hops).Must(h => h is { Length: >= 2 and <= 10_000 }).WithMessage("hops is 2–10 000 terminals.");
+        });
+        When(r => r.Kind == "set_circuit_path", () =>
+        {
+            RuleFor(r => r.ObjectId).NotNull().NotEqual(0);
+            RuleFor(r => r.Hops).Must(h => h is { Length: >= 2 and <= 10_000 }).WithMessage("hops is 2–10 000 terminals.");
+        });
+        When(r => r.Kind == "link_circuit", () =>
+        {
+            RuleFor(r => r.ObjectId).NotNull().NotEqual(0);
+            RuleFor(r => r.CarrierId).NotNull().NotEqual(0);
+        });
+        When(r => r.Kind == "link_service", () =>
+        {
+            RuleFor(r => r.ObjectId).NotNull().NotEqual(0);
+            RuleFor(r => r.CircuitId).NotNull().NotEqual(0);
+        });
         When(r => r.Kind == "rename", () =>
         {
-            RuleFor(r => r.Type).Must(t => t is "site" or "equipment").WithMessage("type is site or equipment.");
+            RuleFor(r => r.Type).Must(t => t is "site" or "equipment" or "location").WithMessage("type is site, equipment or location.");
             RuleFor(r => r.ObjectId).NotNull();
             RuleFor(r => r.Name).NotEmpty().MaximumLength(200);
         });

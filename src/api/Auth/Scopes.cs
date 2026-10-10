@@ -193,9 +193,9 @@ public sealed class GraphMask
 
     public bool CableVisible(int cable) => cable >= Cables.Length || Cables[cable];
 
-    public bool CircuitVisible(int circuit) => Circuits[circuit];
+    public bool CircuitVisible(int circuit) => circuit >= Circuits.Length || Circuits[circuit];
 
-    public bool ServiceVisible(int service) => Services[service];
+    public bool ServiceVisible(int service) => service >= Services.Length || Services[service];
 }
 
 /// <summary>Builds and caches graph masks per scope combination, graph instance and registry version (#22).</summary>

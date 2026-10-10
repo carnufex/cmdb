@@ -116,6 +116,15 @@ public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views
             }
             payload = removal;
         }
+        else if (NetworkLinks.Kinds.Contains(req.Kind))
+        {
+            var (link, error) = await NetworkLinks.CheckAsync(db, scope, view, mask, req, ct);
+            if (link is null)
+            {
+                return PlanWrite.Fail<PlanOperationView>(PlanWriteFailure.Invalid, error!);
+            }
+            payload = link;
+        }
         else if (req.Kind == "set_conductor_usage")
         {
             var (usage, error) = await ConductorUsageAsync(scope, req, ct);
@@ -269,6 +278,17 @@ public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views
                         y = Math.Round(req.Y!.Value, 1),
                         attributes,
                     }, OmitNull), null);
+                }
+            case "create_equipment" when req.ParentId is { } parent:
+                {
+                    // A card (#230): in a free slot of equipment that takes its category, at the parent's site.
+                    var slot = req.Slot!.Trim();
+                    var (cardSite, cardProblem) = await NetworkLinks.CardAsync(db, scope, view, parent, slot, req.TypeKey!, ct);
+                    if (cardSite is null)
+                    {
+                        return (null, cardProblem);
+                    }
+                    return (System.Text.Json.JsonSerializer.Serialize(new { site = cardSite, typeKey = req.TypeKey, name = req.Name!.Trim(), parent, slot }), null);
                 }
             case "create_equipment":
                 {
@@ -784,6 +804,8 @@ public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views
         cmd.Parameters.Add(new() { Value = siteType });
         return (bool)(await cmd.ExecuteScalarAsync(ct))!;
     }
+
+    internal static bool NodeVisible(Cmdb.Graph.Graph g, GraphMask mask, int node) => Visible(g, mask, node);
 
     private static bool Visible(Cmdb.Graph.Graph g, GraphMask mask, int node)
     {

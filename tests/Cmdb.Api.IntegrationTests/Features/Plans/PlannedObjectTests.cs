@@ -475,6 +475,78 @@ public sealed class PlannedObjectTests(ApiFactory factory)
         (await Scalar(db, $"SELECT site_id FROM equipment WHERE id = {switchId}")).ShouldBe(site);
     }
 
+    [Fact]
+    public async Task Locations_cards_services_circuits_and_their_links_are_planned_and_applied()
+    {
+        var (db, api) = await NetworkAsync(47);
+        await using var dbScope = db;
+        await using var apiScope = api;
+        using var client = NetworkFixture.Client(api);
+        var plan = await CreateAsync(client, "Nät från källsystem");
+
+        // A room and a rack in it, on a hub.
+        var hub = await Scalar(db, "SELECT min(id) FROM site WHERE site_type = 'hub'");
+        var room = (await AddAsync(client, plan.Id, new { kind = "create_location", siteId = hub, locationKind = "room", name = "Rum 9" })).Target!.Id;
+        var rack = await AddAsync(client, plan.Id, new { kind = "create_location", siteId = hub, parentId = room, locationKind = "rack", name = "Rack 9", rackUnits = 42 });
+        rack.Summary.ShouldContain("Rack 9");
+
+        // A card in a free slot of a chassis; a slot that is taken or missing is refused.
+        var chassis = await Scalar(db, "SELECT min(e.id) FROM equipment e JOIN equipment_type t ON t.id = e.equipment_type_id AND t.key = 'acme-cr-8'");
+        var taken = await Text(db, $"SELECT min(slot) FROM equipment WHERE parent_id = {chassis}");
+        var free = Enumerable.Range(1, 8).Select(n => n.ToString(System.Globalization.CultureInfo.InvariantCulture)).First(s => s != taken
+            && Scalar(db, $"SELECT count(*) FROM equipment WHERE parent_id = {chassis} AND slot = '{s}'").Result == 0);
+        (await client.PostAsJsonAsync($"/api/plans/{plan.Id}/operations", new { kind = "create_equipment", parentId = chassis, slot = taken, typeKey = "acme-lc-24x", name = "Kort X" }, Ct))
+            .StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await client.PostAsJsonAsync($"/api/plans/{plan.Id}/operations", new { kind = "create_equipment", parentId = chassis, slot = "99", typeKey = "acme-lc-24x", name = "Kort X" }, Ct))
+            .StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        var card = await AddAsync(client, plan.Id, new { kind = "create_equipment", parentId = chassis, slot = free, typeKey = "acme-lc-24x", name = "Kort X" });
+        card.Problem.ShouldBeNull();
+
+        // A service on a new circuit between two free ports, riding on an existing physical circuit.
+        var (site, _) = await SiteWithFreePortAsync(db);
+        var ports = await FreePortsAsync(db, site, 2);
+        var carrier = await Scalar(db, "SELECT min(id) FROM circuit WHERE layer = 'physical'");
+        var service = (await AddAsync(client, plan.Id, new { kind = "create_service", code = "TJ-KALLA-1", name = "Från källan", serviceType = "ethernet" })).Target!.Id;
+        var circuit = (await AddAsync(client, plan.Id, new { kind = "create_circuit", code = "LOG-KALLA-1", layer = "logical", hops = ports })).Target!.Id;
+        (await AddAsync(client, plan.Id, new { kind = "link_circuit", objectId = circuit, carrierId = carrier })).Problem.ShouldBeNull();
+        (await AddAsync(client, plan.Id, new { kind = "link_service", objectId = service, circuitId = circuit })).Summary.ShouldContain("TJ-KALLA-1");
+        (await client.PostAsJsonAsync($"/api/plans/{plan.Id}/operations", new { kind = "create_circuit", code = "LOG-KALLA-1", layer = "logical", hops = ports }, Ct))
+            .StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+
+        // An existing circuit's path changes: the same hops in reverse.
+        var existing = await Scalar(db, "SELECT min(circuit_id) FROM circuit_hop");
+        var path = (await Ids(db, $"SELECT terminal_id FROM circuit_hop WHERE circuit_id = {existing} ORDER BY seq")).AsEnumerable().Reverse().ToArray();
+        (await AddAsync(client, plan.Id, new { kind = "set_circuit_path", objectId = existing, hops = path })).Problem.ShouldBeNull();
+
+        var view = (await client.GetFromJsonAsync<PlanDiff>($"/api/plans/{plan.Id}/view", Ct))!;
+        view.Problems.ShouldBe(0);
+        (await client.PostAsync($"/api/plans/{plan.Id}/apply", null, Ct)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        await ApiFactory.GraphCaughtUpAsync(api.Services, db);
+
+        var realRack = await Scalar(db, "SELECT id FROM location WHERE name = 'Rack 9'");
+        (await Scalar(db, $"SELECT parent_id FROM location WHERE id = {realRack}")).ShouldBe(await Scalar(db, "SELECT id FROM location WHERE name = 'Rum 9'"));
+        (await Scalar(db, $"SELECT count(*) FROM port p JOIN equipment e ON e.id = p.equipment_id WHERE e.parent_id = {chassis} AND e.slot = '{free}'")).ShouldBeGreaterThan(0);
+        var realCircuit = await Scalar(db, "SELECT id FROM circuit WHERE code = 'LOG-KALLA-1'");
+        (await Ids(db, $"SELECT terminal_id FROM circuit_hop WHERE circuit_id = {realCircuit} ORDER BY seq")).ShouldBe(ports);
+        (await Scalar(db, $"SELECT count(*) FROM circuit_dependency WHERE circuit_id = {realCircuit} AND carrier_id = {carrier}")).ShouldBe(1);
+        (await Scalar(db, $"SELECT count(*) FROM service_circuit sc JOIN service s ON s.id = sc.service_id WHERE s.code = 'TJ-KALLA-1' AND sc.circuit_id = {realCircuit}")).ShouldBe(1);
+        (await Ids(db, $"SELECT terminal_id FROM circuit_hop WHERE circuit_id = {existing} ORDER BY seq")).ShouldBe(path);
+        var trace = await client.GetFromJsonAsync<System.Text.Json.JsonElement>($"/api/trace?service={await Scalar(db, "SELECT id FROM service WHERE code = 'TJ-KALLA-1'")}", Ct);
+        trace.ValueKind.ShouldBe(System.Text.Json.JsonValueKind.Object);
+    }
+
+    private static async Task<List<long>> Ids(NpgsqlDataSource db, string sql)
+    {
+        await using var cmd = db.CreateCommand(sql);
+        var ids = new List<long>();
+        await using var reader = await cmd.ExecuteReaderAsync(Ct);
+        while (await reader.ReadAsync(Ct))
+        {
+            ids.Add(reader.GetInt64(0));
+        }
+        return ids;
+    }
+
     private async Task<(NpgsqlDataSource Db, WebApplicationFactory<Program> Api)> NetworkAsync(int seed)
     {
         var db = await factory.NewDatabaseAsync();
