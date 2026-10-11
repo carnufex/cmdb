@@ -100,6 +100,58 @@ export interface NodeSuggestion {
   servicePointIds: number[];
 }
 
+/** POST /api/plans/{id}/distribution (#295) */
+export interface DistributionPlan {
+  points: {
+    number: number;
+    code: string;
+    x: number;
+    y: number;
+    servicePoints: number;
+    units: number;
+  }[];
+  cables: {
+    from: number;
+    to: number;
+    units: number;
+    fibres: number;
+    typeKey: string;
+    typeName: string;
+    conductors: number;
+    lengthM: number;
+    inConduitM: number;
+  }[];
+  lengthM: number;
+  units: number;
+  warnings: string[];
+  operations: number;
+  elapsedMs: number;
+}
+
+/** The cables of a distribution by type, largest first: how many and how long. */
+export function distributionTypes(
+  d: DistributionPlan,
+): { typeName: string; count: number; metres: number }[] {
+  const byType = new Map<
+    string,
+    { typeName: string; count: number; metres: number; conductors: number }
+  >();
+  for (const c of d.cables) {
+    const t = byType.get(c.typeKey) ?? {
+      typeName: c.typeName,
+      count: 0,
+      metres: 0,
+      conductors: c.conductors,
+    };
+    t.count++;
+    t.metres += c.lengthM;
+    byType.set(c.typeKey, t);
+  }
+  return [...byType.values()]
+    .sort((a, b) => b.conductors - a.conductors)
+    .map(({ typeName, count, metres }) => ({ typeName, count, metres }));
+}
+
 /** A suggested node's site code: the project and the node's number, e.g. P12-N03. */
 export function nodeCode(project: number, n: number): string {
   return `P${project}-N${String(n).padStart(2, '0')}`;
@@ -340,8 +392,15 @@ export function costText(amount: number, currency: string): string {
                         Visa
                       </button>
                       @if (canWrite() && openStage(); as stage) {
-                        @if (placed().has(n.number)) {
-                          <span class="muted">I planen</span>
+                        @if (placed().get(n.number); as site) {
+                          <button
+                            type="button"
+                            class="text-button"
+                            [disabled]="busy()"
+                            (click)="distribute(stage, n, site)"
+                          >
+                            Fördelning
+                          </button>
                         } @else {
                           <button
                             type="button"
@@ -358,6 +417,37 @@ export function costText(amount: number, currency: string): string {
                 }
               </tbody>
             </table>
+          }
+          @if (distribution(); as d) {
+            <div class="distribution" role="status">
+              <h4>Fördelning från nod {{ d.node }}</h4>
+              <p>
+                {{ d.plan.points.length }} fördelningspunkter och {{ d.plan.cables.length }} kablar,
+                {{ d.plan.lengthM / 1000 | number: '1.1-1' }} km varav
+                {{ inConduit(d.plan) / 1000 | number: '1.1-1' }} km i befintlig kanalisation.
+                {{ d.plan.operations ? 'Lagt i planen.' : '' }}
+              </p>
+              <ul class="types">
+                @for (t of cableTypes(d.plan); track t.typeName) {
+                  <li>
+                    {{ t.count }} × {{ t.typeName }}, {{ t.metres / 1000 | number: '1.1-1' }} km
+                  </li>
+                }
+              </ul>
+              @for (w of d.plan.warnings; track $index) {
+                <p class="error">{{ w }}</p>
+              }
+              @if (!d.plan.operations) {
+                <button
+                  type="button"
+                  class="action"
+                  [disabled]="busy()"
+                  (click)="addDistribution(d)"
+                >
+                  Lägg i planen
+                </button>
+              }
+            </div>
           }
         } @else if (suggestions.error()) {
           <p class="error">Förslagen kunde inte räknas fram.</p>
@@ -482,6 +572,20 @@ export function costText(amount: number, currency: string): string {
     .error {
       color: var(--status-conflict);
     }
+    .distribution {
+      margin-top: var(--space-3);
+      padding: var(--space-2) var(--space-3);
+      border: var(--line);
+      border-radius: var(--radius-sm);
+      background: var(--surface-1);
+    }
+    .distribution h4 {
+      margin: 0 0 var(--space-1);
+    }
+    .types {
+      margin: 0 0 var(--space-2);
+      padding-left: var(--space-4);
+    }
     .suggest {
       display: flex;
       gap: var(--space-2);
@@ -525,8 +629,19 @@ export class ProjectPanelComponent {
     const f = this.suggestFor();
     return f ? `/api/projects/${f.id}/node-suggestions?capacity=${f.capacity}` : undefined;
   });
-  /** Suggestions put in the plan, by number. */
-  protected readonly placed = signal<ReadonlySet<number>>(new Set());
+  /** Suggestions put in the plan, by number: the planned site each became. */
+  protected readonly placed = signal<ReadonlyMap<number, number>>(new Map());
+  /** A placed node's distribution (#295), worked out or added. */
+  protected readonly distribution = signal<{
+    node: number;
+    stage: number;
+    site: number;
+    servicePoints: number[];
+    plan: DistributionPlan;
+  } | null>(null);
+  protected readonly inConduit = (d: DistributionPlan) =>
+    d.cables.reduce((sum, c) => sum + c.inConduitM, 0);
+  protected readonly cableTypes = distributionTypes;
   /** The first stage still a draft: where suggestions go. */
   protected readonly openStage = computed(() =>
     this.project.hasValue()
@@ -593,12 +708,14 @@ export class ProjectPanelComponent {
     this.selected.set(id);
     this.error.set(null);
     this.suggestFor.set(null);
-    this.placed.set(new Set());
+    this.placed.set(new Map());
+    this.distribution.set(null);
     this.map.clearMarks();
   }
 
   protected suggest(id: number): void {
-    this.placed.set(new Set());
+    this.placed.set(new Map());
+    this.distribution.set(null);
     this.suggestFor.set({ id, capacity: this.capacity() });
   }
 
@@ -606,16 +723,60 @@ export class ProjectPanelComponent {
   protected async place(p: ProjectDetail, stage: ProjectStage, n: NodeSuggestion): Promise<void> {
     const code = nodeCode(p.id, n.number);
     await this.run(async () => {
-      await firstValueFrom(
-        this.http.post(`/api/plans/${stage.plan.id}/templates`, {
-          templateKey: 'skap-access',
-          code,
-          name: `${p.name}, nod ${n.number}`,
-          x: n.x,
-          y: n.y,
+      const ops = await firstValueFrom(
+        this.http.post<{ kind: string; target: { id: number } | null }[]>(
+          `/api/plans/${stage.plan.id}/templates`,
+          {
+            templateKey: 'skap-access',
+            code,
+            name: `${p.name}, nod ${n.number}`,
+            x: n.x,
+            y: n.y,
+          },
+        ),
+      );
+      const site = ops.find((o) => o.kind === 'create_site')?.target?.id;
+      if (site !== undefined) {
+        this.placed.update((m) => new Map([...m, [n.number, site]]));
+      }
+    });
+  }
+
+  /** The node's distribution cables (#295), worked out first; added to the plan with the next button. */
+  protected async distribute(stage: ProjectStage, n: NodeSuggestion, site: number): Promise<void> {
+    await this.run(async () => {
+      const plan = await firstValueFrom(
+        this.http.post<DistributionPlan>(`/api/plans/${stage.plan.id}/distribution`, {
+          node: site,
+          servicePoints: n.servicePointIds,
+          dryRun: true,
         }),
       );
-      this.placed.update((s) => new Set([...s, n.number]));
+      this.distribution.set({
+        node: n.number,
+        stage: stage.plan.id,
+        site,
+        servicePoints: n.servicePointIds,
+        plan,
+      });
+    });
+  }
+
+  protected async addDistribution(d: {
+    node: number;
+    stage: number;
+    site: number;
+    servicePoints: number[];
+  }): Promise<void> {
+    await this.run(async () => {
+      const plan = await firstValueFrom(
+        this.http.post<DistributionPlan>(`/api/plans/${d.stage}/distribution`, {
+          node: d.site,
+          servicePoints: d.servicePoints,
+          dryRun: false,
+        }),
+      );
+      this.distribution.set({ ...d, plan });
     });
   }
 
