@@ -81,6 +81,20 @@ public sealed class OperationLogTests(ApiFactory factory)
         (await Scalar<long>(db, "SELECT count(*) FROM operation o WHERE o.hash IS NOT NULL AND o.hash <> sha256(coalesce(o.prev_hash, ''::bytea) || cmdb_operation_text(o))")).ShouldBe(1);
     }
 
+    [Fact]
+    public async Task A_load_with_its_scenarios_and_demo_plans_keeps_no_history_and_logs_the_generator()
+    {
+        var db = await factory.NewDatabaseAsync();
+        await Loader.LoadAsync(db, NetworkBuilder.Build(58, Scale.Small, TypeCatalog.Current), reset: false, TextWriter.Null, scenarios: true, ct: Ct);
+
+        foreach (var table in Cmdb.Database.OperationLog.HistoryTables)
+        {
+            (await Scalar<long>(db, $"SELECT count(*) FROM {table}_history")).ShouldBe(0, table);
+        }
+        (await Scalar<long>(db, "SELECT count(*) FROM operation WHERE actor <> 'datagen'")).ShouldBe(0);
+        (await Scalar<long>(db, "SELECT count(*) FROM operation")).ShouldBeGreaterThan(0);
+    }
+
     private async Task<NpgsqlDataSource> NetworkAsync(int seed)
     {
         var db = await factory.NewDatabaseAsync();
