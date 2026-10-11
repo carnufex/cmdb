@@ -15,6 +15,7 @@ import { firstValueFrom } from 'rxjs';
 import { MapView } from '../map/map-view';
 import { CatalogKinds } from '../shell/catalog-kinds';
 import { ActivePlan } from './active-plan';
+import { CableDrawing } from './cable-drawing';
 import { PlanDraft } from './plan-draft';
 import { NewOperation, PlanOperation, resolveSite, SiteChoice } from './plan-model';
 
@@ -242,6 +243,14 @@ export interface ImportResult {
           /></label>
           <button type="button" class="action" (click)="togglePicking()">
             {{ mapView.picking() ? 'Sluta välja i kartan' : 'Välj siterna i kartan' }}
+          </button>
+          <button
+            type="button"
+            class="action"
+            [disabled]="!siteA.trim() || busy()"
+            (click)="draw()"
+          >
+            Rita vägen i kartan från {{ siteA.trim() || 'A-änden' }}
           </button>
           @if (mapView.picking()) {
             <p class="muted" role="status">
@@ -519,6 +528,7 @@ export class PlanCreateComponent implements OnDestroy {
     (this.termination()?.sides ?? []).some((s) => s.fibres > 0),
   );
 
+  private readonly cableDrawing = inject(CableDrawing);
   protected readonly fields = httpResource<Fields>(() => '/api/query/fields');
   protected readonly templates = httpResource<Template[]>(() => '/api/templates');
   // Cards sit in slots, so they are not offered as equipment of their own (#208: by role).
@@ -602,6 +612,26 @@ export class PlanCreateComponent implements OnDestroy {
       const types = this.kinds.siteTypes();
       if (!this.siteType && types.length) {
         this.siteType = (types.find((t) => t.roles.includes('access')) ?? types[0]).key;
+      }
+    });
+    // A cable drawn in the map (#259) comes with a suggested termination, as one added here does.
+    let lastAdded = untracked(() => this.cableDrawing.added()?.seq ?? 0);
+    effect(() => {
+      const added = this.cableDrawing.added();
+      if (added && added.seq !== lastAdded) {
+        lastAdded = added.seq;
+        untracked(() => {
+          this.tab.set('cable');
+          void this.run(async () =>
+            this.termination.set(
+              await firstValueFrom(
+                this.http.get<Termination>(
+                  `/api/plans/${this.active.id()}/cables/${added.cableId}/termination`,
+                ),
+              ),
+            ),
+          );
+        });
       }
     });
     // Sites picked in the map fill the cable's ends in turn.
@@ -741,6 +771,15 @@ export class PlanCreateComponent implements OnDestroy {
       this.rackUnit = null;
       this.criticality = '';
       this.name = '';
+    });
+  }
+
+  /** The cable drawn in the map from the A site (#259), along the conduit, instead of a straight line. */
+  protected async draw(): Promise<void> {
+    await this.run(async () => {
+      const a = await this.siteId(this.siteA);
+      this.mapView.picking.set(false);
+      this.cableDrawing.start(a, `Ny kabel från ${this.siteA.trim()}`);
     });
   }
 

@@ -53,6 +53,8 @@ import { createBasemap, esriTileUrl, parseBasemap } from './map-basemap';
 import { createStyler, Palette, readPalette, statusColor } from './map-style';
 import { CurrentUser } from '../shell/current-user';
 import { ContextMenuComponent } from './context-menu';
+import { CableDrawingBarComponent } from './cable-drawing-bar';
+import { CableDrawing, CableRouteStep } from '../plans/cable-drawing';
 import { distanceText, MapActions } from './map-actions';
 import { MapTarget, MapView, Operations, PlannedObjects, Route } from './map-view';
 
@@ -78,7 +80,7 @@ interface Hover {
  */
 @Component({
   selector: 'cmdb-map',
-  imports: [StatusComponent, SelectionBarComponent, ContextMenuComponent],
+  imports: [StatusComponent, SelectionBarComponent, ContextMenuComponent, CableDrawingBarComponent],
   host: { '(document:keydown)': 'onKey($event)' },
   templateUrl: './map.html',
   styleUrl: './map.scss',
@@ -113,6 +115,9 @@ export class MapComponent {
   private placedLayer?: VectorLayer<VectorSource<Feature<Geometry>>>;
   private classification?: VectorLayer<VectorSource<Feature<Geometry>>>;
   private measureLayer?: VectorLayer<VectorSource<Feature<Geometry>>>;
+  /** A cable being drawn (#259): its route so far and its break points. */
+  private drawLayer?: VectorLayer<VectorSource<Feature<Geometry>>>;
+  private readonly cableDrawing = inject(CableDrawing);
   private measureEnd?: { x: number; y: number };
   /** A distance being measured or just measured (#258): the label by the pointer or the end point. */
   protected readonly measured = signal<{
@@ -223,7 +228,9 @@ export class MapComponent {
       }
     });
     effect(() => {
-      this.conduit?.setVisible(this.conduitShown());
+      // Read before the layer exists too: an optional call would skip the read and leave the effect with nothing to follow.
+      const shown = this.conduitShown();
+      this.conduit?.setVisible(shown);
     });
     // A point placed for a new site (#167): marked until the form takes it.
     effect(() => {
@@ -241,6 +248,21 @@ export class MapComponent {
       if (this.map) {
         this.target().nativeElement.style.cursor = placing ? 'crosshair' : '';
       }
+    });
+    // Drawing a cable (#259): the conduit shows, so its segments can be followed, and the route so far is drawn.
+    effect(() => {
+      const drawing = this.cableDrawing.drawing();
+      if (drawing) {
+        untracked(() => this.conduitShown.set(true));
+      }
+      if (this.map) {
+        this.target().nativeElement.style.cursor = drawing ? 'crosshair' : '';
+      }
+    });
+    effect(() => {
+      const route = this.cableDrawing.route();
+      const drawing = this.cableDrawing.drawing();
+      untracked(() => this.drawRoute(drawing ? route : null, drawing?.steps ?? []));
     });
     // Measuring a distance (#258): a line from the start point that follows the pointer until the next click.
     effect(() => {
@@ -281,6 +303,7 @@ export class MapComponent {
       this.conduit?.changed();
       this.measureStyleCache = undefined;
       this.measureLayer?.changed();
+      this.drawLayer?.changed();
     };
 
     this.network = new VectorTileLayer({
@@ -346,8 +369,14 @@ export class MapComponent {
       style: () => this.measureStyle(),
       zIndex: 30,
     });
+    this.drawLayer = new VectorLayer({
+      source: new VectorSource<Feature<Geometry>>(),
+      style: (f) => this.drawStyle(f),
+      zIndex: 28,
+    });
     const layers: (TileLayer | VectorTileLayer | VectorLayer)[] = [
       this.measureLayer,
+      this.drawLayer,
       this.placedLayer,
       this.conduit,
       this.network,
@@ -445,6 +474,10 @@ export class MapComponent {
       if (this.mapView.lassoing() || performance.now() - this.lassoClosedAt < 500) {
         return;
       }
+      if (this.cableDrawing.drawing()) {
+        this.cableDrawing.click(this.drawStep(e.pixel, e.coordinate));
+        return;
+      }
       const from = this.mapView.measuring();
       if (from) {
         // The second point of a measurement (#258): the line and its length stay until the next click or Escape.
@@ -510,7 +543,12 @@ export class MapComponent {
     // The context menu (#258): what can be done with what lies under the pointer, or on the empty spot.
     this.map.getViewport().addEventListener('contextmenu', (e) => {
       e.preventDefault();
-      if (this.mapView.lassoing() || this.mapView.placing() || this.mapView.picking()) {
+      if (
+        this.mapView.lassoing() ||
+        this.mapView.placing() ||
+        this.mapView.picking() ||
+        this.cableDrawing.drawing()
+      ) {
         return;
       }
       this.mapView.measuring.set(null);
@@ -553,6 +591,25 @@ export class MapComponent {
    * when it is a site, a cable or a route segment. Escape ends a measurement.
    */
   protected onKey(event: KeyboardEvent): void {
+    const inField = !!(event.target as HTMLElement | null)?.closest?.(
+      'input, textarea, select, [contenteditable]',
+    );
+    if (this.cableDrawing.drawing() && !inField) {
+      // Drawing a cable (#259): Backspace takes the last step back, Escape stops a move or the drawing.
+      if (event.key === 'Backspace') {
+        event.preventDefault();
+        this.cableDrawing.undo();
+        return;
+      }
+      if (event.key === 'Escape') {
+        if (this.cableDrawing.moving() !== null) {
+          this.cableDrawing.moving.set(null);
+        } else {
+          this.cableDrawing.cancel();
+        }
+        return;
+      }
+    }
     if (event.key === 'Escape' && (this.mapView.measuring() || this.measured())) {
       this.mapView.measuring.set(null);
       this.clearMeasure();
@@ -631,6 +688,94 @@ export class MapComponent {
       };
     }
     return this.measureStyleCache.style;
+  }
+
+  /**
+   * What a click while drawing a cable means (#259): a site (production or planned) or a route segment under the pointer,
+   * snapped to; otherwise a free break point.
+   */
+  private drawStep(pixel: number[], coordinate: number[]): CableRouteStep {
+    let site: FeatureLike | undefined;
+    let segment: FeatureLike | undefined;
+    this.map!.forEachFeatureAtPixel(
+      pixel,
+      (f) => {
+        if (
+          !site &&
+          (f.get('layer') === 'sites' || f.get('planned') === 'site') &&
+          f.getId() !== undefined
+        ) {
+          site = f;
+        } else if (!segment && f.get('layer') === 'routes') {
+          segment = f;
+        }
+      },
+      { hitTolerance: 6 },
+    );
+    if (this.cableDrawing.moving() === null && site) {
+      return { kind: 'site', id: Number(site.getId()) };
+    }
+    if (this.cableDrawing.moving() === null && segment) {
+      return { kind: 'segment', id: Number(segment.getId()) };
+    }
+    return { kind: 'point', x: Math.round(coordinate[0]), y: Math.round(coordinate[1]) };
+  }
+
+  /** The drawn cable: followed segments solid, new stretches dashed, full segments in the conflict colour, break points ringed. */
+  private drawRoute(
+    route: { legs: { kind: string; subduct: number | null; coordinates: number[][] }[] } | null,
+    steps: CableRouteStep[],
+  ): void {
+    const source = this.drawLayer?.getSource();
+    if (!source) {
+      return;
+    }
+    source.clear(true);
+    const features: Feature<Geometry>[] = (route?.legs ?? []).map((l) => {
+      const f = new Feature<Geometry>(new LineString(l.coordinates.map((p) => [p[0], p[1]])));
+      f.set('draw', l.kind === 'new' ? 'new' : l.subduct === null ? 'full' : 'segment');
+      return f;
+    });
+    steps.forEach((s, i) => {
+      if (s.kind === 'point' && s.x !== undefined && s.y !== undefined) {
+        const f = new Feature<Geometry>(new OlPoint([s.x, s.y]));
+        f.set('draw', 'point');
+        f.set('index', i + 1);
+        features.push(f);
+      }
+    });
+    source.addFeatures(features);
+  }
+
+  private drawStyleCache?: { key: string; styles: Record<string, Style | Style[]> };
+
+  private drawStyle(f: FeatureLike): Style | Style[] {
+    const palette = (this.palette ??= readPalette(this.host.nativeElement));
+    const key = `${palette.planned}|${palette.conflict}|${palette.bg}`;
+    if (this.drawStyleCache?.key !== key) {
+      const halo = new Style({ stroke: new Stroke({ color: palette.bg, width: 7 }) });
+      this.drawStyleCache = {
+        key,
+        styles: {
+          segment: [halo, new Style({ stroke: new Stroke({ color: palette.planned, width: 4 }) })],
+          new: [
+            halo,
+            new Style({
+              stroke: new Stroke({ color: palette.planned, width: 3, lineDash: [10, 6] }),
+            }),
+          ],
+          full: [halo, new Style({ stroke: new Stroke({ color: palette.conflict, width: 4 }) })],
+          point: new Style({
+            image: new Circle({
+              radius: 6,
+              fill: new Fill({ color: palette.bg }),
+              stroke: new Stroke({ color: palette.planned, width: 3 }),
+            }),
+          }),
+        },
+      };
+    }
+    return this.drawStyleCache.styles[String(f.get('draw'))] ?? this.drawStyleCache.styles['new'];
   }
 
   private restyle: () => void = () => undefined;
@@ -773,6 +918,7 @@ export class MapComponent {
       }),
       ...planned.sites.map((s) => {
         const f = new Feature<Geometry>(new OlPoint([s.x, s.y]));
+        f.setId(s.id);
         f.set('planned', 'site');
         f.set('code', s.code);
         return f;

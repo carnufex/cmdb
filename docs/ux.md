@@ -69,6 +69,12 @@ Så är det byggt (#26):
 - **Sitemallar:** planpanelens *Från mall* lägger en hel site (utrustning i rack och intern kabeldragning) vid kartans mittpunkt, i ett steg.
 - **Mönster:** Shift-klicka ett portintervall i frontpanelen och välj *Skarva*: kabel, första ledare, sida och steg. Porterna följer panelens ordning.
 - **Rita kabel:** *Ny kabel*, sedan *Välj siterna i kartan*, och klicka på två siter (befintliga eller planerade). Därefter föreslås terminering på lediga ODF-portar i båda ändar, och *Terminera* lägger till skarvarna.
+- **Rita kabel med brytpunkter (#259):** *Ny kabel härifrån* i högerklicksmenyn på en site, eller *Rita vägen i kartan* i planens *Ny kabel*, startar ritningen. Kanalisationen tänds i kartan.
+  - Ett klick på en trasésträcka följer den till nästa korsning, och kabeln läggs i ett tomt rör. Ett klick på en site går dit, längs sträckan om en finns, och avslutar. Ett klick i kartan blir en brytpunkt. Siter och sträckor snäpper inom några pixlar.
+  - En rad över kartan visar längden löpande med andelen i befintlig kanalisation och andelen som är ny sträcka, varje del med sitt rör (*rör ledigt, 5 av 21*) och varningar. En sträcka utan lediga rör är röd och har *Dra bredvid*, som gräver en ny sträcka längs samma väg. Nya delsträckor är *grävda* eller i *luft*, och där kabeln inte följer någon sträcka föreslås en ny trasésträcka i planen.
+  - Följda sträckor ritas heldragna i planerad färg, nya streckade och fulla röda. Brytpunkterna är inringade.
+  - Backsteg tar bort senaste steget och Esc avbryter. Under *N steg* kan en brytpunkt flyttas (*Flytta*, sedan ett klick där den ska ligga) eller tas bort.
+  - Kabeltyp väljs ur katalogen, med en fiberkabel förvald. *Lägg till kabel* lägger den i planen med sin väg och föreslår terminering i båda ändar som förut. I planens ändringstabell har en ritad kabel *Rita om*, som öppnar ritningen igen och sparar i samma ändring.
 - **Allt eller inget:** en mall, ett mönster och en terminering läggs till helt eller inte alls, och varje operation kontrolleras som vanligt.
 - **Urval (#253):** en lasso i kartan eller avancerad sökning (*Använd som urval*) ger ett urval av siter och kablar, som visas markerat i kartan och som en rad överst i den: *12 siter, 4 kablar markerade*. Raden har åtgärderna:
   - **Massredigera** öppnar massredigeringen med urvalets siter.

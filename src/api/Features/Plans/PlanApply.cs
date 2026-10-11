@@ -34,8 +34,7 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx, str
                 return true;
 
             case "create_cable":
-                await CreateCableAsync(op, p, ct);
-                return true;
+                return await CreateCableAsync(op, p, ct);
 
             case "split_cable":
                 return await SplitCableAsync(op, p, ct);
@@ -369,7 +368,7 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx, str
         }
     }
 
-    private async Task CreateCableAsync(PlanOp op, JsonElement p, CancellationToken ct)
+    private async Task<bool> CreateCableAsync(PlanOp op, JsonElement p, CancellationToken ct)
     {
         var typeKey = p.GetProperty("typeKey").GetString()!;
         // A route given with the cable (an import, #170) is kept between the two sites; otherwise a straight line.
@@ -419,6 +418,7 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx, str
             Ids[Planned.Terminal(op.Id, (2 * k) - 1)] = ends[(2 * k) - 2];
             Ids[Planned.Terminal(op.Id, 2 * k)] = ends[(2 * k) - 1];
         }
+        return await RouteAsync(cable, p, ct);
     }
 
     /// <summary>
@@ -682,6 +682,49 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx, str
     /// <summary>A text in the payload, or a database null.</summary>
     private static object TextOrNull(JsonElement p, string field) =>
         p.TryGetProperty(field, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()! : DBNull.Value;
+
+    /// <summary>
+    /// A drawn cable's way (#259): the tubes it was given along route segments, in order and each once, taken from empty;
+    /// and the new route segments its new stretches make, planned. A tube someone filled since makes the plan not fit.
+    /// </summary>
+    private async Task<bool> RouteAsync(long cable, JsonElement p, CancellationToken ct)
+    {
+        if (p.TryGetProperty("route", out var legs) && legs.ValueKind == JsonValueKind.Array)
+        {
+            var tubes = legs.EnumerateArray()
+                .Where(l => l.TryGetProperty("subduct", out var s) && s.ValueKind == JsonValueKind.Number)
+                .Select(l => l.GetProperty("subduct").GetInt64()).Distinct().ToArray();
+            if (tubes.Length > 0)
+            {
+                if (await ExecuteAsync("UPDATE subduct SET occupancy = 'cable' WHERE id = ANY($1) AND occupancy = 'empty'", ct, tubes) != tubes.Length)
+                {
+                    return false;
+                }
+                await ExecuteAsync("""
+                    INSERT INTO cable_path (cable_id, seq, subduct_id) SELECT $1, n, t FROM unnest($2::bigint[]) WITH ORDINALITY AS u(t, n)
+                    """, ct, cable, tubes);
+            }
+        }
+        if (p.TryGetProperty("newSegments", out var segments) && segments.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var segment in segments.EnumerateArray())
+            {
+                var line = segment.GetProperty("line").EnumerateArray().ToList();
+                var a = segment.GetProperty("a").GetInt64();
+                var b = segment.GetProperty("b").GetInt64();
+                var id = await ScalarAsync<long>("""
+                    INSERT INTO route_segment (code, a_site_id, b_site_id, construction, geom, lifecycle)
+                    SELECT 'TR-NY-' || gen_random_uuid(), $1, $2, $3,
+                           ST_MakeLine(ARRAY(SELECT ST_SetSRID(ST_MakePoint(x, y), 3006) FROM unnest($4::float8[], $5::float8[]) WITH ORDINALITY AS u(x, y, n) ORDER BY n)),
+                           'planned'
+                    RETURNING id
+                    """, ct, Ids.GetValueOrDefault(a, a), Ids.GetValueOrDefault(b, b), segment.GetProperty("construction").GetString()!,
+                    line.Select(pt => pt[0].GetDouble()).ToArray(), line.Select(pt => pt[1].GetDouble()).ToArray());
+                await ExecuteAsync("UPDATE route_segment SET code = 'TR-' || lpad(id::text, 6, '0') WHERE id = $1", ct, id);
+            }
+        }
+        return true;
+    }
 
     private async Task<int> ExecuteAsync(string sql, CancellationToken ct, params object[] values)
     {

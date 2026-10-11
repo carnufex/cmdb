@@ -54,6 +54,7 @@ builder.Services.AddSingleton<Cmdb.Api.Auth.ScopeMasks>();
 builder.Services.AddSingleton<Cmdb.Api.Features.Conduit.ConduitIndex>();
 builder.Services.AddSingleton<Cmdb.Api.Features.Plans.PlanViews>();
 builder.Services.AddScoped<Cmdb.Api.Features.Plans.PlanWrites>();
+builder.Services.AddScoped<Cmdb.Api.Features.Plans.CableRoutes>();
 builder.Services.AddScoped<Cmdb.Api.Features.Plans.PlanPatterns>();
 builder.Services.AddScoped<Cmdb.Api.Features.Plans.PlanImport>();
 builder.Services.AddScoped<Cmdb.Api.Features.Plans.PlanApplication>();

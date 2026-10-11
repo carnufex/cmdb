@@ -29,7 +29,7 @@ public enum PlanWriteFailure
 /// an agent go through the same checks: the plan must be a visible draft, and terminals and objects must be inside the
 /// caller's scopes.
 /// </summary>
-public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views, ScopeMasks masks)
+public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views, ScopeMasks masks, CableRoutes routes)
 {
     /// <summary>How the caller reaches us: mcp for anything on /mcp, otherwise api.</summary>
     public static string Via(HttpContext http) =>
@@ -327,6 +327,23 @@ public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views
                     {
                         return (null, cableSite);
                     }
+                }
+                if (req.Route is { Length: > 0 } steps)
+                {
+                    // Drawn in the map (#259): along route segments in empty tubes, and new stretches that become new segments.
+                    var (route, routeError) = await routes.ResolveAsync(scope, view, req.ASiteId!.Value, steps, ct);
+                    if (route is null)
+                    {
+                        return (null, routeError);
+                    }
+                    if (!route.Complete || route.End!.Id != req.BSiteId)
+                    {
+                        return (null, "Kabeln ska sluta på siten i B-änden.");
+                    }
+                    var drawn = System.Text.Json.Nodes.JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(
+                        new { a = req.ASiteId, b = req.BSiteId, typeKey = req.TypeKey, attributes }, OmitNull))!.AsObject();
+                    CableRoutes.Write(drawn, req.ASiteId!.Value, route, steps);
+                    return (drawn.ToJsonString(), null);
                 }
                 return (System.Text.Json.JsonSerializer.Serialize(new { a = req.ASiteId, b = req.BSiteId, typeKey = req.TypeKey, attributes }, OmitNull), null);
         }
