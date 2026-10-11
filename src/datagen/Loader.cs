@@ -37,10 +37,13 @@ internal static class Loader
         // Bulk rows skip the change stream's triggers (#11); one 'reload' entry at the end tells the graph to start over.
         await Exec(conn, "SET cmdb.bulk = 'on'", ct);
         await Exec(conn, "SET cmdb.scopes = '*'", ct);
+        // A fresh network has no history (#23); its writes are logged as the data generator's.
+        await Exec(conn, "SET cmdb.history = 'off'", ct);
+        await Exec(conn, "SET cmdb.actor = 'datagen'", ct);
         if (reset)
         {
             // Plans (#24) and reservations (#25) refer to terminals and objects by id, so they go with the network.
-            await Exec(conn, $"TRUNCATE {string.Join(", ", NetworkTables)}, graph_change, reservation, plan_operation, plan_dependency, reconciliation, plan, incident, planned_work, voice_session, voice_challenge, voice_sms, voice_tool_call RESTART IDENTITY", ct);
+            await Exec(conn, $"TRUNCATE {string.Join(", ", NetworkTables)}, graph_change, reservation, plan_operation, plan_dependency, reconciliation, plan, incident, planned_work, voice_session, voice_challenge, voice_sms, voice_tool_call, {string.Join(", ", Cmdb.Database.OperationLog.HistoryTables.Select(t => t + "_history"))}, operation, read_log RESTART IDENTITY", ct);
         }
         else if (await Scalar<bool>(conn, "SELECT EXISTS (SELECT 1 FROM site)", ct))
         {
@@ -68,7 +71,8 @@ internal static class Loader
         var cableTypes = await Ids(conn, "SELECT key, id FROM cable_type", ct);
         var ductTypes = await Ids(conn, "SELECT key, id FROM duct_type", ct);
 
-        await Copy(conn, log, "site", "id, code, name, site_type, geom, lifecycle", net.Sites, (w, s) =>
+        var built = new BuiltDates(DateTimeOffset.UtcNow);
+        await Copy(conn, log, "site", "id, code, name, site_type, geom, lifecycle, valid_from", net.Sites, (w, s) =>
         {
             w.Write(s.Id);
             w.Write(s.Code);
@@ -76,9 +80,10 @@ internal static class Loader
             w.Write(s.SiteType);
             w.Write(Point(s.X, s.Y), NpgsqlDbType.Bytea);
             w.Write(s.Lifecycle, NpgsqlDbType.Text);
+            w.Write(built.Of(s), NpgsqlDbType.TimestampTz);
         }, ct);
 
-        await Copy(conn, log, "location", "id, site_id, parent_id, kind, name, rack_units, lifecycle", net.Locations, (w, l) =>
+        await Copy(conn, log, "location", "id, site_id, parent_id, kind, name, rack_units, lifecycle, room_row, room_slot, facing", net.Locations, (w, l) =>
         {
             w.Write(l.Id);
             w.Write(l.SiteId);
@@ -94,6 +99,16 @@ internal static class Loader
                 w.WriteNull();
             }
             w.Write(l.Lifecycle, NpgsqlDbType.Text);
+            NullableShort(w, l.RoomRow);
+            NullableShort(w, l.RoomSlot);
+            if (l.Facing is { } facing)
+            {
+                w.Write(facing);
+            }
+            else
+            {
+                w.WriteNull();
+            }
         }, ct);
 
         await Copy(conn, log, "equipment", "id, equipment_type_id, site_id, location_id, parent_id, slot, name, attributes, lifecycle", net.Equipment, (w, e) =>
@@ -140,7 +155,7 @@ internal static class Loader
                 w.Write(p.Port.Position);
             }, ct);
 
-        await Copy(conn, log, "cable", "id, cable_type_id, code, a_site_id, b_site_id, geom, lifecycle", net.Cables, (w, c) =>
+        await Copy(conn, log, "cable", "id, cable_type_id, code, a_site_id, b_site_id, geom, lifecycle, valid_from", net.Cables, (w, c) =>
         {
             w.Write(c.Id);
             w.Write(cableTypes[c.Type.Key]);
@@ -149,6 +164,7 @@ internal static class Loader
             w.Write(c.B.Id);
             w.Write(LineString(c.Coordinates), NpgsqlDbType.Bytea);
             w.Write(c.Lifecycle, NpgsqlDbType.Text);
+            w.Write(built.Of(c), NpgsqlDbType.TimestampTz);
         }, ct);
 
         await Copy(conn, log, "conductor", "id, cable_id, number, color",
@@ -227,7 +243,8 @@ internal static class Loader
             w.Write(c.Subduct);
         }, ct);
 
-        await Copy(conn, log, "connection", "id, a_terminal_id, b_terminal_id, kind, lifecycle",
+        var terminals = built.Terminals(net);
+        await Copy(conn, log, "connection", "id, a_terminal_id, b_terminal_id, kind, lifecycle, valid_from",
             net.Connections.Select((c, i) => (Id: i + 1L, Connection: c)), (w, c) =>
             {
                 w.Write(c.Id);
@@ -241,6 +258,7 @@ internal static class Loader
                     _ => "internal",
                 }, NpgsqlDbType.Text);
                 w.Write(c.Connection.Planned ? Lifecycle.Planned : Lifecycle.InService, NpgsqlDbType.Text);
+                w.Write(c.Connection.Planned ? built.Now : terminals.Of(c.Connection.A, c.Connection.B), NpgsqlDbType.TimestampTz);
             }, ct);
 
         await Copy(conn, log, "channel", "id, terminal_id, kind, number", net.Channels, (w, c) =>
@@ -261,7 +279,8 @@ internal static class Loader
             w.Write(s.Lifecycle, NpgsqlDbType.Text);
         }, ct);
 
-        await Copy(conn, log, "circuit", "id, code, layer, a_terminal_id, b_terminal_id, lifecycle", net.Circuits, (w, c) =>
+        var circuitDates = terminals.Circuits(net);
+        await Copy(conn, log, "circuit", "id, code, layer, a_terminal_id, b_terminal_id, lifecycle, valid_from", net.Circuits, (w, c) =>
         {
             w.Write(c.Id);
             w.Write(c.Code);
@@ -269,6 +288,7 @@ internal static class Loader
             w.Write(c.A);
             w.Write(c.B);
             w.Write(c.Lifecycle, NpgsqlDbType.Text);
+            w.Write(c.Lifecycle == Lifecycle.InService && circuitDates.TryGetValue(c.Id, out var from) ? from : built.Now, NpgsqlDbType.TimestampTz);
         }, ct);
 
         await Copy(conn, log, "circuit_hop", "circuit_id, seq, terminal_id, channel_id", net.Hops, (w, h) =>
@@ -319,6 +339,9 @@ internal static class Loader
         sw.Restart();
         // Rack positions (#173): the generator places equipment in racks; stacking them gives each its units.
         await Exec(conn, Cmdb.Database.RackStacking.Backfill, ct);
+        // Scenarios, demo plans and rack positions are part of the load (#304): no history, and the generator as the actor.
+        await Exec(conn, "RESET cmdb.history", ct);
+        await Exec(conn, "RESET cmdb.actor", ct);
         // The bulk rows left the search indexes loosely packed (#245); the load has the database to itself.
         var indexes = await Cmdb.Database.SearchIndexes.RebuildAsync(conn, concurrently: false, ct);
         log.WriteLine($"  reindex {indexes} search indexes {sw.Elapsed.TotalSeconds,6:0.0} s");
@@ -355,6 +378,18 @@ internal static class Loader
         }
         var count = await importer.CompleteAsync(ct);
         log.WriteLine(string.Create(CultureInfo.InvariantCulture, $"  {table,-20} {count,11:N0} rows {sw.Elapsed.TotalSeconds,6:0.0} s"));
+    }
+
+    private static void NullableShort(NpgsqlBinaryImporter w, short? value)
+    {
+        if (value is { } v)
+        {
+            w.Write(v);
+        }
+        else
+        {
+            w.WriteNull();
+        }
     }
 
     private static void Nullable(NpgsqlBinaryImporter w, long? value)
@@ -421,5 +456,118 @@ internal static class Loader
     {
         await using var cmd = new NpgsqlCommand(sql, conn);
         return (T)(await cmd.ExecuteScalarAsync(ct))!;
+    }
+}
+
+/// <summary>
+/// When a site or cable came into service (valid time, #23), so the map can be drawn as the network grew: the backbone in
+/// the nineties, aggregation after it, access sites later, and nothing before what it hangs on. Deterministic per id;
+/// planned objects and those being built are valid from the load.
+/// </summary>
+internal sealed class BuiltDates(DateTimeOffset now)
+{
+    private readonly Dictionary<long, DateTimeOffset> _sites = [];
+
+    public DateTimeOffset Of(Site site)
+    {
+        if (site.Lifecycle != Lifecycle.InService)
+        {
+            return now;
+        }
+        if (_sites.TryGetValue(site.Id, out var known))
+        {
+            return known;
+        }
+        var (first, years) = site.Kind switch
+        {
+            SiteKind.Hub => (1992, 6),
+            SiteKind.Manhole => (1994, 20),
+            SiteKind.Aggregation => (1996, 14),
+            SiteKind.Splice => (2000, 24),
+            SiteKind.Cabinet => (2002, 22),
+            _ => (2006, 18),
+        };
+        var date = new DateTimeOffset(first, 1, 1, 0, 0, 0, TimeSpan.Zero).AddDays(Spread(site.Id, years * 365));
+        if (site.Parent is { } parent && Of(parent) is var after && after < now && date <= after)
+        {
+            date = after.AddDays(30 + Spread(site.Id * 7, 700));
+        }
+        date = date < now ? date : now;
+        _sites[site.Id] = date;
+        return date;
+    }
+
+    public DateTimeOffset Of(Cable cable)
+    {
+        if (cable.Lifecycle != Lifecycle.InService)
+        {
+            return now;
+        }
+        var a = Of(cable.A);
+        var b = Of(cable.B);
+        var date = (a > b ? a : b).AddDays(Spread(cable.Id, 180));
+        return date < now ? date : now;
+    }
+
+    public DateTimeOffset Now => now;
+
+    /// <summary>When each terminal came into service (#302): a port with its site, a conductor end with its cable.</summary>
+    public TerminalDates Terminals(Network net)
+    {
+        var sites = net.Sites.ToDictionary(s => s.Id);
+        var ranges = net.Equipment.Select(e => (Start: e.FirstTerminal, End: e.FirstTerminal + e.Ports.Count, Date: Of(sites[e.SiteId])))
+            .Concat(net.Cables.Select(c => (Start: c.FirstEndTerminal, End: c.FirstEndTerminal + (2L * c.Count), Date: Of(c))))
+            .OrderBy(r => r.Start)
+            .ToArray();
+        return new TerminalDates([.. ranges.Select(r => r.Start)], [.. ranges.Select(r => r.End)], [.. ranges.Select(r => r.Date)], now);
+    }
+
+    private static int Spread(long id, int days) => days <= 0 ? 0 : (int)((ulong)(id * 2654435761L) % (ulong)days);
+}
+
+/// <summary>Terminal ranges and their in-service dates; a connection is in service from when both its ends are.</summary>
+internal sealed class TerminalDates(long[] starts, long[] ends, DateTimeOffset[] dates, DateTimeOffset now)
+{
+    public DateTimeOffset Of(long a, long b)
+    {
+        var da = Of(a);
+        var db = Of(b);
+        return da > db ? da : db;
+    }
+
+    /// <summary>
+    /// A circuit is in service from when every terminal on its path and every circuit it rides on is (#302), so tracing
+    /// back in time finds no circuit on cables that were not there yet.
+    /// </summary>
+    public Dictionary<long, DateTimeOffset> Circuits(Network net)
+    {
+        var dates = new Dictionary<long, DateTimeOffset>();
+        foreach (var h in net.Hops)
+        {
+            var d = Of(h.TerminalId);
+            if (!dates.TryGetValue(h.CircuitId, out var known) || d > known)
+            {
+                dates[h.CircuitId] = d;
+            }
+        }
+        // Carriers below come first in the layers, so a few passes settle circuits riding on circuits riding on others.
+        for (var pass = 0; pass < 3; pass++)
+        {
+            foreach (var (circuit, carrier) in net.Dependencies)
+            {
+                if (dates.TryGetValue(carrier, out var c) && (!dates.TryGetValue(circuit, out var known) || c > known))
+                {
+                    dates[circuit] = c;
+                }
+            }
+        }
+        return dates;
+    }
+
+    private DateTimeOffset Of(long terminal)
+    {
+        var i = Array.BinarySearch(starts, terminal);
+        i = i >= 0 ? i : ~i - 1;
+        return i >= 0 && terminal < ends[i] ? dates[i] : now;
     }
 }

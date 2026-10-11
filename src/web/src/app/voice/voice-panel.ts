@@ -14,6 +14,7 @@ import { PanelStack } from '../shell/panels';
 import { Tools } from '../shell/tools';
 import { VoiceRoiComponent } from './roi';
 import { VoiceCall } from './voice-call';
+import { ToolSizeComponent } from '../shell/tool-size';
 
 /** GET /api/incidents (#135) */
 export interface Incident {
@@ -118,10 +119,11 @@ const FRESH_SMS_MS = 5 * 60_000;
 @Component({
   selector: 'cmdb-voice-panel',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [VoiceRoiComponent],
+  imports: [ToolSizeComponent, VoiceRoiComponent],
   template: `
     <header class="head">
       <h2>Driftagent</h2>
+      <cmdb-tool-size />
       <button type="button" class="close" aria-label="Stäng driftagenten" (click)="tools.close()">
         ×
       </button>

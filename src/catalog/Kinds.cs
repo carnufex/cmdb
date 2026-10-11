@@ -35,7 +35,8 @@ public static class CatalogRoles
 
 /// <summary>A site type from <c>catalog/site-types.json</c>.</summary>
 /// <param name="Attributes">Optional JSON Schema for the site's attributes (#211); without one they are free.</param>
-public sealed record CatalogSiteType(string Key, string Name, IReadOnlyList<string> Roles, System.Text.Json.JsonElement? Attributes = null)
+/// <param name="Icon">One of <see cref="CatalogIcons.Names"/> (#249); without one, the role's.</param>
+public sealed record CatalogSiteType(string Key, string Name, IReadOnlyList<string> Roles, System.Text.Json.JsonElement? Attributes = null, string? Icon = null)
 {
     public bool Has(string role) => Roles.Contains(role, StringComparer.Ordinal);
 }
@@ -45,7 +46,8 @@ public sealed record CatalogSiteType(string Key, string Name, IReadOnlyList<stri
 public sealed record ServiceType(string Key, string Name, System.Text.Json.JsonElement? Attributes = null);
 
 /// <summary>An equipment category from <c>catalog/equipment-categories.json</c>.</summary>
-public sealed record EquipmentCategory(string Key, string Name, IReadOnlyList<string> Roles)
+/// <param name="Icon">One of <see cref="CatalogIcons.Names"/> (#249); without one, the role's.</param>
+public sealed record EquipmentCategory(string Key, string Name, IReadOnlyList<string> Roles, string? Icon = null)
 {
     public bool Has(string role) => Roles.Contains(role, StringComparer.Ordinal);
 }
@@ -78,6 +80,15 @@ internal static class KindRules
         foreach (var duplicate in kinds.Where(k => k.Key is not null).GroupBy(k => k.Key).Where(g => g.Count() > 1))
         {
             errors.Add($"{file}: key '{duplicate.Key}' is used more than once");
+        }
+    }
+
+    /// <summary>Checks the icons a kinds file names (#249): each one of <see cref="CatalogIcons.Names"/>.</summary>
+    public static void CheckIcons(string file, IEnumerable<(string Key, string? Icon)> kinds, List<string> errors)
+    {
+        foreach (var (key, icon) in kinds.Where(k => k.Icon is not null && !CatalogIcons.Names.Contains(k.Icon)))
+        {
+            errors.Add($"{file}: '{key}' has unknown icon '{icon}' (icons: {string.Join(", ", CatalogIcons.Names)})");
         }
     }
 }

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Cmdb.Api.Features.Objects;
 using Cmdb.Api.Features.Trace;
 using Cmdb.Catalog;
@@ -17,6 +18,7 @@ public sealed class PlannedNames
     // Where planned equipment stands and planned cables end, so describing an operation is a lookup, not a scan over
     // every planned terminal (a 10 000-site import has millions, #170).
     private readonly Dictionary<long, ObjectRef> _equipmentSites = [];
+    private readonly Dictionary<long, ObjectRef> _locationSites = [];
     private readonly Dictionary<long, List<string?>> _cableEnds = [];
 
     public static async Task<PlannedNames> BuildAsync(NpgsqlDataSource db, IReadOnlyList<PlanOp> operations, CancellationToken ct)
@@ -31,7 +33,7 @@ public sealed class PlannedNames
         // Existing sites the planned equipment and cables sit at.
         var existing = creates.SelectMany(o => o.Kind switch
         {
-            "create_equipment" => [o.Payload.GetProperty("site").GetInt64()],
+            "create_equipment" or "create_location" => [o.Payload.GetProperty("site").GetInt64()],
             "create_cable" => new[] { o.Payload.GetProperty("a").GetInt64(), o.Payload.GetProperty("b").GetInt64() },
             "split_cable" => new[] { o.Payload.GetProperty("site").GetInt64(), o.Payload.GetProperty("aSite").GetInt64(), o.Payload.GetProperty("bSite").GetInt64() },
             _ => [],
@@ -60,6 +62,16 @@ public sealed class PlannedNames
                 case "create_site":
                     names.Objects[("site", id)] = new ObjectRef("site", id, p.GetProperty("code").GetString()!, p.GetProperty("name").GetString(), "planned");
                     break;
+                case "create_location":
+                    names.Objects[("location", id)] = new ObjectRef("location", id, p.GetProperty("name").GetString()!, p.GetProperty("kind").GetString(), "planned");
+                    names._locationSites[id] = Site(p.GetProperty("site").GetInt64());
+                    break;
+                case "create_service":
+                    names.Objects[("service", id)] = new ObjectRef("service", id, p.GetProperty("code").GetString()!, p.GetProperty("name").GetString(), "planned");
+                    break;
+                case "create_circuit":
+                    names.Objects[("circuit", id)] = new ObjectRef("circuit", id, p.GetProperty("code").GetString()!, p.GetProperty("layer").GetString(), "planned");
+                    break;
                 case "create_equipment":
                     {
                         var name = p.GetProperty("name").GetString()!;
@@ -69,7 +81,8 @@ public sealed class PlannedNames
                         names._equipmentSites[id] = site;
                         if (TypeCatalog.Current.Find(p.GetProperty("typeKey").GetString()!) is { } type)
                         {
-                            foreach (var port in PortExpansion.Expand(type))
+                            var slot = p.TryGetProperty("slot", out var s) && s.ValueKind == JsonValueKind.String ? s.GetString() : null;
+                            foreach (var port in PortExpansion.Expand(type, slot))
                             {
                                 var terminal = Planned.Terminal(op.Id, port.Position);
                                 names.Terminals[terminal] = new TraceHop(terminal, "port", null, $"{name} · {port.Name} (planerad)", equipment, null, site, null);
@@ -135,6 +148,14 @@ public sealed class PlannedNames
                 {
                     var site = Objects[("site", id)];
                     return ($"Ny site {site.Code} {site.Name} ({p.GetProperty("siteType").GetString()})", site);
+                }
+            case "create_location" or "create_service" or "create_circuit":
+                {
+                    var type = op.Kind["create_".Length..];
+                    var created = Objects[(type, id)];
+                    var site = _locationSites.GetValueOrDefault(id);
+                    return (NetworkLinks.Text(op, (t, x) => t == "site" && site is not null ? $"{site.Code} {site.Name}".TrimEnd()
+                        : Objects.TryGetValue((t, x), out var o) ? o.Code : $"#{x}"), created);
                 }
             case "create_equipment":
                 {

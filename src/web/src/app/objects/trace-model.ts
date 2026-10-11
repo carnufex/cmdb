@@ -50,19 +50,29 @@ export interface TraceResult {
   hidden: number;
 }
 
-export type TraceStart = { by: 'service' | 'circuit' | 'terminal'; id: number };
+/** Where a trace starts; `production` traces in production even while a plan is active (#252, "before"). */
+export type TraceStart = {
+  by: 'service' | 'circuit' | 'terminal';
+  id: number;
+  production?: boolean;
+};
 
-/** The panel id of a trace, e.g. "service.1360" in ?p=…,trace:service.1360. */
+/** The panel id of a trace, e.g. "service.1360" in ?p=…,trace:service.1360, or "circuit.12.prod" in production. */
 export function traceId(start: TraceStart): string {
-  return `${start.by}.${start.id}`;
+  return `${start.by}.${start.id}${start.production ? '.prod' : ''}`;
 }
 
 export function parseTraceId(id: string): TraceStart | null {
-  const [by, value] = id.split('.');
+  const [by, value, mode] = id.split('.');
   const n = Number(value);
-  return (by === 'service' || by === 'circuit' || by === 'terminal') && Number.isInteger(n) && n > 0
-    ? { by, id: n }
-    : null;
+  if (!(
+    (by === 'service' || by === 'circuit' || by === 'terminal') &&
+    Number.isInteger(n) &&
+    n > 0
+  )) {
+    return null;
+  }
+  return mode === 'prod' ? { by, id: n, production: true } : { by, id: n };
 }
 
 /** A row in the schematic: a site heading, a terminal, or a cable span between two conductor ends. */

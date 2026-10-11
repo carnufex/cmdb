@@ -1,4 +1,24 @@
 <div #target class="map" aria-label="Karta över nätet"></div>
+<cmdb-selection-bar />
+<cmdb-context-menu />
+<cmdb-cable-drawing-bar />
+
+@if (time.point(); as p) {
+  <div class="time-banner" role="status">
+    <span class="dot" aria-hidden="true"></span>
+    <span>{{ timeBanner(p) }}</span>
+    <button type="button" class="text-button" (click)="time.back()">Tillbaka till nu</button>
+  </div>
+}
+
+@if (measured(); as m) {
+  <div class="hover measure" role="status" [style.left.px]="m.x + 14" [style.top.px]="m.y + 14">
+    <span class="mono">{{ m.text }}</span>
+    <span class="name">{{
+      m.done ? 'Esc eller klick rensar' : 'Klicka där mätningen slutar'
+    }}</span>
+  </div>
+}
 
 @if (hover(); as h) {
   <div class="hover" [style.left.px]="h.x + 14" [style.top.px]="h.y + 14">

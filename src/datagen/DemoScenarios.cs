@@ -30,6 +30,8 @@ public static class DemoScenarios
         var aggregations = Sql(catalog.SiteTypesWith(Cmdb.Catalog.CatalogRoles.Aggregation));
         var power = Sql(catalog.CategoriesWith(Cmdb.Catalog.CatalogRoles.Power));
         await using var tx = await conn.BeginTransactionAsync(ct);
+        // Run again on a loaded network, the scenarios' writes are the generator's in the operation log (#23, #304).
+        await ExecAsync(conn, "SET LOCAL cmdb.actor = 'datagen'", ct);
 
         // Run again: take the previous backups away first.
         await ExecAsync(conn, $"""
@@ -86,8 +88,11 @@ public static class DemoScenarios
             JOIN passes x ON x.circuit_id = d.carrier_id AND x.site_id = {stationId}
             WHERE s.lifecycle = 'in_service'
             """;
-        var falseBackup = await RowAsync(conn, $"SELECT service_id, logical_id, code FROM ({through}) t WHERE service_type = 'mobile-backhaul' ORDER BY service_id LIMIT 1", ct);
-        var trueBackup = await RowAsync(conn, $"SELECT service_id, logical_id, code FROM ({through}) t WHERE service_type = 'mobile-backhaul' ORDER BY service_id OFFSET 1 LIMIT 1", ct);
+        // A service with more than one carrier through the station is one row per carrier: one row per service, so the
+        // two backups are two services (#301).
+        var backhaul = $"SELECT DISTINCT ON (service_id) service_id, logical_id, code FROM ({through}) t WHERE service_type = 'mobile-backhaul' ORDER BY service_id, logical_id";
+        var falseBackup = await RowAsync(conn, $"{backhaul} LIMIT 1", ct);
+        var trueBackup = await RowAsync(conn, $"{backhaul} OFFSET 1 LIMIT 1", ct);
         var single = await RowAsync(conn, $"SELECT service_id, logical_id, code FROM ({through}) t WHERE service_type = 'ethernet' ORDER BY service_id LIMIT 1", ct);
         if (falseBackup is null || trueBackup is null)
         {

@@ -30,8 +30,8 @@ Varje testkörning kostar ElevenLabs-credits. Kör bara det som täcker ändring
 - **Röst:** "Sanna Hartfield" (svensk, Stockholm), TTS-modell `eleven_v4_turbo`, språk `sv` med `en` som extra språk (#147): `language_detection` byter till engelska när uppringaren talar engelska.
 - **LLM:** `claude-haiku-4-5`, temperatur 0,2. `deepseek-v41-flash` provades i #147 (0,89 s mot 1,09 s till svar) men valdes bort.
 - **MCP:** `https://cmdb.rosenvall.se/voice/mcp`.
-  - Hemligheten ligger som en hemlighet i arbetsytan (`cmdb-voice-secret`, värdet från Bitwarden `CMDB_VOICE_SECRET`).
-  - Samtals-id:t skickas i `X-Conversation-Id` (`system__conversation_id`).
+  - Varje ingång har sin hemlighet i arbetsytan (`cmdb-voice-secret-noc|servicedesk|it`, värdena från Bitwarden `CMDB_VOICE_SECRET_NOC|_SERVICEDESK|_IT`, #181).
+  - Samtals-id:t skickas i `X-Conversation-Id` (`system__conversation_id`) och agentens id i `X-Agent-Id` (`system__agent_id`).
   - Verktygen godkänns automatiskt. Behörigheten ligger i CMDB:n, inte i agenten.
 - **Kostnadstak:** högst 2 samtidiga samtal och 60 samtal per dygn. Den publika testlänken kräver ingen inloggning.
 - **Guardrails:**
@@ -48,7 +48,7 @@ Varje testkörning kostar ElevenLabs-credits. Kör bara det som täcker ändring
 
 ## Köra
 ```bash
-ELEVENLABS_API_KEY=… CMDB_VOICE_SECRET=… python agent/deploy.py
+ELEVENLABS_API_KEY=… CMDB_VOICE_SECRET_NOC=… CMDB_VOICE_SECRET_SERVICEDESK=… CMDB_VOICE_SECRET_IT=… python agent/deploy.py
 ```
 
 Testa samtalet på `https://elevenlabs.io/app/talk-to?agent_id=<agent_id i agent.json>`. Koden till verifieringen syns i CMDB-webbens panel **Driftagent**, under SMS-utkorg. Uppringare och scenario finns i [docs/demo-scenarier.md](../docs/demo-scenarier.md).

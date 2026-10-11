@@ -63,6 +63,9 @@ public sealed class TypeCatalog
     /// <summary>Duct types (ADR-0014); none when the catalog has no <c>duct-types/</c> folder.</summary>
     public IReadOnlyCollection<DuctType> DuctTypes => _ductTypes.Values;
 
+    /// <summary>The currency and the price per metre of each construction (#291); empty when the catalog has no costs.json.</summary>
+    public CatalogCosts Costs { get; private init; } = CatalogCosts.None;
+
     public DuctType? FindDuct(string key) => _ductTypes.GetValueOrDefault(key);
 
     /// <summary>The site types in catalog order (#208).</summary>
@@ -141,7 +144,7 @@ public sealed class TypeCatalog
     /// <param name="imageExists">Whether a panel image is in the catalog's <c>equipment-images/</c> (#214); null skips the check.</param>
     public static TypeCatalog Parse(IEnumerable<(string File, string Json)> files, string cableTypesJson = "[]",
         string? siteTypesJson = null, string? categoriesJson = null, string? serviceTypesJson = null, Func<string, bool>? imageExists = null,
-        IEnumerable<(string File, string Json)>? ductTypeFiles = null)
+        IEnumerable<(string File, string Json)>? ductTypeFiles = null, string? costsJson = null)
     {
         var types = new List<EquipmentType>();
         var schemas = new Dictionary<string, JsonSchema>(StringComparer.Ordinal);
@@ -149,8 +152,10 @@ public sealed class TypeCatalog
 
         var siteTypes = Kinds<CatalogSiteType>("site-types.json", siteTypesJson, errors);
         KindRules.Check("site-types.json", [.. siteTypes.Select(t => (t.Key, t.Name, t.Roles))], CatalogRoles.SiteRoles, errors);
+        KindRules.CheckIcons("site-types.json", siteTypes.Select(t => (t.Key, t.Icon)), errors);
         var categories = Kinds<EquipmentCategory>("equipment-categories.json", categoriesJson, errors);
         KindRules.Check("equipment-categories.json", [.. categories.Select(c => (c.Key, c.Name, c.Roles))], CatalogRoles.CategoryRoles, errors);
+        KindRules.CheckIcons("equipment-categories.json", categories.Select(c => (c.Key, c.Icon)), errors);
         var serviceTypes = Kinds<ServiceType>("service-types.json", serviceTypesJson, errors);
         KindRules.Check("service-types.json", [.. serviceTypes.Select(t => (t.Key, t.Name, (IReadOnlyList<string>)[]))], CatalogRoles.SiteRoles, errors);
         if (errors.Count > 0)
@@ -247,7 +252,24 @@ public sealed class TypeCatalog
         {
             throw new InvalidOperationException("Invalid type catalog:" + Environment.NewLine + string.Join(Environment.NewLine, errors));
         }
-        return new TypeCatalog(types, schemas, cableTypes, siteTypes, categories, serviceTypes, objectSchemas, ductTypes);
+        var costs = CatalogCosts.None;
+        if (costsJson is not null)
+        {
+            try
+            {
+                costs = JsonSerializer.Deserialize<CatalogCosts>(costsJson, Json) ?? CatalogCosts.None;
+            }
+            catch (JsonException ex)
+            {
+                errors.Add($"costs.json: {ex.Message}");
+            }
+        }
+        CatalogRules.CheckCosts(types, cableTypes, ductTypes, costs, errors);
+        if (errors.Count > 0)
+        {
+            throw new InvalidOperationException("Invalid type catalog:" + Environment.NewLine + string.Join(Environment.NewLine, errors));
+        }
+        return new TypeCatalog(types, schemas, cableTypes, siteTypes, categories, serviceTypes, objectSchemas, ductTypes) { Costs = costs };
     }
 
     /// <summary>Loads and validates the equipment and cable types from <paramref name="source"/>.</summary>
@@ -258,7 +280,7 @@ public sealed class TypeCatalog
             string Required(string file) =>
                 source.Read(file) ?? throw new InvalidOperationException("Invalid type catalog:" + Environment.NewLine + $"{file}: missing");
             return Parse(source.Files("equipment-types"), Required("cable-types.json"), Required("site-types.json"), Required("equipment-categories.json"),
-                source.Read("service-types.json") ?? "[]", file => source.Image(file) is not null, source.Files("duct-types"));
+                source.Read("service-types.json") ?? "[]", file => source.Image(file) is not null, source.Files("duct-types"), source.Read("costs.json"));
         }
         catch (InvalidOperationException ex)
         {

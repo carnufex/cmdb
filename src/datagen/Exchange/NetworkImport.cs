@@ -390,6 +390,8 @@ internal static class NetworkImport
             // Bulk rows skip the change stream's triggers (#11); one 'reload' entry at the end tells the graph to start over.
             await Exec(conn, "SET LOCAL cmdb.bulk = 'on'", ct);
             await Exec(conn, "SET LOCAL synchronous_commit = off", ct);
+            // One operation for the whole import (#23): its changes are versions with the source as the reason.
+            await Exec(conn, "SELECT cmdb_begin_operation('import', $1, 'import', '{}'::jsonb, 'Import från ' || $1)", ct, source);
 
             await SitesAsync(data.Sites);
             await LocationsAsync(data.Locations);
@@ -475,9 +477,10 @@ internal static class NetworkImport
             var byId = locations.ToDictionary(l => l.Id, StringComparer.Ordinal);
             int Depth(XLocation l) => l.Parent is { } p && byId.TryGetValue(p, out var parent) ? 1 + Depth(parent) : 0;
             await Exec(conn, """
-                CREATE TEMP TABLE x_location (ext text PRIMARY KEY, site text, parent text, kind text, name text, rack_units int2, depth int) ON COMMIT DROP
+                CREATE TEMP TABLE x_location (ext text PRIMARY KEY, site text, parent text, kind text, name text, rack_units int2, depth int,
+                                              room_row int2, room_slot int2, facing text) ON COMMIT DROP
                 """, ct);
-            await Copy("x_location", "ext, site, parent, kind, name, rack_units, depth", locations, (w, l) =>
+            await Copy("x_location", "ext, site, parent, kind, name, rack_units, depth, room_row, room_slot, facing", locations, (w, l) =>
             {
                 w.Write(l.Id);
                 w.Write(l.Site);
@@ -486,26 +489,31 @@ internal static class NetworkImport
                 w.Write(l.Name);
                 Short(w, l.RackUnits);
                 w.Write(Depth(l));
+                Short(w, l.RoomRow);
+                Short(w, l.RoomSlot);
+                Text(w, l.Facing);
             });
             const string resolved = """
-                SELECT x.ext, s.id AS site_id, p.id AS parent_id, x.kind, x.name, x.rack_units, x.depth
+                SELECT x.ext, s.id AS site_id, p.id AS parent_id, x.kind, x.name, x.rack_units, x.depth, x.room_row, x.room_slot, x.facing
                 FROM x_location x
                 JOIN site s ON s.source_system = $1 AND s.external_id = x.site
                 LEFT JOIN location p ON p.source_system = $1 AND p.external_id = x.parent
                 """;
             var updated = await Exec(conn, $"""
-                UPDATE location l SET site_id = r.site_id, parent_id = r.parent_id, kind = r.kind, name = r.name, rack_units = r.rack_units
+                UPDATE location l SET site_id = r.site_id, parent_id = r.parent_id, kind = r.kind, name = r.name, rack_units = r.rack_units,
+                                      room_row = r.room_row, room_slot = r.room_slot, facing = r.facing
                 FROM ({resolved}) r
                 WHERE l.source_system = $1 AND l.external_id = r.ext
-                  AND (l.site_id, l.parent_id, l.kind, l.name, l.rack_units) IS DISTINCT FROM (r.site_id, r.parent_id, r.kind, r.name, r.rack_units)
+                  AND (l.site_id, l.parent_id, l.kind, l.name, l.rack_units, l.room_row, l.room_slot, l.facing)
+                      IS DISTINCT FROM (r.site_id, r.parent_id, r.kind, r.name, r.rack_units, r.room_row, r.room_slot, r.facing)
                 """, ct, source);
             long created = 0;
             var depths = locations.Select(Depth).DefaultIfEmpty().Max();
             for (var depth = 0; depth <= depths; depth++)
             {
                 created += await Exec(conn, $"""
-                    INSERT INTO location (site_id, parent_id, kind, name, rack_units, lifecycle, source_system, external_id, last_confirmed_at)
-                    SELECT r.site_id, r.parent_id, r.kind, r.name, r.rack_units, 'in_service', $1, r.ext, now()
+                    INSERT INTO location (site_id, parent_id, kind, name, rack_units, room_row, room_slot, facing, lifecycle, source_system, external_id, last_confirmed_at)
+                    SELECT r.site_id, r.parent_id, r.kind, r.name, r.rack_units, r.room_row, r.room_slot, r.facing, 'in_service', $1, r.ext, now()
                     FROM ({resolved}) r
                     WHERE r.depth = {depth} AND NOT EXISTS (SELECT 1 FROM location l WHERE l.source_system = $1 AND l.external_id = r.ext)
                     """, ct, source);

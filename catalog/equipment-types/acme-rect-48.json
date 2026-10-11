@@ -3,6 +3,7 @@
   "manufacturer": "Acme Power",
   "model": "RECT-48",
   "category": "power",
+  "cost": 9000,
   "rackUnits": 2,
   "panel": {
     "rows": 1,

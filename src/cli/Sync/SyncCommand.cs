@@ -11,7 +11,7 @@ namespace Cmdb.Cli.Sync;
 /// <summary>
 /// <c>cmdb sync &lt;adapter&gt;</c> (#217): runs the adapter into a temporary folder, packs the files and sends them to
 /// reconciliation (<c>POST /api/reconciliations</c>) with the integration's own account, so the run stays inside the
-/// integration's scopes (ADR-0020, ADR-0021). Prints the report; <c>--dry-run</c> reconciles without plans.
+/// integration's scopes (ADR-0020, ADR-0022). Prints the report; <c>--dry-run</c> reconciles without plans.
 /// </summary>
 internal static class SyncCommand
 {

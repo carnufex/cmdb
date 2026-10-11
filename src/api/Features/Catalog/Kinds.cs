@@ -4,8 +4,8 @@ using FastEndpoints;
 
 namespace Cmdb.Api.Features.Catalog;
 
-/// <summary>The catalog's site types and equipment categories with names and roles (#208), and the attribute fields of
-/// site, cable and service types (#211).</summary>
+/// <summary>The catalog's site types and equipment categories with names, roles (#208) and icons (#249), and the attribute
+/// fields of site, cable and service types (#211).</summary>
 public sealed record CatalogKinds(IReadOnlyList<KindField> SiteTypes, IReadOnlyList<KindField> Categories,
     IReadOnlyList<KindField> CableTypes, IReadOnlyList<KindField> ServiceTypes);
 
@@ -19,7 +19,7 @@ public sealed class GetCatalogKindsEndpoint(TypeCatalog catalog) : EndpointWitho
 
     public override Task HandleAsync(CancellationToken ct) =>
         Send.OkAsync(new CatalogKinds(QueryFieldsEndpoint.SiteTypeFields(catalog),
-            [.. catalog.Categories.Select(c => new KindField(c.Key, c.Name, c.Roles))],
+            [.. catalog.Categories.Select(c => new KindField(c.Key, c.Name, c.Roles, Icon: CatalogIcons.For(c)))],
             [.. catalog.CableTypes.Select(t => new KindField(t.Key, t.Name, [], QueryFieldsEndpoint.Fields(t.Attributes)))],
             QueryFieldsEndpoint.ServiceTypeFields(catalog)), ct);
 }

@@ -2,6 +2,7 @@ import { httpResource } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, effect, inject, input } from '@angular/core';
 import { MapView } from '../map/map-view';
 import { ActivePlan } from '../plans/active-plan';
+import { Tools } from '../shell/tools';
 import { PanelStack } from '../shell/panels';
 import { ObjectLinkComponent } from './object-link';
 import {
@@ -19,14 +20,16 @@ import {
  * as a vertical circuit diagram. Every step is a link, and the route is drawn in the map while the trace is in
  * the panel stack.
  */
+import { IconComponent } from '../shell/icons';
+
 @Component({
   selector: 'cmdb-trace-panel',
-  imports: [ObjectLinkComponent],
+  imports: [IconComponent, ObjectLinkComponent],
   template: `
     @if (start(); as s) {
       @if (trace.value(); as t) {
         <header class="header">
-          <div class="kind">Spårning · {{ kinds[s.by] }}</div>
+          <div class="kind"><cmdb-icon name="circuit" />Spårning · {{ kinds[s.by] }}</div>
           <div class="code mono">{{ title() }}</div>
           @if (t.service?.name) {
             <div class="title">{{ t.service?.name }}</div>
@@ -45,6 +48,9 @@ import {
             }
             @if (t.route?.cables?.length || t.route?.sites?.length) {
               <button type="button" class="action" (click)="showRoute()">Visa i kartan</button>
+              @if (start()?.by === 'service') {
+                <button type="button" class="action" (click)="view()">Tjänstevy</button>
+              }
             }
           </div>
         </header>
@@ -275,6 +281,7 @@ export class TracePanelComponent {
   private readonly panels = inject(PanelStack);
   private readonly mapView = inject(MapView);
   private readonly plan = inject(ActivePlan);
+  private readonly tools = inject(Tools);
 
   readonly id = input.required<string>();
 
@@ -282,7 +289,9 @@ export class TracePanelComponent {
   protected readonly trace = httpResource<TraceResult>(() => {
     const s = this.start();
     return s
-      ? this.plan.request(`/api/trace?${s.by}=${s.id}&geometry=true${this.plan.param()}`)
+      ? this.plan.request(
+          `/api/trace?${s.by}=${s.id}&geometry=true${s.production ? this.plan.timeParam() : this.plan.graphParam()}`,
+        )
       : undefined;
   });
 
@@ -316,11 +325,20 @@ export class TracePanelComponent {
     effect(() => {
       const title = this.title();
       if (title) {
-        this.panels.setLabel({ type: 'trace', id: this.id() }, `Spårning ${title}`);
+        const where = this.start()?.production && this.plan.id() !== null ? ' i produktion' : '';
+        this.panels.setLabel({ type: 'trace', id: this.id() }, `Spårning ${title}${where}`);
       }
     });
     // Drawn when loaded; the panel host clears it once no trace is left in the stack.
     effect(() => this.showRoute());
+  }
+
+  /** The traced service drawn end to end as the workspace (#257). */
+  protected view(): void {
+    const s = this.start();
+    if (s) {
+      this.tools.show('service', { service: String(s.id) });
+    }
   }
 
   protected showRoute(): void {

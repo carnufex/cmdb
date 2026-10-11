@@ -3,6 +3,7 @@
   "manufacturer": "Acme Networks",
   "model": "AR-10",
   "category": "router",
+  "cost": 180000,
   "rackUnits": 1,
   "panel": { "rows": 2, "columns": 6 },
   "ports": [

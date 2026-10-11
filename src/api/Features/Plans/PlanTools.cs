@@ -29,7 +29,10 @@ public sealed class AgentPlanOperation
         "remove (a site, equipment or cable that carries no circuits; a site takes its equipment and cables along) " +
         "set_classification (a classification level on a site, equipment, cable or service) " +
         "move (equipment to another rack or site, or a cable's end to another site; connections on what changes site go and nothing " +
-        "that carries a circuit can move) or set_conductor_usage (fibres of a cable as dark, dark_fibre (leased) or spare; lit is derived).")]
+        "that carries a circuit can move), set_conductor_usage (fibres of a cable as dark, dark_fibre (leased) or spare; lit is derived), " +
+        "create_location (a building, room, rack or position on a site), create_service, create_circuit (with its path of terminals), " +
+        "set_circuit_path, link_circuit (a circuit riding on a carrier circuit), link_service (a service running on a circuit) " +
+        "or set_rack_place (a rack's row and place in its room; target \"location:9\").")]
     public string Kind { get; set; } = "";
 
     [Description("connect/disconnect: the first terminal id (ports and conductor ends have terminal ids in get_object).")]
@@ -41,7 +44,8 @@ public sealed class AgentPlanOperation
     [Description("connect: patch, splice, termination or internal. Default patch.")]
     public string? ConnectionKind { get; set; }
 
-    [Description("set_lifecycle/rename/remove/set_classification: a reference \"site:12\", \"equipment:34\" or \"cable:56\" (rename: site or equipment; set_classification also \"service:78\").")]
+    [Description("set_lifecycle/rename/remove/set_classification: a reference \"site:12\", \"equipment:34\" or \"cable:56\" (rename: site, equipment or \"location:9\"; set_classification also \"service:78\"). " +
+        "set_circuit_path/link_circuit: the circuit, \"circuit:7\"; link_service: the service, \"service:78\". Planned ones from this plan have negative ids.")]
     public string? Target { get; set; }
 
     [Description("set_lifecycle: planned, under_construction, in_service, decommissioning or removed.")]
@@ -106,6 +110,51 @@ public sealed class AgentPlanOperation
 
     [Description("set_conductor_usage: dark, dark_fibre (leased, lit by the customer) or spare; leave out to clear it.")]
     public string? Usage { get; set; }
+
+    [Description("create_location: the location it stands in, \"location:9\" (a room for a rack); create_equipment: the equipment whose slot a card " +
+        "goes in, \"equipment:34\". Planned ones from this plan allowed.")]
+    public string? Parent { get; set; }
+
+    [Description("create_equipment with parent: the slot the card goes in; it must be free and take the card's category.")]
+    public string? Slot { get; set; }
+
+    [Description("create_location: building, room, rack or position; site is the site and name its name.")]
+    public string? LocationKind { get; set; }
+
+    [Description("create_location: a rack's height in units.")]
+    public int? RackUnits { get; set; }
+
+    [Description("create_location of a rack, set_rack_place: the rack's row in its room, from 1, with roomSlot.")]
+    public int? RoomRow { get; set; }
+
+    [Description("create_location of a rack, set_rack_place: the rack's place in its row, from 1.")]
+    public int? RoomSlot { get; set; }
+
+    [Description("create_location of a rack, set_rack_place: which way its front faces along the row, front or back.")]
+    public string? Facing { get; set; }
+
+    [Description("create_cable: the way it is drawn from aSite (#259), in order: {kind: segment, id} follows a route segment in an empty " +
+        "tube, {kind: site, id} goes to a site (along a segment when one joins them), {kind: point, x, y} is a break point in EPSG:3006; " +
+        "construction trench or aerial for a new stretch, beside true for a new trench beside a full segment. The last step is bSite.")]
+    public CableRouteStep[]? Route { get; set; }
+
+    [Description("create_service: the service type (describe_catalog); code and name as for a site.")]
+    public string? ServiceType { get; set; }
+
+    [Description("create_circuit: physical, transmission or logical.")]
+    public string? Layer { get; set; }
+
+    [Description("create_circuit/set_circuit_path: the path as terminal ids in order, at least two (ports and conductor ends have terminal ids in get_object).")]
+    public long[]? Hops { get; set; }
+
+    [Description("link_circuit: the circuit it rides on, \"circuit:8\".")]
+    public string? Carrier { get; set; }
+
+    [Description("link_service: the circuit the service runs on, \"circuit:7\".")]
+    public string? Circuit { get; set; }
+
+    [Description("link_circuit/link_service: true takes the link away instead of adding it.")]
+    public bool? Remove { get; set; }
 }
 
 /// <summary>
@@ -114,7 +163,7 @@ public sealed class AgentPlanOperation
 /// </summary>
 [McpServerToolType]
 public sealed class PlanTools(RequestDb db, PlanWrites writes, PlanViews views, GraphHolder holder, ScopeMasks masks, AgentLinks links,
-    PlanPatterns patterns, PlanImport import, RoutePlanner routes, IHttpContextAccessor http)
+    PlanPatterns patterns, PlanImport import, RoutePlanner routes, Materials materials, IHttpContextAccessor http)
 {
     private const int MaxOperations = 100;
 
@@ -130,6 +179,20 @@ public sealed class PlanTools(RequestDb db, PlanWrites writes, PlanViews views, 
         return [.. plans.Where(p => scope.SeesPlan(p.Id))
             .OrderBy(p => p.Status == "draft" ? 0 : 1).ThenByDescending(p => p.UpdatedAt)
             .Select(ToAgent)];
+    }
+
+    [McpServerTool(Name = "plan_materials", Title = "Material för en plan", ReadOnly = true, Idempotent = true, OpenWorld = false)]
+    [Description("What a plan needs and costs (#291): the cables it creates by type and metres (as drawn along the conduit, or " +
+        "straight), the equipment by model, new route segments by construction and metres pulled through existing conduit, priced " +
+        "from the catalog in its currency. Keys without a price are listed in missing and left out of the total.")]
+    public async Task<PlanMaterials> PlanMaterials([Description("The plan, \"plan:12\".")] string plan, CancellationToken ct = default)
+    {
+        var planId = ParseRef(plan, "plan");
+        if (await views.GetAsync(holder.Require(), planId, Http.Scope(), ct) is not { } view)
+        {
+            throw new McpException($"{plan} finns inte.");
+        }
+        return await materials.ForAsync(view, planId, ct);
     }
 
     [McpServerTool(Name = "create_plan", Title = "Skapa plan", Destructive = false, OpenWorld = false)]
@@ -199,6 +262,20 @@ public sealed class PlanTools(RequestDb db, PlanWrites writes, PlanViews views, 
                 End = op.End,
                 Conductors = op.Conductors,
                 Usage = op.Usage,
+                ParentId = op.Parent is null ? null : ParseRef(op.Parent, op.Kind == "create_location" ? "location" : "equipment", planned: true),
+                Slot = op.Slot,
+                LocationKind = op.LocationKind,
+                RackUnits = op.RackUnits,
+                RoomRow = op.RoomRow,
+                RoomSlot = op.RoomSlot,
+                Facing = op.Facing,
+                Route = op.Route,
+                ServiceType = op.ServiceType,
+                Layer = op.Layer,
+                Hops = op.Hops,
+                CarrierId = op.Carrier is null ? null : ParseRef(op.Carrier, "circuit", planned: true),
+                CircuitId = op.Circuit is null ? null : ParseRef(op.Circuit, "circuit", planned: true),
+                Remove = op.Remove ?? false,
             });
         }
         return await AddAllAsync(planId, requests, ct);
@@ -529,9 +606,9 @@ public sealed class PlanTools(RequestDb db, PlanWrites writes, PlanViews views, 
     {
         var colon = reference.IndexOf(':', StringComparison.Ordinal);
         var type = colon > 0 ? reference[..colon] : "";
-        return type is "site" or "equipment" or "cable" or "service"
-            // A negative id is a site or equipment the plan creates (#179); the write checks that it exists in the plan.
+        return type is "site" or "equipment" or "cable" or "service" or "circuit" or "location"
+            // A negative id is an object the plan creates (#179, #268); the write checks that it exists in the plan.
             ? (type, ParseRef(reference, type, planned: true))
-            : throw new McpException($"\"{reference}\" is not a reference like \"site:12\", \"equipment:34\", \"cable:56\" or \"service:78\".");
+            : throw new McpException($"\"{reference}\" is not a reference like \"site:12\", \"equipment:34\", \"cable:56\", \"service:78\", \"circuit:7\" or \"location:9\".");
     }
 }

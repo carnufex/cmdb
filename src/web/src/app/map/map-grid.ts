@@ -50,9 +50,12 @@ export function networkTileGrid(): TileGrid {
   });
 }
 
-/** OpenLayers counts tile rows downwards from the top-left origin, like ST_TileEnvelope. */
-export function tileUrl(z: number, x: number, y: number): string {
-  return `/api/tiles/${z}/${x}/${y}`;
+/**
+ * OpenLayers counts tile rows downwards from the top-left origin, like ST_TileEnvelope. `query` draws the network at a
+ * time (#23, see time-travel.ts).
+ */
+export function tileUrl(z: number, x: number, y: number, query = ''): string {
+  return `/api/tiles/${z}/${x}/${y}${query}`;
 }
 
 /** The conduit's own tiles (#236): route segments, apart from the network's. */

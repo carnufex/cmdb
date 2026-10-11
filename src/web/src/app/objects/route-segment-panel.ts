@@ -1,9 +1,12 @@
 import { httpResource } from '@angular/common/http';
 import { DecimalPipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
+import { IconComponent } from '../shell/icons';
 import { StatusComponent } from '../shell/status';
 import { ImpactListComponent } from './impact-list';
 import { asLifecycle, Impact, ObjectRef } from './models';
+import { Tools } from '../shell/tools';
+import { fibreTarget } from './fibre-model';
 import { ObjectLinkComponent } from './object-link';
 
 /** GET /api/route-segments/{id} (#236) */
@@ -87,17 +90,20 @@ export function crossSection(count: number, size = 120): { x: number; y: number;
  */
 @Component({
   selector: 'cmdb-route-segment-panel',
-  imports: [DecimalPipe, ObjectLinkComponent, StatusComponent, ImpactListComponent],
+  imports: [IconComponent, DecimalPipe, ObjectLinkComponent, StatusComponent, ImpactListComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (segment.value(); as s) {
       <header class="header">
-        <div class="kind">Trasé · {{ construction(s.construction) }}</div>
+        <div class="kind">
+          <cmdb-icon name="route-segment" />Trasé · {{ construction(s.construction) }}
+        </div>
         <div class="code mono">{{ s.code }}</div>
         <div class="meta">
           <cmdb-status [value]="asLifecycle(s.lifecycle)" />
           <span>{{ s.lengthM / 1000 | number: '1.2-2' }} km</span>
           <span>{{ s.ducts.length }} dukter, {{ s.freeSubducts }} lediga rör</span>
+          <button type="button" class="linkish" (click)="fibre(s.id)">Fiberritning</button>
         </div>
       </header>
       <section>
@@ -281,6 +287,13 @@ export function crossSection(count: number, size = 120): { x: number; y: number;
   `,
 })
 export class RouteSegmentPanelComponent {
+  private readonly fibreTools = inject(Tools);
+
+  /** Opens the fibre drawing (#254) of this object as the workspace. */
+  protected fibre(id: number): void {
+    this.fibreTools.show('fibre', { fibre: fibreTarget('route-segments', id) });
+  }
+
   readonly id = input.required<string>();
 
   protected readonly segment = httpResource<RouteSegmentDetail>(

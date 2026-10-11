@@ -1,43 +1,66 @@
 import { HttpClient, HttpErrorResponse, httpResource } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { FormsModule } from '@angular/forms';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  effect,
+  inject,
+  signal,
+  untracked,
+} from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { ReservationView } from '../objects/claims';
-import { ObjectLinkComponent } from '../objects/object-link';
 import { PlanClassificationComponent } from './plan-classification';
 import { PlanRouteComponent } from './plan-route';
 import { PlanCreateComponent } from './plan-create';
+import { PlanChangesComponent } from './plan-changes';
+import { PlanDraft } from './plan-draft';
+import { PlanImpactComponent } from './plan-impact';
+import { PlanMaterialsComponent } from './plan-materials';
+import { PlanListComponent } from './plan-list';
 import { StatusComponent } from '../shell/status';
 import { Tools } from '../shell/tools';
 import { ActivePlan } from './active-plan';
 import {
   ApplyResult,
   byPlan,
-  dependencyChoices,
+  ChangeCategory,
+  changeCategories,
+  changeCategoryLabels,
+  changeCounts,
+  nextStep,
   PlanDetail,
   PlanSummary,
   planLifecycle,
   planStatusLabels,
 } from './plan-model';
+import { ToolSizeComponent } from '../shell/tool-size';
+
+/** The parts of the active plan, one at a time (#252). */
+type PlanTab = 'changes' | 'impact' | 'materials' | 'reservations' | 'add';
 
 /**
- * Plans (#24): the list, a new plan on top of others, and the active plan with its operations. Choosing a plan
- * switches the whole app to its view; operations are added from the objects themselves (ports in the equipment
- * panel) and listed here with anything that no longer fits production.
+ * Plans (#24) as a workspace (#252): an overview of the active plan with its next step, what needs attention first,
+ * and tabs for its changes as a table, its impact, its reservations and adding to it; below, the list of plans and a
+ * short row for a new one. Choosing a plan switches the whole app to its view.
  */
 @Component({
   selector: 'cmdb-plan-panel',
   imports: [
-    FormsModule,
+    ToolSizeComponent,
     StatusComponent,
-    ObjectLinkComponent,
     PlanCreateComponent,
     PlanClassificationComponent,
     PlanRouteComponent,
+    PlanChangesComponent,
+    PlanImpactComponent,
+    PlanMaterialsComponent,
+    PlanListComponent,
   ],
   template: `
     <header class="head">
       <h2>Planer</h2>
+      <cmdb-tool-size />
       <button type="button" class="close" aria-label="Stäng planer" (click)="tools.close()">
         ×
       </button>
@@ -47,14 +70,14 @@ import {
         <p class="error" role="alert">{{ e }}</p>
       }
       @if (active.id() !== null) {
-        @if (detail.value(); as d) {
-          <section class="active" aria-label="Aktiv plan">
+        @if (current(); as d) {
+          <section class="overview" aria-label="Aktiv plan">
             <div class="title">
-              <cmdb-status [value]="lifecycle(d.plan)" />
               <h3>{{ d.plan.name }}</h3>
+              <cmdb-status [value]="lifecycle(d.plan)" [text]="statusLabels[d.plan.status]" />
             </div>
             <p class="muted">
-              {{ statusLabels[d.plan.status] }} · {{ d.plan.createdBy }}
+              Skapad av {{ d.plan.createdBy }}
               @if (d.plan.createdVia === 'mcp') {
                 · <strong>föreslagen av agent, granska innan införande</strong>
               }
@@ -64,9 +87,6 @@ import {
             </p>
             @if (d.plan.description) {
               <p>{{ d.plan.description }}</p>
-            }
-            @if (d.plan.flag) {
-              <p class="flag" role="status">{{ d.plan.flag }}</p>
             }
             @if (d.dependencies.length) {
               <p class="muted">
@@ -78,121 +98,188 @@ import {
                 }
               </p>
             }
-
-            @if (active.pending(); as p) {
-              <p class="pending" role="status">
-                Välj port att koppla till <span class="mono">{{ p.label }}</span> i
-                utrustningspanelen.
-                <button type="button" class="action" (click)="active.pending.set(null)">
-                  Avbryt
+            <ul class="counts" aria-label="Ändringar per slag">
+              <li>
+                <strong>{{ total() }}</strong> {{ total() === 1 ? 'ändring' : 'ändringar' }}
+              </li>
+              @for (c of categories; track c) {
+                @if (counts()[c]) {
+                  <li>
+                    <button type="button" class="linkish" (click)="show(c)">
+                      {{ counts()[c] }} {{ categoryLabels[c].toLowerCase() }}
+                    </button>
+                  </li>
+                }
+              }
+            </ul>
+            <div class="buttons">
+              @switch (step()) {
+                @case ('apply') {
+                  <button type="button" class="primary" [disabled]="busy()" (click)="apply(d.plan)">
+                    För in i produktion
+                  </button>
+                }
+                @case ('resolve') {
+                  <button type="button" class="primary" (click)="show('attention')">
+                    Lös konflikter
+                  </button>
+                }
+                @case ('add') {
+                  <button type="button" class="primary" (click)="tab.set('add')">
+                    Lägg till ändringar
+                  </button>
+                }
+              }
+              @if (d.plan.status === 'draft') {
+                @if (step() !== 'apply') {
+                  <button
+                    type="button"
+                    class="action"
+                    [disabled]="busy() || !d.plan.operations"
+                    (click)="apply(d.plan)"
+                  >
+                    För in i produktion
+                  </button>
+                }
+                <button type="button" class="action" [disabled]="busy()" (click)="cancel(d.plan)">
+                  Avbryt planen
                 </button>
-              </p>
-            }
+              }
+              <button
+                type="button"
+                [class]="step() === 'production' ? 'primary' : 'action'"
+                (click)="active.activate(null)"
+              >
+                Visa produktion
+              </button>
+            </div>
+          </section>
 
-            @if (active.view.value(); as v) {
-              @for (group of groups(); track group.plan.id) {
-                <h4>
-                  {{ group.plan.id === d.plan.id ? 'Ändringar' : 'Från ' + group.plan.name }}
-                  <span class="muted">({{ group.total }})</span>
-                </h4>
-                <ol class="ops">
-                  @for (op of group.changes; track op.id) {
-                    <li [class.problem]="op.problem || op.conflicts.length">
-                      <span>{{ op.summary }}</span>
-                      @if (op.target) {
-                        <cmdb-link [ref]="op.target" />
+          @if (d.plan.flag || counts().attention) {
+            <section class="attention" aria-label="Att åtgärda">
+              <h4>Att åtgärda</h4>
+              @if (d.plan.flag) {
+                <p class="flag" role="status">{{ d.plan.flag }}</p>
+              }
+              @if (counts().attention) {
+                <p>
+                  {{ counts().attention }}
+                  {{ counts().attention === 1 ? 'ändring passar' : 'ändringar passar' }} inte längre
+                  produktionen eller krockar med andras anspråk.
+                  <button type="button" class="action" (click)="show('attention')">Visa</button>
+                </p>
+              }
+            </section>
+          }
+          @if (d.plan.status === 'draft') {
+            <cmdb-plan-classification [planId]="d.plan.id" />
+          }
+          @if (d.plan.exception) {
+            <p class="muted">Infört med undantag: {{ d.plan.exception }}</p>
+          }
+
+          @if (active.pending(); as p) {
+            <p class="pending" role="status">
+              Välj port att koppla till <span class="mono">{{ p.label }}</span> i
+              utrustningspanelen.
+              <button type="button" class="action" (click)="active.pending.set(null)">
+                Avbryt
+              </button>
+            </p>
+          }
+
+          <div class="tabs" role="tablist" aria-label="Planens delar">
+            @for (t of tabs(); track t.id) {
+              <button
+                type="button"
+                role="tab"
+                [attr.aria-selected]="tab() === t.id"
+                (click)="tab.set(t.id)"
+              >
+                {{ t.label }}
+                @if (t.count !== null) {
+                  <span class="n">{{ t.count }}</span>
+                }
+              </button>
+            }
+          </div>
+
+          <div role="tabpanel" class="panel">
+            @switch (tab()) {
+              @case ('changes') {
+                @if (view(); as v) {
+                  @for (group of groups(); track group.plan.id) {
+                    @if (group.plan.id === d.plan.id) {
+                      <cmdb-plan-changes
+                        [changes]="group.changes"
+                        [sites]="v.sites"
+                        [editable]="d.plan.status === 'draft'"
+                        [(filter)]="filter"
+                        empty="Inga ändringar ännu. Lägg till från objekten, kartans högerklick eller fliken Lägg till."
+                        (removed)="remove($event)"
+                      />
+                      @if (group.total > group.changes.length) {
+                        <p class="muted">
+                          Visar {{ group.changes.length }} av {{ group.total }}: de första och alla
+                          med problem.
+                          <button type="button" class="action" (click)="active.all.set(true)">
+                            Visa alla
+                          </button>
+                        </p>
                       }
-                      @if (op.problem) {
-                        <span class="problem-text">{{ op.problem }}</span>
+                    }
+                  }
+                  @for (group of groups(); track group.plan.id) {
+                    @if (group.plan.id !== d.plan.id) {
+                      <details class="dependency">
+                        <summary>
+                          Från {{ group.plan.name }} <span class="muted">({{ group.total }})</span>
+                        </summary>
+                        <cmdb-plan-changes [changes]="group.changes" [sites]="v.sites" />
+                      </details>
+                    }
+                  }
+                  <p class="muted">Vyn laddades på {{ v.elapsedMs }} ms.</p>
+                }
+              }
+              @case ('impact') {
+                <cmdb-plan-impact [planId]="d.plan.id" />
+              }
+              @case ('materials') {
+                <cmdb-plan-materials [planId]="d.plan.id" [planName]="d.plan.name" />
+              }
+              @case ('reservations') {
+                <ul class="ops">
+                  @for (r of held(); track r.id) {
+                    <li>
+                      <span>{{ r.label }}</span>
+                      @if (r.reason) {
+                        <span class="muted"> – {{ r.reason }}</span>
                       }
-                      @for (c of op.conflicts; track c) {
-                        <span class="problem-text"
-                          >{{ c }}{{ op.blocked ? ' Stoppar införandet.' : '' }}</span
-                        >
-                      }
-                      @if (group.plan.id === d.plan.id && d.plan.status === 'draft') {
+                      @if (d.plan.status === 'draft') {
                         <button
                           type="button"
-                          class="remove"
-                          [attr.aria-label]="'Ta bort: ' + op.summary"
-                          (click)="remove(op.id)"
+                          class="action"
+                          [attr.aria-label]="'Släpp reservationen av ' + r.label"
+                          (click)="release(r.id)"
                         >
-                          ×
+                          Släpp
                         </button>
                       }
                     </li>
                   } @empty {
                     <li class="muted">
-                      Inga ändringar ännu. Koppla portar från utrustningspanelen.
+                      Inga. Reservera portar och fibrer från utrustnings- och kabelpanelerna.
                     </li>
                   }
-                </ol>
-                @if (group.total > group.changes.length) {
-                  <p class="muted">
-                    Visar {{ group.changes.length }} av {{ group.total }}: de första och alla med
-                    problem.
-                    <button type="button" class="action" (click)="active.all.set(true)">
-                      Visa alla
-                    </button>
-                  </p>
-                }
+                </ul>
               }
-              @if (d.plan.status === 'draft') {
-                <h4>Nytt i planen</h4>
+              @case ('add') {
                 <cmdb-plan-create />
+                <cmdb-plan-route [planId]="d.plan.id" />
               }
-              <h4>
-                Reservationer <span class="muted">({{ reservations.value()?.length ?? 0 }})</span>
-              </h4>
-              <ul class="ops">
-                @for (r of reservations.value() ?? []; track r.id) {
-                  <li>
-                    <span>{{ r.label }}</span>
-                    @if (r.reason) {
-                      <span class="muted"> – {{ r.reason }}</span>
-                    }
-                    @if (d.plan.status === 'draft') {
-                      <button
-                        type="button"
-                        class="remove"
-                        [attr.aria-label]="'Släpp reservationen av ' + r.label"
-                        (click)="release(r.id)"
-                      >
-                        ×
-                      </button>
-                    }
-                  </li>
-                } @empty {
-                  <li class="muted">
-                    Inga. Reservera portar och fibrer från utrustnings- och kabelpanelerna.
-                  </li>
-                }
-              </ul>
-              <p class="muted">Vyn laddades på {{ v.elapsedMs }} ms.</p>
             }
-
-            @if (d.plan.status === 'draft') {
-              <cmdb-plan-route [planId]="d.plan.id" />
-              <cmdb-plan-classification [planId]="d.plan.id" />
-            }
-            @if (d.plan.exception) {
-              <p class="muted">Infört med undantag: {{ d.plan.exception }}</p>
-            }
-
-            <div class="buttons">
-              @if (d.plan.status === 'draft') {
-                <button type="button" class="primary" [disabled]="busy()" (click)="apply(d.plan)">
-                  För in i produktion
-                </button>
-                <button type="button" class="action" [disabled]="busy()" (click)="cancel(d.plan)">
-                  Avbryt planen
-                </button>
-              }
-              <button type="button" class="action" (click)="active.activate(null)">
-                Visa produktion
-              </button>
-            </div>
-          </section>
+          </div>
         } @else if (detail.error()) {
           <p class="error">Planen finns inte eller syns inte för dig.</p>
           <button type="button" class="action" (click)="active.activate(null)">
@@ -201,56 +288,7 @@ import {
         }
       }
 
-      <section aria-label="Alla planer">
-        <h4>Alla planer</h4>
-        <ul class="plans">
-          @for (p of plans.value() ?? []; track p.id) {
-            <li>
-              <button
-                type="button"
-                class="plan"
-                [attr.aria-current]="p.id === active.id() ? 'true' : null"
-                (click)="active.activate(p.id)"
-              >
-                <cmdb-status [value]="lifecycle(p)" />
-                <span class="name">{{ p.name }}</span>
-                @if (p.createdVia === 'mcp') {
-                  <span class="muted" title="Föreslagen av en agent">agent</span>
-                }
-                <span class="muted">{{ p.operations }} ändr.</span>
-              </button>
-            </li>
-          } @empty {
-            <li class="muted">Inga planer som du kan se.</li>
-          }
-        </ul>
-      </section>
-
-      <form (ngSubmit)="create()" aria-label="Ny plan">
-        <h4>Ny plan</h4>
-        <label>Namn <input name="name" [(ngModel)]="name" required maxlength="200" /></label>
-        <label
-          >Beskrivning <textarea name="description" [(ngModel)]="description" rows="2"></textarea>
-        </label>
-        @if (choices().length) {
-          <fieldset>
-            <legend>Bygger på</legend>
-            @for (p of choices(); track p.id) {
-              <label class="check"
-                ><input
-                  type="checkbox"
-                  [checked]="dependsOn().has(p.id)"
-                  (change)="toggleDependency(p.id)"
-                />
-                {{ p.name }}</label
-              >
-            }
-          </fieldset>
-        }
-        <button type="submit" class="primary" [disabled]="!name.trim() || busy()">
-          Skapa och visa
-        </button>
-      </form>
+      <cmdb-plan-list />
     </div>
   `,
   styles: `
@@ -316,16 +354,79 @@ import {
       align-items: center;
       gap: var(--space-2);
     }
-    .active {
+    .overview {
       border-left: 3px solid var(--status-planned);
       padding-left: var(--space-3);
+      .title {
+        justify-content: space-between;
+        flex-wrap: wrap;
+      }
+    }
+    .counts {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-1) var(--space-3);
+      list-style: none;
+      margin: 0 0 var(--space-3);
+      padding: 0;
+      font-size: var(--text-sm);
+    }
+    .attention {
+      padding: var(--space-2) var(--space-3);
+      border: 1px solid var(--status-conflict);
+      border-radius: var(--radius-md);
+      h4 {
+        margin-top: 0;
+        color: var(--status-conflict);
+      }
+      p:last-child {
+        margin-bottom: 0;
+      }
+    }
+    .tabs {
+      display: flex;
+      gap: var(--space-1);
+      border-bottom: var(--line);
+      button {
+        height: 30px;
+        padding: 0 var(--space-3);
+        border: 0;
+        border-bottom: 2px solid transparent;
+        background: none;
+        color: var(--text-muted);
+        font: inherit;
+        font-size: var(--text-sm);
+        cursor: pointer;
+        &[aria-selected='true'] {
+          color: var(--text);
+          border-bottom-color: var(--focus);
+          font-weight: 600;
+        }
+        &:hover {
+          color: var(--text);
+        }
+      }
+      .n {
+        margin-left: var(--space-1);
+        color: var(--text-muted);
+        font-variant-numeric: tabular-nums;
+      }
+    }
+    .panel {
+      margin-top: calc(-1 * var(--space-2));
+    }
+    .dependency {
+      margin-top: var(--space-2);
+      summary {
+        cursor: pointer;
+        font-size: var(--text-sm);
+      }
     }
     .muted {
       color: var(--text-muted);
       font-size: var(--text-sm);
     }
-    .flag,
-    .problem-text {
+    .flag {
       color: var(--status-conflict);
       font-size: var(--text-sm);
     }
@@ -350,76 +451,11 @@ import {
     .ops li {
       font-size: var(--text-sm);
     }
-    .ops li.problem::marker {
-      color: var(--status-conflict);
-    }
-    .ops li span + cmdb-link {
-      margin-left: var(--space-1);
-    }
-    .problem-text {
-      display: block;
-    }
-    .remove {
-      margin-left: var(--space-1);
-      border: 0;
-      background: none;
-      color: var(--text-muted);
-      cursor: pointer;
-      &:hover {
-        color: var(--text);
-      }
-    }
-    .plans {
-      list-style: none;
-      margin: 0;
-      padding: 0;
-    }
-    .plan {
+    .ops li {
       display: flex;
       align-items: center;
       gap: var(--space-2);
-      width: 100%;
-      padding: var(--space-1) var(--space-2);
-      border: 0;
-      border-radius: var(--radius-sm);
-      background: none;
-      color: inherit;
-      text-align: left;
-      cursor: pointer;
-      &:hover {
-        background: var(--surface-2);
-      }
-      &[aria-current='true'] {
-        background: var(--surface-2);
-        font-weight: 600;
-      }
-      .name {
-        flex: 1;
-      }
-    }
-    form {
-      display: flex;
-      flex-direction: column;
-      gap: var(--space-2);
-    }
-    label {
-      display: flex;
-      flex-direction: column;
-      gap: var(--space-1);
-      font-size: var(--text-sm);
-    }
-    label.check {
-      flex-direction: row;
-      align-items: center;
-    }
-    fieldset {
-      border: 0;
-      margin: 0;
-      padding: 0;
-    }
-    legend {
-      font-size: var(--text-sm);
-      color: var(--text-muted);
+      flex-wrap: wrap;
     }
     .buttons {
       display: flex;
@@ -454,15 +490,6 @@ import {
         background: var(--surface-2);
       }
     }
-    input,
-    textarea {
-      font: inherit;
-      padding: var(--space-1) var(--space-2);
-      border: var(--line);
-      border-radius: var(--radius-sm);
-      background: var(--surface-1);
-      color: var(--text);
-    }
     .linkish {
       border: 0;
       background: none;
@@ -482,7 +509,6 @@ export class PlanPanelComponent {
   protected readonly statusLabels = planStatusLabels;
   protected readonly lifecycle = planLifecycle;
 
-  protected readonly plans = httpResource<PlanSummary[]>(() => this.active.request('/api/plans'));
   protected readonly detail = httpResource<PlanDetail>(() => {
     const id = this.active.id();
     return id === null ? undefined : this.active.request(`/api/plans/${id}`);
@@ -491,43 +517,75 @@ export class PlanPanelComponent {
     const id = this.active.id();
     return id === null ? undefined : this.active.request(`/api/reservations?plan=${id}`);
   });
+  /** The resources' values, or nothing while loading or failed: value() throws in the error state. */
+  protected readonly current = computed(() =>
+    this.detail.hasValue() ? this.detail.value() : null,
+  );
+  protected readonly view = computed(() =>
+    this.active.view.hasValue() ? this.active.view.value() : null,
+  );
+  protected readonly held = computed(() =>
+    this.reservations.hasValue() ? this.reservations.value() : [],
+  );
   protected readonly groups = computed(() => {
-    const view = this.active.view.value();
+    const view = this.view();
     return view ? byPlan(view) : [];
   });
-  protected readonly choices = computed(() => dependencyChoices(this.plans.value() ?? []));
 
-  protected name = '';
-  protected description = '';
-  protected readonly dependsOn = signal<ReadonlySet<number>>(new Set());
+  protected readonly categories = changeCategories;
+  protected readonly categoryLabels = changeCategoryLabels;
+  protected readonly tab = signal<PlanTab>('changes');
+  protected readonly filter = signal<ChangeCategory | 'attention' | null>(null);
+
+  /** The active plan's own changes, as listed in its view. */
+  private readonly own = computed(
+    () => this.groups().find((g) => g.plan.id === this.active.id()) ?? null,
+  );
+  protected readonly counts = computed(() => changeCounts(this.own()?.changes ?? []));
+  protected readonly total = computed(
+    () => this.own()?.total ?? this.current()?.plan.operations ?? 0,
+  );
+  protected readonly step = computed(() => {
+    const plan = this.current()?.plan;
+    return plan ? nextStep(plan, this.counts().attention) : 'production';
+  });
+  protected readonly tabs = computed(() => {
+    const draft = this.current()?.plan.status === 'draft';
+    const list: { id: PlanTab; label: string; count: number | null }[] = [
+      { id: 'changes', label: 'Ändringar', count: this.total() },
+      { id: 'impact', label: 'Påverkan', count: null },
+      { id: 'materials', label: 'Material', count: null },
+      { id: 'reservations', label: 'Reservationer', count: this.held().length },
+    ];
+    return draft ? [...list, { id: 'add' as const, label: 'Lägg till', count: null }] : list;
+  });
+
+  constructor() {
+    // Another plan starts on its changes, unfiltered.
+    effect(() => {
+      this.active.id();
+      untracked(() => {
+        this.tab.set('changes');
+        this.filter.set(null);
+      });
+    });
+    // A change prefilled elsewhere (the rack view, the map's context menu) opens the form that takes it.
+    const draft = inject(PlanDraft);
+    effect(() => {
+      if (draft.equipment() || draft.tab() || draft.cableFrom()) {
+        untracked(() => this.tab.set('add'));
+      }
+    });
+  }
+
+  /** The changes tab, filtered to one kind or to those needing attention. */
+  protected show(filter: ChangeCategory | 'attention'): void {
+    this.filter.set(filter);
+    this.tab.set('changes');
+  }
+
   protected readonly busy = signal(false);
   protected readonly error = signal<string | null>(null);
-
-  protected toggleDependency(id: number): void {
-    this.dependsOn.update((s) => {
-      const next = new Set(s);
-      if (!next.delete(id)) {
-        next.add(id);
-      }
-      return next;
-    });
-  }
-
-  protected async create(): Promise<void> {
-    await this.run(async () => {
-      const plan = await firstValueFrom(
-        this.http.post<PlanSummary>('/api/plans', {
-          name: this.name.trim(),
-          description: this.description.trim(),
-          dependsOn: [...this.dependsOn()],
-        }),
-      );
-      this.name = '';
-      this.description = '';
-      this.dependsOn.set(new Set());
-      this.active.activate(plan.id);
-    });
-  }
 
   protected async remove(operationId: number): Promise<void> {
     const id = this.active.id();

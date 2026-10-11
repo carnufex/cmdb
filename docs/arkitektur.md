@@ -24,6 +24,7 @@
   - Vyn är produktion, plus planens utkast till beroenden i beroendeordning, plus planen själv. Den cachas per produktionsgraf och planinnehåll (`PlanViews`). Omfångsmasker delas med basen.
   - Operationer som inte längre passar produktion (terminalen finns inte, redan kopplad, inte kopplad) hoppas över i vyn och rapporteras per operation.
   - Spårning och påverkan tar `?plan=<id>`. `GET /api/plans/{id}/view` ger diffen mot produktion med de siter den rör. Den är budgetraden *Växla vy mellan produktion och plan*.
+  - `GET /api/plans/{id}/impact` (#252) jämför plan- och produktionsgrafen i minnet. Den ger kretsarna planen berör och de som åker på dem, med om vägen håller före och efter, och tjänsterna på dem. En fysisk krets håller när varje hopp är kopplat till nästa, och en krets som åker på andra håller när alla dess bärare gör det. Bara namnen hämtas ur databasen.
 - Alla traverseringar (spårning, påverkan, grannskap) sker i minnet. Databasen används för detaljer, skrivningar och geografiska frågor.
 - Påverkansanalys (`GET /api/{cables|equipment|sites}/{id}/impact`, `src/graph/GraphImpact.cs`, #10): objektets terminaler ger de direkt drabbade kretsarna, och bredden först uppåt via beroenden nås kretsarna som rider på dem och deras tjänster. Varje tjänst får den kortaste kedjan av kretsar som når den. Grafen har härledda index utrustning → portar, kabel → ledarändar och site → utrustning; de byggs vid laddning och lagras inte i ögonblicksbilden.
 - Ändringsström (#11): radtriggers på tabellerna grafen byggs av skriver den ändrade *nyckeln* (utrustning, kabel, terminal eller krets) till outboxen `graph_change` i samma transaktion, och en satsvis trigger gör `NOTIFY graph_change`, som levereras vid commit. Varje API-instans följer outboxen själv (`GraphLoadingService`, `PostgresGraphChangeFeed`): väckt av NOTIFY, eller efter högst `Graph:PollSeconds` (5 s), läser den nycklarnas aktuella rader i en REPEATABLE READ-transaktion, tillämpar dem och byter grafen atomärt. Ändringar under tiden blir nästa sats.
@@ -54,6 +55,19 @@ Uppmätt i full skala (7,6 M terminaler, 4,3 M kanter, 117 000 kretsar):
 - Ingen ren event sourcing: tillstånd och logg lever sida vid sida för enklare schemaändringar och felsökning.
 - Läsningar loggas: fråga, omfång och hash av resultatet. Tillsammans med den bitemporala modellen kan man återskapa vad en användare såg vid en viss tidpunkt.
 
+### Operationslogg, historik och läslogg (#23, ADR-0006, ADR-0013)
+
+- **Operationer:** `operation` (vem, klient, när, kommando, argument som jsonb, varför), partitionerad per månad. Skrivvägarna i API:t börjar sin transaktion med `Operations.BeginAsync` (`cmdb_begin_operation`), som sätter `cmdb.operation_id` lokalt i transaktionen. Det gäller införande och avbrott av planer, planändringar, omritad kabel, import till plan, reservationer, klassningar, objektändringar och avstämning; varför är planens namn, ett angivet skäl eller källan. Satsvisa triggrar på nät-, plan-, reservations- och klassningstabellerna skapar en reservoperation (`write`, aktör ur `cmdb.actor` eller databasrollen) när koden inte satt någon, så ingen skrivning blir ologgad. Datageneratorn och importen sätter `cmdb.actor`.
+- **Historik:** de spårade tabellerna (site, location, equipment, cable, connection, circuit, service, route_segment, duct) har `sys_from`. En trigger kopierar den gamla versionen till `<tabell>_history` (samma kolumner plus `sys_to` och `operation_id`, partitionerad per månad på `sys_to`) vid UPDATE och DELETE, i samma transaktion. En uppdatering som bara ändrar `last_confirmed_at`, eller inget alls, versioneras inte. En hel nyladdning sätter `cmdb.history = 'off'`. Nulägestabellerna och grafen läses som förut. **En migrering som lägger till en kolumn i en spårad tabell lägger till den i historiktabellen också** (ett test jämför kolumnerna).
+- **Hashkedja (valfri):** `Operations:HashChain` sätter `operation_config.hash_chain` när API:t startar. Varje operation får då sha256 över föregående operations hash och raden (`cmdb_operation_text`), under ett transaktionslås, så kedjan följer id-ordningen. `GET /api/operations/verify` räknar om kedjan och pekar ut en rad som ändrats eller tagits bort.
+- **Läslogg:** en middleware loggar varje inloggad GET under `/api` och varje MCP-anrop (metod, verktyg och argument): aktör, klient, yta, fråga, omfång, sha256 över svaret, antal rader för en JSON-array, status och tid. Svaret hashas medan det strömmar ut, så inget buffras. Posterna köas och skrivs med binär COPY i batch varje sekund, utanför förfrågans transaktion (`ReadLogWriter`); en full kö räknas och loggas i stället för att bromsa svaren. `read_log` är partitionerad per dygn.
+- **Underhåll:** `OperationLogMaintenance` skapar var sjätte timme partitionerna för innevarande och två kommande månader och fyra dygn framåt (`cmdb_ensure_partition` flyttar in rader som standardpartitionen fångat), och tar bort läsloggens dygn äldre än `ReadLog:RetentionDays` (90), med export till gzippad CSV i `ReadLog:ArchivePath` först om den är satt.
+- **API:** `GET /api/operations` och `/api/operations/verify` (bara för omfång som ser hela nätet, eftersom argumenten kan nämna objekt var som helst), `GET /api/history/{site|equipment|cable|circuit|service}/{id}` (objektet ska vara i anroparens omfång; dolda attribut och lägen förblir dolda) och kartplattor med `?at=&mode=reality|knowledge`: *verklighet* läser giltighetstiden i nulägestabellerna, *vad vi visste* även versionerna i historiktabellerna som gällde vid tidpunkten.
+
+- **Grafen per tidpunkt (#302, ADR-0013 §6):** `GraphLoader.LoadAsync` med `GraphTime` läser samma tabeller med giltighetsfilter och, i läget *vad vi visste*, versionen ur `_history` när den gällande registrerades senare. `GraphAtTime` håller de senaste graferna (`Graph:TimeTravelCacheSize`, 1) och delar en pågående laddning mellan frågorna. Nulägesgrafen och ändringsströmmen rörs inte. Omfångsmaskerna cachas per grafinstans, så nuläget och en tidpunkt har sina masker samtidigt. `at` och `mode` finns på `GET /api/trace`, `/api/{cables|sites|equipment}/{id}/impact` och MCP `trace`/`impact`; tillsammans med en plan ger de 400.
+
+Uppmätt (pgbench, 4 klienter, en uppdatering av en site per transaktion, small): utan logg 0,77–0,89 ms per transaktion, med operation och historik 0,90–1,28 ms, med reservoperation och historik 0,86–1,06 ms. Hashkedjan serialiserar skrivningarna: 3,4 ms och omkring 1 200 transaktioner per sekund. Läsloggen gav ingen mätbar skillnad på fyra GET-vägar (p50 12–14 ms både med och utan, 300 anrop per väg, två omgångar).
+
 ### Planer: tabeller och införande
 
 - `plan` (utkast, införd eller avbruten, flagga med skäl, version), `plan_dependency` (DAG; en cykel nekas när beroenden sätts) och `plan_operation` (ordnade operationer med jsonb: `connect`, `disconnect`, `set_lifecycle`, `rename`, `create_site`, `create_equipment`, `create_cable`).
@@ -67,10 +81,11 @@ Uppmätt i full skala (7,6 M terminaler, 4,3 M kanter, 117 000 kretsar):
   - Sitemallar (`catalog/site-templates/*.json`, `GET /api/templates`) och mönster (`POST /api/plans/{id}/patterns`: portintervall → ledarintervall med förskjutning och steg) expanderas till vanliga operationer.
   - `GET /api/plans/{id}/cables/{cableId}/termination` föreslår terminering i båda ändar. I varje ände väljs den ODF som har flest portar utan skarv i planens vy, och fiber k går till dess k:te lediga port.
   - `create_equipment` tar ett rack, som skapas i en byggnad på siten när det saknas.
-- **Kalkylark (#27):**
+- **Massredigering och urval (#27, #253):**
   - `set_attributes` ändrar attributnycklar, där null tar bort. För utrustning valideras de sammanslagna attributen mot modellens schema (JSON Schema, med format) när operationen läggs till.
   - `POST /api/grid` ger rader och schemakolumner för ett urval av siter eller deras utrustning, inom omfånget och utan dolda attribut.
-  - `POST /api/sites/within` ger siterna i en lassopolygon.
+  - `POST /api/sites/within` ger siterna i en lassopolygon och kablarna som ligger helt inom den.
+  - `POST /api/selection/impact` ger påverkan om alla siter och kablar i ett urval faller samtidigt, och `POST /api/selection/export` urvalet som CSV, båda inom omfånget och utan dolda attribut.
 - **Införande** (`POST /api/plans/{id}/apply`) kräver att beroendena redan är införda och att alla operationer passar produktion. Operationerna körs i en transaktion. En koppling blir en rad i `connection`, och en bortkoppling stänger raden (`valid_to`, livscykel *borttagen*). Ändringsflödet tar dem till grafen. Därefter kontrolleras alla utkast som bygger på planen, direkt eller indirekt, mot produktion som den blir, och de vars operationer inte längre passar flaggas.
 - **Avbrott** (`POST /api/plans/{id}/cancel`) flaggar alla utkast som bygger på planen. En ändring i en flaggad plan tar bort flaggan.
 - **Behörighet:** skrivningar kräver `cmdb-full`, som övriga skrivningar. Operationer får bara röra terminaler och objekt inom användarens omfång. En plan syns för omfång med `*` eller planens id i `access_scope.plans`; *Hela nätet* har `*`.
@@ -100,7 +115,7 @@ Datan antas vara högt klassad, och en CMDB är en aggregeringsmaskin. Behörigh
 - Planer och projekt
 - Tid (slutdatum, kräver förnyelse)
 
-Grundregeln är att allt är nekat tills något uttryckligen beviljas. Omfång beviljas med motivering och godkännande av en andra person. Integrationer är konsumenter med egna omfång, precis som människor. Ett integrationskonto har rollen `cmdb-integration`, som bara får stämma av (#217, ADR-0021), och sitt omfång från integrationens egen grupp, aldrig från `cmdb-full`.
+Grundregeln är att allt är nekat tills något uttryckligen beviljas. Omfång beviljas med motivering och godkännande av en andra person. Integrationer är konsumenter med egna omfång, precis som människor. Ett integrationskonto har rollen `cmdb-integration`, som bara får stämma av (#217, ADR-0022), och sitt omfång från integrationens egen grupp, aldrig från `cmdb-full`.
 
 **Genomförande:**
 

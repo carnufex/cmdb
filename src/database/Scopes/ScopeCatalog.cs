@@ -54,7 +54,7 @@ public static class ScopeCatalog
         },
         new()
         {
-            // An integration has its own scope like a person (#217, ADR-0021): the reference adapter's monitoring system
+            // An integration has its own scope like a person (#217, ADR-0022): the reference adapter's monitoring system
             // covers the same area as Region Nord, and sees the plans reconciliation makes so it can bring in the trusted one.
             Key = "overvakning-nord",
             Name = "Övervakning Nord",

@@ -1,7 +1,7 @@
-import { httpResource } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { Auth } from './auth/auth';
+import { CurrentUser } from './shell/current-user';
 import { PanelStack } from './shell/panels';
 import { PanelHostComponent } from './shell/panel-host';
 import { registerCoreCommands } from './shell/core-commands';
@@ -18,20 +18,16 @@ import { GridPanelComponent } from './grid/grid-panel';
 import { ChangelogPanelComponent, ChangelogStore } from './changelog/changelog';
 import { VoiceCallComponent } from './voice/voice-call';
 import { VoicePanelComponent } from './voice/voice-panel';
-
-/** The user as the API sees them (GET /api/me). */
-export interface Me {
-  username: string;
-  name: string | null;
-  email: string | null;
-  groups: string[];
-  /** Access scopes that apply (#22), by name. */
-  scopes: string[] | null;
-}
+import { RackPanelComponent } from './objects/rack-panel';
+import { FibrePanelComponent } from './objects/fibre-panel';
+import { ServiceViewComponent } from './objects/service-view';
+import { RoomPanelComponent } from './objects/room-panel';
+import { TimeTravelComponent } from './map/time-travel';
 
 @Component({
   selector: 'app-root',
   imports: [
+    TimeTravelComponent,
     RouterOutlet,
     RouterLink,
     RouterLinkActive,
@@ -46,9 +42,14 @@ export interface Me {
     ChangelogPanelComponent,
     VoicePanelComponent,
     VoiceCallComponent,
+    RackPanelComponent,
+    FibrePanelComponent,
+    ServiceViewComponent,
+    RoomPanelComponent,
   ],
   templateUrl: './app.html',
   styleUrl: './app.scss',
+  host: { '(document:keydown)': 'onKey($event)' },
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class App {
@@ -58,12 +59,23 @@ export class App {
   protected readonly tools = inject(Tools);
   protected readonly plan = inject(ActivePlan);
   protected readonly changelog = inject(ChangelogStore);
-  protected readonly me = httpResource<Me>(() =>
-    this.auth.isAuthenticated() ? '/api/me' : undefined,
-  );
+  protected readonly me = inject(CurrentUser).me;
 
   constructor() {
     registerCoreCommands();
     void this.theme.load();
+  }
+
+  /** Alt+. steps the open tool through its sizes (#251). */
+  protected onKey(event: KeyboardEvent): void {
+    if (
+      event.altKey &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      (event.code === 'Period' || event.key === '.')
+    ) {
+      event.preventDefault();
+      this.tools.cycleSize();
+    }
   }
 }

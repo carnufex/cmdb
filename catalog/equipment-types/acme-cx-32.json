@@ -3,6 +3,7 @@
   "manufacturer": "Acme Networks",
   "model": "CX-32",
   "category": "switch",
+  "cost": 45000,
   "rackUnits": 1,
   "panel": { "rows": 2, "columns": 16 },
   "ports": [

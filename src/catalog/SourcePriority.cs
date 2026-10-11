@@ -30,6 +30,17 @@ public sealed class SourcePriority
         UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
     };
 
+    /// <summary>
+    /// What lies between objects, which reconciliation (#230) writes but no source record keeps: connections (and their
+    /// kind), a circuit's path and carriers, the circuits a service runs on.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, string[]> Links = new Dictionary<string, string[]>(StringComparer.Ordinal)
+    {
+        ["connection"] = ["kind"],
+        ["circuit"] = ["path", "carriers"],
+        ["service"] = ["circuits"],
+    };
+
     private static readonly Lazy<SourcePriority> CurrentPriority = new(() => Load(CatalogSource.Current));
 
     private readonly Dictionary<(string ObjectType, string Attribute), SourceRule> _rules;
@@ -136,9 +147,9 @@ public sealed class SourcePriority
                 continue;
             }
             var name = $"'{rule.ObjectType}' '{rule.Attribute}'";
-            if (rule.ObjectType != "*" && !ReportedValues.ObjectTypes.Contains(rule.ObjectType))
+            if (rule.ObjectType != "*" && !ReportedValues.ObjectTypes.Contains(rule.ObjectType) && !Links.ContainsKey(rule.ObjectType))
             {
-                errors.Add($"{name}: unknown object type, expected {string.Join(", ", ReportedValues.ObjectTypes)} or *");
+                errors.Add($"{name}: unknown object type, expected {string.Join(", ", ReportedValues.ObjectTypes.Concat(Links.Keys).Distinct())} or *");
             }
             else if (!KnownAttribute(rule.ObjectType, rule.Attribute))
             {
@@ -167,13 +178,13 @@ public sealed class SourcePriority
 
     private static IEnumerable<string> Attributes(string objectType) =>
         objectType == "*"
-            ? ReportedValues.Attributes.Values.SelectMany(a => a).Distinct()
-            : ReportedValues.Attributes[objectType];
+            ? ReportedValues.Attributes.Values.Concat(Links.Values).SelectMany(a => a).Distinct()
+            : ReportedValues.Attributes.GetValueOrDefault(objectType, []).Concat(Links.GetValueOrDefault(objectType, []));
 
     private static bool KnownAttribute(string objectType, string attribute) =>
         attribute == "*"
         || (attribute.StartsWith(ReportedValues.AttributePrefix, StringComparison.Ordinal) && attribute.Length > ReportedValues.AttributePrefix.Length
-            && objectType != "circuit")
+            && objectType is not "circuit" and not "connection")
         || Attributes(objectType).Contains(attribute);
 
     private static InvalidOperationException Invalid(IEnumerable<string> errors) =>

@@ -99,6 +99,8 @@ flowchart TB
 ```
 
 - **Kanalhemligheten** gör att bara ElevenLabs kan anropa röstingångarna. Den ger ändå inte mer än ett overifierat samtal. En persons token öppnar inte röstingångarna, och röstens hemlighet öppnar inte `/mcp`.
+- **En hemlighet per ingång** (#181): `/voice/mcp`, `/voice/servicedesk/mcp` och `/voice/it/mcp` tar var sin hemlighet (`Voice:Secrets:Noc|ServiceDesk|It`, Bitwarden `CMDB_VOICE_SECRET_NOC|_SERVICEDESK|_IT`). En läckt hemlighet öppnar bara den agentens verktyg. Den gemensamma `Voice:Secret` används bara för en ingång som saknar egen.
+- **Agentens id:** ElevenLabs skickar `system__agent_id` i `X-Agent-Id`. Med `Voice:Agents:…` satt nekar ingången anrop från en annan agent och loggar avvikelsen.
 - **Utan verifiering** har samtalet omfånget "ingenting".
   - Då är bara stationssöket öppet, och det lämnar ut det som står på en skylt: namn, kod, typ, region och status.
   - Hos service desk och IT är det bara kö, uppringning och katalog.
@@ -152,5 +154,5 @@ flowchart LR
 ## Kända gränser
 
 - **ElevenLabs är en tredje part.** Samtalsljud, transkript och verktygssvar behandlas där. Det fungerar för syntetisk data, men en skarp version kräver beslut om EU-residens, avtal och säkerhetsskydd.
-- **Kanalhemligheten är delad** mellan de tre agenterna. Behörigheten sitter i verifieringen, inte i hemligheten, men en läckt hemlighet ger ändå tillgång till de öppna verktygen.
+- **Kanalhemligheterna** är delade hemligheter med ElevenLabs. En läckt hemlighet ger tillgång till den ingångens öppna verktyg, men bara tillsammans med rätt agent-id, och behörigheten bakom sitter ändå i verifieringen.
 - **SMS är stubbade.** Koder och nummer går till en utkorg i databasen, inte till en telefon.

@@ -18,7 +18,7 @@ namespace Cmdb.Api.IntegrationTests.Features.Reconciliation;
 
 /// <summary>
 /// <c>cmdb sync</c> (#217): the reference adapter reads a fake ACME Monitor page by page, and reconciliation runs with the
-/// integration's own account and scope (ADR-0021).
+/// integration's own account and scope (ADR-0022).
 /// </summary>
 public sealed class SyncTests(ApiFactory factory) : IAsyncLifetime
 {

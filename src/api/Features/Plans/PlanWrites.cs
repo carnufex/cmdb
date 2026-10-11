@@ -29,7 +29,7 @@ public enum PlanWriteFailure
 /// an agent go through the same checks: the plan must be a visible draft, and terminals and objects must be inside the
 /// caller's scopes.
 /// </summary>
-public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views, ScopeMasks masks)
+public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views, ScopeMasks masks, CableRoutes routes)
 {
     /// <summary>How the caller reaches us: mcp for anything on /mcp, otherwise api.</summary>
     public static string Via(HttpContext http) =>
@@ -45,6 +45,7 @@ public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views
         }
         await using var conn = await db.OpenConnectionAsync(ct);
         await using var tx = await conn.BeginTransactionAsync(ct);
+        await Cmdb.Api.Features.Operations.Operations.BeginAsync(conn, tx, user, "create_plan", new { name, via, dependsOn }, description, ct);
         long id;
         await using (var cmd = new NpgsqlCommand("""
             INSERT INTO plan (name, description, created_by, created_via, client) VALUES ($1, $2, $3, $4, $5) RETURNING id
@@ -116,6 +117,24 @@ public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views
             }
             payload = removal;
         }
+        else if (NetworkLinks.Kinds.Contains(req.Kind))
+        {
+            var (link, error) = await NetworkLinks.CheckAsync(db, scope, view, mask, req, ct);
+            if (link is null)
+            {
+                return PlanWrite.Fail<PlanOperationView>(PlanWriteFailure.Invalid, error!);
+            }
+            payload = link;
+        }
+        else if (req.Kind == "set_rack_place")
+        {
+            var (place, error) = await RackPlaceAsync(scope, view, req, ct);
+            if (place is null)
+            {
+                return PlanWrite.Fail<PlanOperationView>(PlanWriteFailure.Invalid, error!);
+            }
+            payload = place;
+        }
         else if (req.Kind == "set_conductor_usage")
         {
             var (usage, error) = await ConductorUsageAsync(scope, req, ct);
@@ -178,6 +197,7 @@ public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views
 
         await using var conn = await db.OpenConnectionAsync(ct);
         await using var tx = await conn.BeginTransactionAsync(ct);
+        await Cmdb.Api.Features.Operations.Operations.BeginAsync(conn, tx, user, "add_to_plan", new { plan = req.Id, kind = req.Kind }, null, ct);
         long opId;
         await using (var cmd = new NpgsqlCommand("""
             INSERT INTO plan_operation (plan_id, seq, kind, payload, created_by)
@@ -270,6 +290,17 @@ public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views
                         attributes,
                     }, OmitNull), null);
                 }
+            case "create_equipment" when req.ParentId is { } parent:
+                {
+                    // A card (#230): in a free slot of equipment that takes its category, at the parent's site.
+                    var slot = req.Slot!.Trim();
+                    var (cardSite, cardProblem) = await NetworkLinks.CardAsync(db, scope, view, parent, slot, req.TypeKey!, ct);
+                    if (cardSite is null)
+                    {
+                        return (null, cardProblem);
+                    }
+                    return (System.Text.Json.JsonSerializer.Serialize(new { site = cardSite, typeKey = req.TypeKey, name = req.Name!.Trim(), parent, slot }), null);
+                }
             case "create_equipment":
                 {
                     if (await SiteProblem(req.SiteId!.Value) is { } equipmentSite)
@@ -298,6 +329,23 @@ public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views
                     {
                         return (null, cableSite);
                     }
+                }
+                if (req.Route is { Length: > 0 } steps)
+                {
+                    // Drawn in the map (#259): along route segments in empty tubes, and new stretches that become new segments.
+                    var (route, routeError) = await routes.ResolveAsync(scope, view, req.ASiteId!.Value, steps, ct);
+                    if (route is null)
+                    {
+                        return (null, routeError);
+                    }
+                    if (!route.Complete || route.End!.Id != req.BSiteId)
+                    {
+                        return (null, "Kabeln ska sluta på siten i B-änden.");
+                    }
+                    var drawn = System.Text.Json.Nodes.JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(
+                        new { a = req.ASiteId, b = req.BSiteId, typeKey = req.TypeKey, attributes }, OmitNull))!.AsObject();
+                    CableRoutes.Write(drawn, req.ASiteId!.Value, route, steps);
+                    return (drawn.ToJsonString(), null);
                 }
                 return (System.Text.Json.JsonSerializer.Serialize(new { a = req.ASiteId, b = req.BSiteId, typeKey = req.TypeKey, attributes }, OmitNull), null);
         }
@@ -431,6 +479,50 @@ public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views
     /// Checks a stated conductor usage (#238, ADR-0014) and gives its payload: the cable is visible, the conductors exist, and
     /// none of them is lit (in a circuit in service), since lit is derived and never stated.
     /// </summary>
+    /// <summary>
+    /// Checks a rack's new place in its room (#256): the rack exists and is visible, and no other rack in the room stands
+    /// there, in production or as the plan's view places it.
+    /// </summary>
+    private async Task<(string? Payload, string? Error)> RackPlaceAsync(UserScope scope, PlanView view, AddOperationRequest req, CancellationToken ct)
+    {
+        var rack = req.ObjectId!.Value;
+        long room;
+        await using (var cmd = db.CreateCommand($"""
+            SELECT l.parent_id FROM location l WHERE l.id = $1 AND l.kind = 'rack' AND l.parent_id IS NOT NULL AND {ScopeSql.Site("l.site_id", 2)}
+            """))
+        {
+            cmd.Parameters.Add(new() { Value = rack });
+            cmd.Parameters.Add(scope.Parameter());
+            if (await cmd.ExecuteScalarAsync(ct) is not long parent)
+            {
+                return (null, $"Rack {rack} finns inte i något rum.");
+            }
+            room = parent;
+        }
+        // Where the room's racks stand in the plan's view: production, then the plan's own placements in order.
+        var places = new Dictionary<long, (int Row, int Slot, string Name)>();
+        await using (var cmd = db.CreateCommand("SELECT id, room_row, room_slot, name FROM location WHERE parent_id = $1 AND kind = 'rack' AND room_row IS NOT NULL"))
+        {
+            cmd.Parameters.Add(new() { Value = room });
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                places[reader.GetInt64(0)] = (reader.GetInt16(1), reader.GetInt16(2), reader.GetString(3));
+            }
+        }
+        foreach (var op in view.Chain.Operations.Where(o => o.Kind == "set_rack_place"))
+        {
+            var id = op.Payload.GetProperty("id").GetInt64();
+            var name = places.TryGetValue(id, out var was) ? was.Name : $"Rack {id}";
+            places[id] = (op.Payload.GetProperty("roomRow").GetInt32(), op.Payload.GetProperty("roomSlot").GetInt32(), name);
+        }
+        if (places.FirstOrDefault(p => p.Key != rack && p.Value.Row == req.RoomRow && p.Value.Slot == req.RoomSlot) is { Key: > 0 } taken)
+        {
+            return (null, $"Rad {req.RoomRow} plats {req.RoomSlot} är tagen av {taken.Value.Name}.");
+        }
+        return (System.Text.Json.JsonSerializer.Serialize(new { type = "location", id = rack, roomRow = req.RoomRow, roomSlot = req.RoomSlot, facing = req.Facing }), null);
+    }
+
     private async Task<(string? Payload, string? Error)> ConductorUsageAsync(UserScope scope, AddOperationRequest req, CancellationToken ct)
     {
         var cable = req.ObjectId!.Value;
@@ -784,6 +876,8 @@ public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views
         cmd.Parameters.Add(new() { Value = siteType });
         return (bool)(await cmd.ExecuteScalarAsync(ct))!;
     }
+
+    internal static bool NodeVisible(Cmdb.Graph.Graph g, GraphMask mask, int node) => Visible(g, mask, node);
 
     private static bool Visible(Cmdb.Graph.Graph g, GraphMask mask, int node)
     {

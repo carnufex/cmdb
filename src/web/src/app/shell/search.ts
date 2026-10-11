@@ -20,6 +20,7 @@ import {
 } from 'rxjs';
 import { MapView } from '../map/map-view';
 import { Command, CommandRegistry } from './commands';
+import { IconComponent, objectIcons } from './icons';
 import { PanelStack } from './panels';
 import { Lifecycle, StatusComponent } from './status';
 
@@ -58,7 +59,7 @@ type Results =
  */
 @Component({
   selector: 'cmdb-search',
-  imports: [StatusComponent],
+  imports: [StatusComponent, IconComponent],
   templateUrl: './search.html',
   styleUrl: './search.scss',
   host: { '(document:keydown)': 'globalKey($event)' },
@@ -75,6 +76,7 @@ export class SearchComponent {
   protected readonly open = signal(false);
   protected readonly active = signal(0);
   protected readonly typeLabels = typeLabels;
+  protected readonly icons = objectIcons;
 
   protected readonly results = toSignal(
     toObservable(this.query).pipe(

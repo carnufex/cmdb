@@ -8,6 +8,7 @@ import {
   ElementRef,
   inject,
   signal,
+  untracked,
   viewChild,
 } from '@angular/core';
 import OlMap from 'ol/Map';
@@ -33,6 +34,8 @@ import VectorTileSource from 'ol/source/VectorTile';
 import { Auth } from '../auth/auth';
 import { RUNTIME_CONFIG } from '../config';
 import { CatalogKinds } from '../shell/catalog-kinds';
+import { Selection } from '../grid/selection';
+import { SelectionBarComponent } from '../grid/selection-bar';
 import { PanelStack } from '../shell/panels';
 import { StatusComponent } from '../shell/status';
 import { ThemeStore } from '../shell/theme';
@@ -48,7 +51,13 @@ import {
 } from './map-grid';
 import { createBasemap, esriTileUrl, parseBasemap } from './map-basemap';
 import { createStyler, Palette, readPalette, statusColor } from './map-style';
-import { MapView, Operations, PlannedObjects, Route } from './map-view';
+import { CurrentUser } from '../shell/current-user';
+import { ContextMenuComponent } from './context-menu';
+import { CableDrawingBarComponent } from './cable-drawing-bar';
+import { CableDrawing, CableRouteStep } from '../plans/cable-drawing';
+import { distanceText, MapActions } from './map-actions';
+import { MapTarget, MapView, Operations, PlannedObjects, Route } from './map-view';
+import { timeBannerText, timeQuery, TimeTravel } from './time-travel';
 
 /** GET /api/classifications/map (#180) */
 interface ClassificationLayer {
@@ -72,7 +81,8 @@ interface Hover {
  */
 @Component({
   selector: 'cmdb-map',
-  imports: [StatusComponent],
+  imports: [StatusComponent, SelectionBarComponent, ContextMenuComponent, CableDrawingBarComponent],
+  host: { '(document:keydown)': 'onKey($event)' },
   templateUrl: './map.html',
   styleUrl: './map.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -83,7 +93,14 @@ export class MapComponent {
   private readonly panels = inject(PanelStack);
   private readonly theme = inject(ThemeStore);
   private readonly mapView = inject(MapView);
+  private readonly selection = inject(Selection);
   private readonly kinds = inject(CatalogKinds);
+  /** Tidsresa (#23): the network's tiles drawn at a time, with a banner and the way back. */
+  protected readonly time = inject(TimeTravel);
+  protected readonly timeBanner = timeBannerText;
+  /** Shift and Alt as the lasso closes: add to the selection or take away from it (#253). */
+  private modifiers = { shift: false, alt: false };
+  private lassoClosedAt = 0;
   private readonly host = inject(ElementRef<HTMLElement>);
   private readonly target = viewChild.required<ElementRef<HTMLDivElement>>('target');
 
@@ -101,6 +118,18 @@ export class MapComponent {
   private operations?: VectorLayer<VectorSource<Feature<Geometry>>>;
   private placedLayer?: VectorLayer<VectorSource<Feature<Geometry>>>;
   private classification?: VectorLayer<VectorSource<Feature<Geometry>>>;
+  private measureLayer?: VectorLayer<VectorSource<Feature<Geometry>>>;
+  /** A cable being drawn (#259): its route so far and its break points. */
+  private drawLayer?: VectorLayer<VectorSource<Feature<Geometry>>>;
+  private readonly cableDrawing = inject(CableDrawing);
+  private measureEnd?: { x: number; y: number };
+  /** A distance being measured or just measured (#258): the label by the pointer or the end point. */
+  protected readonly measured = signal<{
+    x: number;
+    y: number;
+    text: string;
+    done: boolean;
+  } | null>(null);
   private liveKey = '';
   private lassoDraw?: Draw;
   protected readonly operationsShown = signal(false);
@@ -118,7 +147,10 @@ export class MapComponent {
 
   constructor() {
     afterNextRender(() => this.create());
+    const user = inject(CurrentUser);
+    const unregister = inject(MapActions).registerCommands(() => user.canWrite());
     inject(DestroyRef).onDestroy(() => {
+      unregister();
       this.map?.setTarget(undefined);
       this.mapView.renderBenchmark = null;
     });
@@ -132,6 +164,7 @@ export class MapComponent {
     });
     effect(() => {
       this.panels.top();
+      this.selection.current();
       this.network?.changed();
     });
     // Site sizes follow the catalog's roles (#208); restyle once they have loaded.
@@ -164,7 +197,12 @@ export class MapComponent {
         this.lassoDraw = new Draw({ source: new VectorSource(), type: 'Polygon' });
         this.lassoDraw.on('drawend', (e) => {
           const ring = (e.feature.getGeometry() as Polygon).getCoordinates()[0];
-          this.mapView.closeLasso(ring.map((p) => [Math.round(p[0]), Math.round(p[1])]));
+          const mode = this.modifiers.shift ? 'add' : this.modifiers.alt ? 'remove' : 'replace';
+          this.lassoClosedAt = performance.now();
+          this.mapView.closeLasso(
+            ring.map((p) => [Math.round(p[0]), Math.round(p[1])]),
+            mode,
+          );
         });
         this.map.addInteraction(this.lassoDraw);
       } else if (!on && this.lassoDraw) {
@@ -194,7 +232,16 @@ export class MapComponent {
       }
     });
     effect(() => {
-      this.conduit?.setVisible(this.conduitShown());
+      const query = timeQuery(this.time.point());
+      // A new key makes the source drop its tiles and fetch them again for the time.
+      this.network
+        ?.getSource()
+        ?.setTileUrlFunction(([z, x, y]) => tileUrl(z, x, y, query), 'network' + query);
+    });
+    effect(() => {
+      // Read before the layer exists too: an optional call would skip the read and leave the effect with nothing to follow.
+      const shown = this.conduitShown();
+      this.conduit?.setVisible(shown);
     });
     // A point placed for a new site (#167): marked until the form takes it.
     effect(() => {
@@ -208,9 +255,31 @@ export class MapComponent {
       }
     });
     effect(() => {
-      const placing = this.mapView.placing();
+      const placing = this.mapView.placing() || !!this.mapView.measuring();
       if (this.map) {
         this.target().nativeElement.style.cursor = placing ? 'crosshair' : '';
+      }
+    });
+    // Drawing a cable (#259): the conduit shows, so its segments can be followed, and the route so far is drawn.
+    effect(() => {
+      const drawing = this.cableDrawing.drawing();
+      if (drawing) {
+        untracked(() => this.conduitShown.set(true));
+      }
+      if (this.map) {
+        this.target().nativeElement.style.cursor = drawing ? 'crosshair' : '';
+      }
+    });
+    effect(() => {
+      const route = this.cableDrawing.route();
+      const drawing = this.cableDrawing.drawing();
+      untracked(() => this.drawRoute(drawing ? route : null, drawing?.steps ?? []));
+    });
+    // Measuring a distance (#258): a line from the start point that follows the pointer until the next click.
+    effect(() => {
+      const from = this.mapView.measuring();
+      if (from) {
+        untracked(() => this.drawMeasure(from, from, false));
       }
     });
     // Other parts of the app (search, panels) ask the map to go somewhere.
@@ -243,6 +312,9 @@ export class MapComponent {
       this.operations?.changed();
       this.classification?.changed();
       this.conduit?.changed();
+      this.measureStyleCache = undefined;
+      this.measureLayer?.changed();
+      this.drawLayer?.changed();
     };
 
     this.network = new VectorTileLayer({
@@ -250,7 +322,7 @@ export class MapComponent {
         format: new MVT({ idProperty: 'id' }),
         projection: SWEREF,
         tileGrid: networkTileGrid(),
-        tileUrlFunction: ([z, x, y]) => tileUrl(z, x, y),
+        tileUrlFunction: ([z, x, y]) => tileUrl(z, x, y, timeQuery(untracked(this.time.point))),
         tileLoadFunction: (tile, url) => this.loadTile(tile as VectorTile<FeatureLike>, url),
       }),
       style: styler,
@@ -303,7 +375,19 @@ export class MapComponent {
       style: () => this.placedStyle(),
       zIndex: 25,
     });
+    this.measureLayer = new VectorLayer({
+      source: new VectorSource<Feature<Geometry>>(),
+      style: () => this.measureStyle(),
+      zIndex: 30,
+    });
+    this.drawLayer = new VectorLayer({
+      source: new VectorSource<Feature<Geometry>>(),
+      style: (f) => this.drawStyle(f),
+      zIndex: 28,
+    });
     const layers: (TileLayer | VectorTileLayer | VectorLayer)[] = [
+      this.measureLayer,
+      this.drawLayer,
       this.placedLayer,
       this.conduit,
       this.network,
@@ -344,6 +428,21 @@ export class MapComponent {
     };
     reportCenter();
     this.map.on('moveend', reportCenter);
+    // A finished measurement's label follows its end point as the map moves.
+    this.map.on('postrender', () => {
+      const m = this.measured();
+      if (m?.done && this.measureEnd) {
+        const [x, y] = this.map!.getPixelFromCoordinate([this.measureEnd.x, this.measureEnd.y]);
+        if (Math.abs(x - m.x) + Math.abs(y - m.y) > 0.5) {
+          this.measured.set({ ...m, x, y });
+        }
+      }
+    });
+    // The keys held on the click that closes a lasso decide what it does to the selection (#253).
+    const keys = (e: { originalEvent: MouseEvent | PointerEvent | KeyboardEvent }) =>
+      (this.modifiers = { shift: e.originalEvent.shiftKey, alt: e.originalEvent.altKey });
+    this.map.on('click', keys);
+    this.map.on('dblclick', keys);
     this.zoom.set(Math.round(this.map.getView().getZoom() ?? 0));
     this.map
       .getView()
@@ -351,6 +450,13 @@ export class MapComponent {
 
     this.map.on('pointermove', (e) => {
       if (e.dragging) {
+        return;
+      }
+      const from = this.mapView.measuring();
+      if (from) {
+        const [x, y] = e.coordinate;
+        this.drawMeasure(from, { x, y }, false);
+        this.hover.set(null);
         return;
       }
       const feature = this.map!.forEachFeatureAtPixel(e.pixel, (f) => f, { hitTolerance: 4 });
@@ -375,6 +481,25 @@ export class MapComponent {
       );
     });
     this.map.on('click', (e) => {
+      // A click while drawing a lasso is one of its corners, and the double click that closes it is not a pick either.
+      if (this.mapView.lassoing() || performance.now() - this.lassoClosedAt < 500) {
+        return;
+      }
+      if (this.cableDrawing.drawing()) {
+        this.cableDrawing.click(this.drawStep(e.pixel, e.coordinate));
+        return;
+      }
+      const from = this.mapView.measuring();
+      if (from) {
+        // The second point of a measurement (#258): the line and its length stay until the next click or Escape.
+        const [x, y] = e.coordinate;
+        this.drawMeasure(from, { x, y }, true);
+        this.mapView.measuring.set(null);
+        return;
+      }
+      if (this.measured()) {
+        this.clearMeasure();
+      }
       if (this.mapView.placing()) {
         const [x, y] = e.coordinate;
         this.mapView.place({ x, y });
@@ -426,6 +551,242 @@ export class MapComponent {
         this.panels.open({ type, id: String(feature.getId()) }, { replace: true });
       }
     });
+    // The context menu (#258): what can be done with what lies under the pointer, or on the empty spot.
+    this.map.getViewport().addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      if (
+        this.mapView.lassoing() ||
+        this.mapView.placing() ||
+        this.mapView.picking() ||
+        this.cableDrawing.drawing()
+      ) {
+        return;
+      }
+      this.mapView.measuring.set(null);
+      const pixel = this.map!.getEventPixel(e);
+      const [x, y] = this.map!.getCoordinateFromPixel(pixel);
+      const targets: MapTarget[] = [];
+      this.map!.forEachFeatureAtPixel(
+        pixel,
+        (f) => {
+          const t = targetOf(f);
+          if (t && !targets.some((o) => o.type === t.type && o.id === t.id)) {
+            targets.push(t);
+          }
+        },
+        { hitTolerance: 4 },
+      );
+      this.openMenu(pixel[0], pixel[1], { x, y }, targets);
+    });
+  }
+
+  private openMenu(
+    left: number,
+    top: number,
+    point: { x: number; y: number },
+    targets: MapTarget[],
+  ): void {
+    // Kept inside the map so it never opens off screen; the menu is at most about 320 px tall and 260 wide.
+    const { clientWidth, clientHeight } = this.target().nativeElement;
+    this.hover.set(null);
+    this.mapView.contextMenu.set({
+      left: Math.max(4, Math.min(left, clientWidth - 264)),
+      top: Math.max(4, Math.min(top, clientHeight - 324)),
+      point,
+      targets: targets.slice(0, 8),
+    });
+  }
+
+  /**
+   * The menu from the keyboard (#258): the menu key or Shift+F10 opens it in the middle of the map, for the open object
+   * when it is a site, a cable or a route segment. Escape ends a measurement.
+   */
+  protected onKey(event: KeyboardEvent): void {
+    const inField = !!(event.target as HTMLElement | null)?.closest?.(
+      'input, textarea, select, [contenteditable]',
+    );
+    if (this.cableDrawing.drawing() && !inField) {
+      // Drawing a cable (#259): Backspace takes the last step back, Escape stops a move or the drawing.
+      if (event.key === 'Backspace') {
+        event.preventDefault();
+        this.cableDrawing.undo();
+        return;
+      }
+      if (event.key === 'Escape') {
+        if (this.cableDrawing.moving() !== null) {
+          this.cableDrawing.moving.set(null);
+        } else {
+          this.cableDrawing.cancel();
+        }
+        return;
+      }
+    }
+    if (event.key === 'Escape' && (this.mapView.measuring() || this.measured())) {
+      this.mapView.measuring.set(null);
+      this.clearMeasure();
+      return;
+    }
+    const asked = event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10');
+    const field = (event.target as HTMLElement | null)?.closest?.(
+      'input, textarea, select, [contenteditable]',
+    );
+    if (!asked || field || !this.map) {
+      return;
+    }
+    event.preventDefault();
+    const top = this.panels.top();
+    const targets: MapTarget[] =
+      top && (top.type === 'site' || top.type === 'cable' || top.type === 'route-segment')
+        ? [{ type: top.type, id: Number(top.id), code: this.panels.label(top) ?? `#${top.id}` }]
+        : [];
+    const [x, y] = this.map.getView().getCenter() ?? [0, 0];
+    const { clientWidth, clientHeight } = this.target().nativeElement;
+    this.openMenu(clientWidth / 2, clientHeight / 2, { x, y }, targets);
+  }
+
+  private drawMeasure(
+    from: { x: number; y: number },
+    to: { x: number; y: number },
+    done: boolean,
+  ): void {
+    const source = this.measureLayer?.getSource();
+    if (!source || !this.map) {
+      return;
+    }
+    source.clear(true);
+    const start = new Feature<Geometry>(new OlPoint([from.x, from.y]));
+    source.addFeatures([
+      start,
+      new Feature<Geometry>(
+        new LineString([
+          [from.x, from.y],
+          [to.x, to.y],
+        ]),
+      ),
+    ]);
+    if (done) {
+      source.addFeature(new Feature<Geometry>(new OlPoint([to.x, to.y])));
+    }
+    // SWEREF 99 TM is in metres, so the length is the plain distance between the points.
+    const metres = Math.hypot(to.x - from.x, to.y - from.y);
+    this.measureEnd = to;
+    const [px, py] = this.map.getPixelFromCoordinate([to.x, to.y]);
+    this.measured.set({ x: px, y: py, text: distanceText(metres), done });
+  }
+
+  private clearMeasure(): void {
+    this.measureLayer?.getSource()?.clear(true);
+    this.measured.set(null);
+  }
+
+  private measureStyleCache?: { key: string; style: Style };
+
+  /** A measured distance (#258): the focus colour, dashed, with its end points ringed. */
+  private measureStyle(): Style {
+    const palette = (this.palette ??= readPalette(this.host.nativeElement));
+    const key = `${palette.focus}|${palette.bg}`;
+    if (this.measureStyleCache?.key !== key) {
+      this.measureStyleCache = {
+        key,
+        style: new Style({
+          stroke: new Stroke({ color: palette.focus, width: 2.5, lineDash: [8, 6] }),
+          image: new Circle({
+            radius: 5,
+            fill: new Fill({ color: palette.bg }),
+            stroke: new Stroke({ color: palette.focus, width: 2.5 }),
+          }),
+        }),
+      };
+    }
+    return this.measureStyleCache.style;
+  }
+
+  /**
+   * What a click while drawing a cable means (#259): a site (production or planned) or a route segment under the pointer,
+   * snapped to; otherwise a free break point.
+   */
+  private drawStep(pixel: number[], coordinate: number[]): CableRouteStep {
+    let site: FeatureLike | undefined;
+    let segment: FeatureLike | undefined;
+    this.map!.forEachFeatureAtPixel(
+      pixel,
+      (f) => {
+        if (
+          !site &&
+          (f.get('layer') === 'sites' || f.get('planned') === 'site') &&
+          f.getId() !== undefined
+        ) {
+          site = f;
+        } else if (!segment && f.get('layer') === 'routes') {
+          segment = f;
+        }
+      },
+      { hitTolerance: 6 },
+    );
+    if (this.cableDrawing.moving() === null && site) {
+      return { kind: 'site', id: Number(site.getId()) };
+    }
+    if (this.cableDrawing.moving() === null && segment) {
+      return { kind: 'segment', id: Number(segment.getId()) };
+    }
+    return { kind: 'point', x: Math.round(coordinate[0]), y: Math.round(coordinate[1]) };
+  }
+
+  /** The drawn cable: followed segments solid, new stretches dashed, full segments in the conflict colour, break points ringed. */
+  private drawRoute(
+    route: { legs: { kind: string; subduct: number | null; coordinates: number[][] }[] } | null,
+    steps: CableRouteStep[],
+  ): void {
+    const source = this.drawLayer?.getSource();
+    if (!source) {
+      return;
+    }
+    source.clear(true);
+    const features: Feature<Geometry>[] = (route?.legs ?? []).map((l) => {
+      const f = new Feature<Geometry>(new LineString(l.coordinates.map((p) => [p[0], p[1]])));
+      f.set('draw', l.kind === 'new' ? 'new' : l.subduct === null ? 'full' : 'segment');
+      return f;
+    });
+    steps.forEach((s, i) => {
+      if (s.kind === 'point' && s.x !== undefined && s.y !== undefined) {
+        const f = new Feature<Geometry>(new OlPoint([s.x, s.y]));
+        f.set('draw', 'point');
+        f.set('index', i + 1);
+        features.push(f);
+      }
+    });
+    source.addFeatures(features);
+  }
+
+  private drawStyleCache?: { key: string; styles: Record<string, Style | Style[]> };
+
+  private drawStyle(f: FeatureLike): Style | Style[] {
+    const palette = (this.palette ??= readPalette(this.host.nativeElement));
+    const key = `${palette.planned}|${palette.conflict}|${palette.bg}`;
+    if (this.drawStyleCache?.key !== key) {
+      const halo = new Style({ stroke: new Stroke({ color: palette.bg, width: 7 }) });
+      this.drawStyleCache = {
+        key,
+        styles: {
+          segment: [halo, new Style({ stroke: new Stroke({ color: palette.planned, width: 4 }) })],
+          new: [
+            halo,
+            new Style({
+              stroke: new Stroke({ color: palette.planned, width: 3, lineDash: [10, 6] }),
+            }),
+          ],
+          full: [halo, new Style({ stroke: new Stroke({ color: palette.conflict, width: 4 }) })],
+          point: new Style({
+            image: new Circle({
+              radius: 6,
+              fill: new Fill({ color: palette.bg }),
+              stroke: new Stroke({ color: palette.planned, width: 3 }),
+            }),
+          }),
+        },
+      };
+    }
+    return this.drawStyleCache.styles[String(f.get('draw'))] ?? this.drawStyleCache.styles['new'];
   }
 
   private restyle: () => void = () => undefined;
@@ -568,6 +929,7 @@ export class MapComponent {
       }),
       ...planned.sites.map((s) => {
         const f = new Feature<Geometry>(new OlPoint([s.x, s.y]));
+        f.setId(s.id);
         f.set('planned', 'site');
         f.set('code', s.code);
         return f;
@@ -1018,13 +1380,15 @@ export class MapComponent {
     }
   }
 
+  /** The open object, and everything in the selection (#253), are drawn as selected. */
   private isSelected(feature: FeatureLike): boolean {
-    const top = this.panels.top();
-    if (!top) {
-      return false;
-    }
     const type = feature.get('layer') === 'sites' ? 'site' : 'cable';
-    return top.type === type && top.id === String(feature.getId());
+    const id = Number(feature.getId());
+    if ((type === 'site' ? this.selection.siteIds() : this.selection.cableIds()).has(id)) {
+      return true;
+    }
+    const top = this.panels.top();
+    return !!top && top.type === type && top.id === String(feature.getId());
   }
 
   private loadTile(tile: VectorTile<FeatureLike>, url: string): void {
@@ -1059,4 +1423,21 @@ function alpha(hex: string, opacity: number): string {
           .toString(16)
           .padStart(2, '0')
     : hex;
+}
+
+/** What the context menu (#258) can act on for a feature under the pointer: production sites, cables and route segments. */
+function targetOf(f: FeatureLike): MapTarget | null {
+  const id = Number(f.getId());
+  const code = String(f.get('code') ?? '');
+  if (!id || !code || f.get('planned')) {
+    return null;
+  }
+  const layer = f.get('layer') ?? f.get('cls');
+  return layer === 'sites' || layer === 'site'
+    ? { type: 'site', id, code }
+    : layer === 'cables' || layer === 'cable'
+      ? { type: 'cable', id, code }
+      : layer === 'routes'
+        ? { type: 'route-segment', id, code }
+        : null;
 }

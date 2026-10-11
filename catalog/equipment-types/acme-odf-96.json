@@ -3,6 +3,7 @@
   "manufacturer": "Acme Optical",
   "model": "ODF-96",
   "category": "odf",
+  "cost": 6500,
   "rackUnits": 4,
   "panel": {
     "rows": 8,

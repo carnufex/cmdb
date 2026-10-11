@@ -1,5 +1,6 @@
 import { httpResource } from '@angular/common/http';
 import { computed, Injectable } from '@angular/core';
+import { IconName, isIconName } from './icons';
 
 /** A field of a type's attribute schema (#211). */
 export interface KindAttribute {
@@ -15,6 +16,8 @@ export interface Kind {
   roles: string[];
   /** The fields of the type's attribute schema; null when its attributes are free. */
   attributes?: KindAttribute[] | null;
+  /** Site types and equipment categories: the icon objects of the kind show (#249). */
+  icon?: string | null;
 }
 
 /** GET /api/catalog/kinds */
@@ -82,6 +85,18 @@ export class CatalogKinds {
           ? this.cableTypes()
           : this.serviceTypes();
     return kinds.find((k) => k.key === typeKey)?.attributes ?? [];
+  }
+
+  /** A site type's icon (#249): the catalog's, or a plain site until it has loaded. */
+  siteIcon(siteType: string | null | undefined): IconName {
+    const icon = this.siteTypes().find((k) => k.key === siteType)?.icon;
+    return isIconName(icon) ? icon : 'site';
+  }
+
+  /** An equipment category's icon (#249): the catalog's, or plain equipment until it has loaded. */
+  categoryIcon(category: string | null | undefined): IconName {
+    const icon = this.categories().find((k) => k.key === category)?.icon;
+    return isIconName(icon) ? icon : 'equipment';
   }
 
   siteRole(siteType: string): SiteRole | null {

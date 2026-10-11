@@ -139,6 +139,7 @@ public sealed class PlanImport(RequestDb db, GraphHolder holder, PlanViews views
         // Written in passes, since planned ids come from operation ids: sites, then their equipment, then the template
         // cabling and the cables.
         await using var tx = await conn.BeginTransactionAsync(ct);
+        await Cmdb.Api.Features.Operations.Operations.BeginAsync(conn, tx, user, "import_to_plan", new { plan = req.Id, sites = sites.Count, cables = cables.Count }, null, ct);
         var actor = PlanSql.Actor(user);
         var siteOps = await InsertAsync(conn, tx, req.Id, actor, [.. sites.Select(s => ("create_site", s.Attributes is null
             ? JsonSerializer.Serialize(new { code = s.Code, name = s.Name, siteType = s.SiteType, x = Math.Round(s.X, 1), y = Math.Round(s.Y, 1) })

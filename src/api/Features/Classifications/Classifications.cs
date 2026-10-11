@@ -161,7 +161,10 @@ public sealed class SetClassificationEndpoint(RequestDb db, TrustedApplications 
             return;
         }
         await using var conn = await db.Source.OpenConnectionAsync(ct);
-        await ClassificationStore.SetAsync(conn, null, req.Type, req.Id, req.Schema, req.Level, PlanSql.Actor(User), ct);
+        await using var tx = await conn.BeginTransactionAsync(ct);
+        await Cmdb.Api.Features.Operations.Operations.BeginAsync(conn, tx, User, "set_classification", new { type = req.Type, id = req.Id, schema = req.Schema, level = req.Level }, null, ct);
+        await ClassificationStore.SetAsync(conn, tx, req.Type, req.Id, req.Schema, req.Level, PlanSql.Actor(User), ct);
+        await tx.CommitAsync(ct);
         await Send.NoContentAsync(ct);
     }
 }

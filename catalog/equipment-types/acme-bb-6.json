@@ -3,6 +3,7 @@
   "manufacturer": "Acme Radio",
   "model": "BB-6",
   "category": "radio",
+  "cost": 60000,
   "rackUnits": 1,
   "panel": { "rows": 1, "columns": 9 },
   "ports": [

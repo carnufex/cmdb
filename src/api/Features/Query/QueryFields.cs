@@ -18,7 +18,8 @@ public sealed record CategoryField(string Key, IReadOnlyList<AttributeField> Att
 
 /// <summary>A site type or equipment category from the catalog with its name and roles (#208).</summary>
 /// <param name="Attributes">The fields of the type's attribute schema (#211); null when its attributes are free.</param>
-public sealed record KindField(string Key, string Name, IReadOnlyList<string> Roles, IReadOnlyList<AttributeField>? Attributes = null);
+/// <param name="Icon">The icon the UI shows for objects of the kind (#249): the catalog's, or the role's; null for kinds without icons.</param>
+public sealed record KindField(string Key, string Name, IReadOnlyList<string> Roles, IReadOnlyList<AttributeField>? Attributes = null, string? Icon = null);
 
 public sealed record TypeField(string Key, string Manufacturer, string Model, string Category);
 
@@ -62,7 +63,7 @@ public sealed class QueryFieldsEndpoint(RequestDb db, TypeCatalog catalog) : End
     }
 
     internal static IReadOnlyList<KindField> SiteTypeFields(TypeCatalog catalog) =>
-        [.. catalog.SiteTypes.Select(t => new KindField(t.Key, t.Name, t.Roles, Fields(t.Attributes)))];
+        [.. catalog.SiteTypes.Select(t => new KindField(t.Key, t.Name, t.Roles, Fields(t.Attributes), CatalogIcons.For(t)))];
 
     internal static IReadOnlyList<KindField> ServiceTypeFields(TypeCatalog catalog) =>
         [.. catalog.ServiceTypes.Select(t => new KindField(t.Key, t.Name, [], Fields(t.Attributes)))];

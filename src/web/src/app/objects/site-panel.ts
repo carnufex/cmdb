@@ -1,6 +1,7 @@
 import { PlanRemoveComponent } from '../plans/plan-remove';
 import { ClassificationComponent, DerivedClassification } from './classification';
-import { RackViewComponent } from './rack-view';
+import { RackPreviewComponent } from './rack-preview';
+import { SiteRoomsComponent } from './room-panel';
 import { httpResource } from '@angular/common/http';
 import { DecimalPipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, effect, inject, input } from '@angular/core';
@@ -8,20 +9,27 @@ import { MapView } from '../map/map-view';
 import { ActivePlan } from '../plans/active-plan';
 import { CatalogKinds } from '../shell/catalog-kinds';
 import { PanelStack } from '../shell/panels';
+import { IconComponent } from '../shell/icons';
 import { StatusComponent } from '../shell/status';
 import { EditHeaderComponent } from './edit-header';
 import { ImpactListComponent } from './impact-list';
 import { apiPath, Impact, SiteDetail } from './models';
+import { Tools } from '../shell/tools';
+import { fibreTarget } from './fibre-model';
 import { ObjectLinkComponent } from './object-link';
 import { SourcesComponent } from './sources';
+import { HistoryComponent } from './history';
 
 @Component({
   selector: 'cmdb-site-panel',
   imports: [
+    IconComponent,
     SourcesComponent,
+    HistoryComponent,
     ClassificationComponent,
     PlanRemoveComponent,
-    RackViewComponent,
+    RackPreviewComponent,
+    SiteRoomsComponent,
     ObjectLinkComponent,
     StatusComponent,
     EditHeaderComponent,
@@ -31,7 +39,10 @@ import { SourcesComponent } from './sources';
   template: `
     @if (site.value(); as s) {
       <header class="header">
-        <div class="kind">Site · {{ kinds.siteTypeName(s.siteType) }}</div>
+        <div class="kind">
+          <cmdb-icon [name]="kinds.siteIcon(s.siteType)" />Site ·
+          {{ kinds.siteTypeName(s.siteType) }}
+        </div>
         <div class="code mono">{{ s.code }}</div>
         <cmdb-edit-header
           [url]="url()"
@@ -45,6 +56,7 @@ import { SourcesComponent } from './sources';
               Visa i kartan
             </button>
           }
+          <button type="button" class="linkish" (click)="fibre(s.id)">Fiberritning</button>
           @if (impact.value(); as i) {
             <span>{{ i.services.length }} tjänster och {{ i.circuits }} kretsar berörs</span>
           } @else {
@@ -66,6 +78,8 @@ import { SourcesComponent } from './sources';
         </section>
       }
 
+      <cmdb-site-rooms [siteId]="s.id" />
+
       @for (location of racks(); track location.id) {
         <section>
           <h3>
@@ -80,8 +94,8 @@ import { SourcesComponent } from './sources';
               </span>
             }
           </h3>
-          @if (location.rackUnits) {
-            <cmdb-rack-view [units]="location.rackUnits" [equipment]="location.equipment" />
+          @if (location.kind === 'rack') {
+            <cmdb-rack-preview [rackId]="location.id" />
           }
           @if (location.equipment.length) {
             <table class="rows">
@@ -154,6 +168,7 @@ import { SourcesComponent } from './sources';
         />
       </section>
       <cmdb-sources [sources]="s.sources" />
+      <cmdb-history type="site" [id]="s.id" />
     } @else if (site.error()) {
       <p class="error">Siten kunde inte hämtas.</p>
     } @else {
@@ -196,6 +211,13 @@ import { SourcesComponent } from './sources';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class SitePanelComponent {
+  private readonly fibreTools = inject(Tools);
+
+  /** Opens the fibre drawing (#254) of this object as the workspace. */
+  protected fibre(id: number): void {
+    this.fibreTools.show('fibre', { fibre: fibreTarget('sites', id) });
+  }
+
   private readonly panels = inject(PanelStack);
   private readonly mapView = inject(MapView);
   private readonly plan = inject(ActivePlan);
@@ -213,7 +235,7 @@ export class SitePanelComponent {
   /** Loaded after the site itself: impact analysis has its own, larger budget. */
   protected readonly impact = httpResource<Impact>(() => {
     return this.site.value()
-      ? this.plan.request(`${this.url()}/impact${this.plan.param(true)}`)
+      ? this.plan.request(`${this.url()}/impact${this.plan.graphParam(true)}`)
       : undefined;
   });
 

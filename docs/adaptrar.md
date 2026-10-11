@@ -15,7 +15,7 @@ Felkoden är 0 när avstämningen gick igenom, 3 om kontot saknar behörighet, o
 
 ## Konto och omfång
 
-Varje integration kör med ett eget tjänstekonto (ADR-0021):
+Varje integration kör med ett eget tjänstekonto (ADR-0022):
 - Kontot är medlem i gruppen `cmdb-integration`, som bara får stämma av, och i integrationens egen grupp, till exempel `cmdb-integration-acme-monitor`, som ger dess omfång.
 - Omfånget är ett vanligt omfång i `access_scope`, med område, sitetyper och dolda attribut. Det beviljas med motivering och godkännande av en andra person. Det behöver se avstämningens planer (`plans`), annars kan den betrodda planen inte föras in.
 - Kontot är aldrig medlem i `cmdb-full`.

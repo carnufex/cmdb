@@ -24,14 +24,20 @@ import { ImpactListComponent } from './impact-list';
 import { apiPath, EquipmentDetail, Impact } from './models';
 import { ObjectLinkComponent } from './object-link';
 import { SourcesComponent } from './sources';
+import { HistoryComponent } from './history';
 import { traceId, TraceResult } from './trace-model';
 
 type Port = EquipmentDetail['ports'][number];
 
+import { CatalogKinds } from '../shell/catalog-kinds';
+import { IconComponent } from '../shell/icons';
+
 @Component({
   selector: 'cmdb-equipment-panel',
   imports: [
+    IconComponent,
     SourcesComponent,
+    HistoryComponent,
     ClassificationComponent,
     PlanMoveComponent,
     PlanRemoveComponent,
@@ -44,7 +50,12 @@ type Port = EquipmentDetail['ports'][number];
   template: `
     @if (equipment.value(); as e) {
       <header class="header">
-        <div class="kind">Utrustning · {{ e.category }}</div>
+        <div class="kind">
+          <cmdb-icon [name]="e.parent ? 'card' : catalog.categoryIcon(e.category)" />{{
+            e.parent ? 'Kort' : 'Utrustning'
+          }}
+          · {{ catalog.categoryName(e.category) }}
+        </div>
         <div class="code mono">{{ e.manufacturer }} {{ e.model }}</div>
         <cmdb-edit-header
           [url]="url()"
@@ -313,6 +324,7 @@ type Port = EquipmentDetail['ports'][number];
         </section>
       }
       <cmdb-sources [sources]="e.sources" />
+      <cmdb-history type="equipment" [id]="e.id" />
     } @else if (equipment.error()) {
       <p class="error">Utrustningen kunde inte hämtas.</p>
     } @else {
@@ -342,6 +354,7 @@ type Port = EquipmentDetail['ports'][number];
 })
 export class EquipmentPanelComponent {
   private readonly panels = inject(PanelStack);
+  protected readonly catalog = inject(CatalogKinds);
   private readonly commands = inject(CommandRegistry);
   private readonly http = inject(HttpClient);
   protected readonly plan = inject(ActivePlan);
@@ -353,7 +366,7 @@ export class EquipmentPanelComponent {
   /** Loaded after the equipment itself: impact analysis has its own, larger budget. */
   protected readonly impact = httpResource<Impact>(() => {
     return this.equipment.value()
-      ? this.plan.request(`${this.url()}/impact${this.plan.param(true)}`)
+      ? this.plan.request(`${this.url()}/impact${this.plan.graphParam(true)}`)
       : undefined;
   });
   protected readonly selected = signal<Port | null>(null);
@@ -367,7 +380,7 @@ export class EquipmentPanelComponent {
   protected readonly portTrace = httpResource<TraceResult>(() => {
     const p = this.selected();
     return p
-      ? this.plan.request(`/api/trace?terminal=${p.terminalId}${this.plan.param()}`)
+      ? this.plan.request(`/api/trace?terminal=${p.terminalId}${this.plan.graphParam()}`)
       : undefined;
   });
   protected readonly connectionLabels: Record<string, string> = {

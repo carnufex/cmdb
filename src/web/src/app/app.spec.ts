@@ -3,7 +3,8 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { App, Me } from './app';
+import { App } from './app';
+import { Me } from './shell/current-user';
 import { Auth } from './auth/auth';
 
 describe('App', () => {

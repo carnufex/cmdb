@@ -32,6 +32,7 @@
     "@angular/build": "^22.2.0",
     "@angular/cli": "^22.2.0",
     "@angular/compiler-cli": "^22.2.0",
+    "@playwright/test": "1.64.0",
     "@types/proj4": "2.5.6",
     "graphology-types": "^0.24.8",
     "jsdom": "^30.0.0",

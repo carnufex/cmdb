@@ -17,7 +17,9 @@ public sealed record ImportError(string File, int Row, string ObjectId, string M
 
 public sealed record XSite(int Row, string Id, string Code, string Name, string SiteType, double X, double Y, string Lifecycle, string Attributes);
 
-public sealed record XLocation(int Row, string Id, string Site, string? Parent, string Kind, string Name, short? RackUnits);
+/// <param name="RoomRow">A rack's row in its room, with <paramref name="RoomSlot"/> and <paramref name="Facing"/> (#256); optional.</param>
+public sealed record XLocation(int Row, string Id, string Site, string? Parent, string Kind, string Name, short? RackUnits,
+    short? RoomRow = null, short? RoomSlot = null, string? Facing = null);
 
 public sealed record XEquipment(int Row, string Id, string Site, string? Location, string? Parent, string? Slot, string Name, string Type,
     string Lifecycle, short? RackPosition, string Attributes);
@@ -141,7 +143,22 @@ public static class ExchangeFormat
                     fail($"kind är en av {string.Join(", ", LocationKinds)}");
                 }
                 var units = Short(cell("rackUnits"), "rackUnits", fail);
-                data.Locations.Add(new XLocation(row, id, site, Optional(cell("parent")), kind, name, units));
+                // A rack's place in its room (#256): row and slot together, and which way it faces.
+                var (roomRow, roomSlot) = (Short(cell("row"), "row", fail), Short(cell("slot"), "slot", fail));
+                var facing = Optional(cell("facing"));
+                if ((roomRow is null) != (roomSlot is null) || roomRow < 1 || roomSlot < 1)
+                {
+                    fail("row och slot anges tillsammans, från 1");
+                }
+                if (roomRow is not null && kind != "rack")
+                {
+                    fail("bara ett rack har row och slot");
+                }
+                if (facing is not null and not ("front" or "back"))
+                {
+                    fail("facing är front eller back");
+                }
+                data.Locations.Add(new XLocation(row, id, site, Optional(cell("parent")), kind, name, units, roomRow, roomSlot, facing));
             });
             Unique(Locations, data.Locations, l => l.Id, l => l.Row, "id", errors);
         }

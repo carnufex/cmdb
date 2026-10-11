@@ -41,7 +41,8 @@ public sealed class WithinRequest
     public double[][] Polygon { get; set; } = [];
 }
 
-public sealed record WithinResult(IReadOnlyList<long> Sites, bool Truncated);
+/// <param name="Cables">Cables lying wholly inside the polygon (#253), within the caller's scopes.</param>
+public sealed record WithinResult(IReadOnlyList<long> Sites, bool Truncated, IReadOnlyList<long>? Cables = null);
 
 /// <summary>
 /// The spreadsheet mode's rows (#27): the chosen sites, or the equipment on them, with their attributes. Columns come
@@ -118,7 +119,7 @@ public sealed class GridEndpoint(RequestDb db) : Endpoint<GridRequest, GridResul
     }
 }
 
-/// <summary>Sites inside a polygon drawn in the map (lasso, #27), within the caller's scopes.</summary>
+/// <summary>Sites inside a polygon drawn in the map (lasso, #27), and the cables wholly inside it (#253), within the caller's scopes.</summary>
 public sealed class SitesWithinEndpoint(RequestDb db) : Endpoint<WithinRequest, WithinResult>
 {
     public override void Configure() => Post("/sites/within");
@@ -148,7 +149,24 @@ public sealed class SitesWithinEndpoint(RequestDb db) : Endpoint<WithinRequest, 
                 ids.Add(reader.GetInt64(0));
             }
         }
-        var truncated = ids.Count > GridEndpoint.MaxSites;
-        await Send.OkAsync(new WithinResult(truncated ? ids[..GridEndpoint.MaxSites] : ids, truncated), ct);
+        // Cables wholly inside the lasso belong to the selection too (#253); one that only crosses it does not.
+        await using var cables = db.CreateCommand($"""
+            SELECT c.id FROM cable c
+            WHERE ST_Within(c.geom, ST_MakeValid(ST_GeomFromText($1, 3006))) AND c.lifecycle <> 'removed' AND {ScopeSql.Cable("c.id", 2)}
+            ORDER BY c.id LIMIT {GridEndpoint.MaxSites + 1}
+            """);
+        cables.Parameters.Add(new() { Value = $"POLYGON(({string.Join(", ", ring)}))" });
+        cables.Parameters.Add(scope.Parameter());
+        var cableIds = new List<long>();
+        await using (var reader = await cables.ExecuteReaderAsync(ct))
+        {
+            while (await reader.ReadAsync(ct))
+            {
+                cableIds.Add(reader.GetInt64(0));
+            }
+        }
+        var truncated = ids.Count > GridEndpoint.MaxSites || cableIds.Count > GridEndpoint.MaxSites;
+        await Send.OkAsync(new WithinResult(ids.Count > GridEndpoint.MaxSites ? ids[..GridEndpoint.MaxSites] : ids, truncated,
+            cableIds.Count > GridEndpoint.MaxSites ? cableIds[..GridEndpoint.MaxSites] : cableIds), ct);
     }
 }

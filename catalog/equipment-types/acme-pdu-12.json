@@ -3,6 +3,7 @@
   "manufacturer": "Acme Power",
   "model": "PDU-12",
   "category": "power",
+  "cost": 9000,
   "rackUnits": 1,
   "panel": { "rows": 1, "columns": 13 },
   "ports": [

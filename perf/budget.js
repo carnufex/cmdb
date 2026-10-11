@@ -20,9 +20,11 @@ export const ROWS = [
   { key: 'trace', label: 'Spåra tjänst ände till ände', budget: 50 },
   { key: 'impact', label: 'Påverkansanalys för en kabelsträcka', budget: 200 },
   { key: 'segment', label: 'Påverkan av grävning på en trasésträcka', budget: 200 },
+  { key: 'fibre', label: 'Fiberritning för en trasésträcka', budget: 200 },
   { key: 'tiles', label: 'Kartplatta per omfång', budget: 100 },
   { key: 'conduit', label: 'Kanalisationsplatta per omfång', budget: 100 },
   { key: 'plan', label: 'Växla vy mellan produktion och plan', budget: 100 },
+  { key: 'planImpact', label: 'Påverkan av en plan', budget: 200 },
 ];
 const MEASURED = ROWS.filter((r) => !r.pending);
 
@@ -125,9 +127,11 @@ export default function (data) {
     trace: () => `/api/trace?service=${pick(data.services, n).id}`,
     impact: () => `/api/cables/${pick(data.cables, n).id}/impact`,
     segment: () => `/api/route-segments/${pick(data.segments, n)}/impact`,
+    fibre: () => `/api/fibre/route-segments/${pick(data.segments, n)}`,
     tiles: () => `/api/tiles/${randomTile()}`,
     conduit: () => `/api/tiles/conduit/${randomTile()}`,
     plan: () => `/api/plans/${pick(data.plans, n).id}/view`,
+    planImpact: () => `/api/plans/${pick(data.plans, n).id}/impact`,
   }[row.key]();
 
   const res = get(path, row.key);

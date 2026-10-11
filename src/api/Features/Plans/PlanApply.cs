@@ -34,8 +34,7 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx, str
                 return true;
 
             case "create_cable":
-                await CreateCableAsync(op, p, ct);
-                return true;
+                return await CreateCableAsync(op, p, ct);
 
             case "split_cable":
                 return await SplitCableAsync(op, p, ct);
@@ -45,6 +44,74 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx, str
 
             case "move":
                 return await MoveAsync(p, ct);
+
+            case "create_location":
+                {
+                    var parent = p.TryGetProperty("parent", out var pa) && pa.ValueKind == JsonValueKind.Number ? (object)pa.GetInt64() : DBNull.Value;
+                    var units = p.TryGetProperty("rackUnits", out var ru) && ru.ValueKind == JsonValueKind.Number ? (object)ru.GetInt16() : DBNull.Value;
+                    var location = await ScalarAsync<long>("""
+                        INSERT INTO location (site_id, parent_id, kind, name, rack_units, room_row, room_slot, facing)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id
+                        """, ct, p.GetProperty("site").GetInt64(), parent, p.GetProperty("kind").GetString()!, p.GetProperty("name").GetString()!, units,
+                        ShortOrNull(p, "roomRow"), ShortOrNull(p, "roomSlot"), TextOrNull(p, "facing"));
+                    Ids[Planned.ObjectId(op.Id)] = location;
+                    await FromSourceAsync("location", location, p, ct);
+                    return true;
+                }
+
+            case "set_rack_place":
+                await ExecuteAsync("UPDATE location SET room_row = $2, room_slot = $3, facing = $4 WHERE id = $1 AND kind = 'rack'", ct,
+                    p.GetProperty("id").GetInt64(), ShortOrNull(p, "roomRow"), ShortOrNull(p, "roomSlot"), TextOrNull(p, "facing"));
+                return true;
+
+            case "create_service":
+                {
+                    var service = await ScalarAsync<long>("""
+                        INSERT INTO service (code, name, service_type, attributes, lifecycle) VALUES ($1, $2, $3, $4::jsonb, 'planned') RETURNING id
+                        """, ct, p.GetProperty("code").GetString()!, p.GetProperty("name").GetString()!, p.GetProperty("serviceType").GetString()!, Attributes(p));
+                    Ids[Planned.ObjectId(op.Id)] = service;
+                    await FromSourceAsync("service", service, p, ct);
+                    return true;
+                }
+
+            case "create_circuit":
+                {
+                    var hops = NetworkLinks.Hops(p).Select(h => Ids.GetValueOrDefault(h, h)).ToArray();
+                    var circuit = await ScalarAsync<long>("""
+                        INSERT INTO circuit (code, layer, a_terminal_id, b_terminal_id, lifecycle) VALUES ($1, $2::circuit_layer, $3, $4, 'planned') RETURNING id
+                        """, ct, p.GetProperty("code").GetString()!, p.GetProperty("layer").GetString()!, hops[0], hops[^1]);
+                    Ids[Planned.ObjectId(op.Id)] = circuit;
+                    await HopsAsync(circuit, hops, ct);
+                    await FromSourceAsync("circuit", circuit, p, ct);
+                    return true;
+                }
+
+            case "set_circuit_path":
+                {
+                    var circuit = p.GetProperty("id").GetInt64();
+                    var hops = NetworkLinks.Hops(p).Select(h => Ids.GetValueOrDefault(h, h)).ToArray();
+                    if (await ExecuteAsync("UPDATE circuit SET a_terminal_id = $2, b_terminal_id = $3 WHERE id = $1", ct, circuit, hops[0], hops[^1]) == 0)
+                    {
+                        return false;
+                    }
+                    await ExecuteAsync("DELETE FROM circuit_hop WHERE circuit_id = $1", ct, circuit);
+                    await HopsAsync(circuit, hops, ct);
+                    return true;
+                }
+
+            case "link_circuit":
+                return p.TryGetProperty("remove", out var rc) && rc.ValueKind == JsonValueKind.True
+                    ? await ExecuteAsync("DELETE FROM circuit_dependency WHERE circuit_id = $1 AND carrier_id = $2", ct,
+                        p.GetProperty("circuit").GetInt64(), p.GetProperty("carrier").GetInt64()) > 0
+                    : await ExecuteAsync("INSERT INTO circuit_dependency (circuit_id, carrier_id) VALUES ($1, $2) ON CONFLICT DO NOTHING", ct,
+                        p.GetProperty("circuit").GetInt64(), p.GetProperty("carrier").GetInt64()) > 0;
+
+            case "link_service":
+                return p.TryGetProperty("remove", out var rs) && rs.ValueKind == JsonValueKind.True
+                    ? await ExecuteAsync("DELETE FROM service_circuit WHERE service_id = $1 AND circuit_id = $2", ct,
+                        p.GetProperty("service").GetInt64(), p.GetProperty("circuit").GetInt64()) > 0
+                    : await ExecuteAsync("INSERT INTO service_circuit (service_id, circuit_id) VALUES ($1, $2) ON CONFLICT DO NOTHING", ct,
+                        p.GetProperty("service").GetInt64(), p.GetProperty("circuit").GetInt64()) > 0;
 
             case "set_conductor_usage":
                 {
@@ -142,7 +209,10 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx, str
             Cmdb.Graph.GraphNewCable c => new Cmdb.Graph.GraphNewCable(Id(c.Id),
                 [.. c.Conductors.Select(k => new Cmdb.Graph.GraphNewConductor(Id(k.Id), Id(k.EndA), Id(k.EndB)))]),
             Cmdb.Graph.GraphEdgeChange e => e with { A = Id(e.A), B = Id(e.B) },
-            Cmdb.Graph.GraphCircuitsChange c => c with { Set = [.. c.Set.Select(x => x with { Hops = [.. x.Hops.Select(Id)] })] },
+            Cmdb.Graph.GraphCircuitsChange c => c with
+            {
+                Set = [.. c.Set.Select(x => x with { Id = Id(x.Id), Hops = [.. x.Hops.Select(Id)], Carriers = [.. x.Carriers.Select(Id)], Services = [.. x.Services.Select(Id)] })],
+            },
             _ => change,
         };
     }
@@ -153,21 +223,26 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx, str
         string[] fields = op.Kind switch
         {
             "connect" or "disconnect" or "create_cable" => ["a", "b"],
-            "create_equipment" or "split_cable" or "move" => ["site"],
+            "create_equipment" => ["site", "parent"],
+            "split_cable" or "move" => ["site"],
+            _ when NetworkLinks.IdFields(op.Kind).Length > 0 => NetworkLinks.IdFields(op.Kind),
             "set_classification" => ["id"],
             _ => [],
         };
-        if (!fields.Any(f => op.Payload.GetProperty(f).GetInt64() is < 0 and var id && Ids.ContainsKey(id)))
+        bool Planned(string f) => op.Payload.TryGetProperty(f, out var v) && v.ValueKind == JsonValueKind.Number && v.GetInt64() is < 0 and var id && Ids.ContainsKey(id);
+        var hops = op.Kind is "create_circuit" or "set_circuit_path" && NetworkLinks.Hops(op.Payload).Any(h => h < 0 && Ids.ContainsKey(h));
+        if (!fields.Any(Planned) && !hops)
         {
             return op;
         }
         var node = JsonNode.Parse(op.Payload.GetRawText())!.AsObject();
-        foreach (var field in fields)
+        foreach (var field in fields.Where(Planned))
         {
-            if (Ids.TryGetValue(node[field]!.GetValue<long>(), out var real))
-            {
-                node[field] = real;
-            }
+            node[field] = Ids[node[field]!.GetValue<long>()];
+        }
+        if (hops)
+        {
+            node["hops"] = new JsonArray([.. NetworkLinks.Hops(op.Payload).Select(h => (JsonNode)Ids.GetValueOrDefault(h, h))]);
         }
         return op with { Payload = JsonDocument.Parse(node.ToJsonString()).RootElement.Clone() };
     }
@@ -203,6 +278,11 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx, str
         var type = TypeCatalog.Current.Find(typeKey) ?? throw new InvalidOperationException($"Unknown equipment type {typeKey}.");
         // Equipment sits in a rack: the named one (#26), created in a building on the site when missing; without a name,
         // the site's first rack, or a new "Rack 1".
+        if (p.TryGetProperty("parent", out var parentId) && parentId.ValueKind == JsonValueKind.Number)
+        {
+            await CreateCardAsync(op, p, type, parentId.GetInt64(), ct);
+            return;
+        }
         var rack = p.TryGetProperty("rack", out var r) && r.ValueKind == JsonValueKind.String ? r.GetString()! : null;
         var room = p.TryGetProperty("room", out var rm) && rm.ValueKind == JsonValueKind.String ? rm.GetString()! : null;
         var location = await RackAsync(site, rack, room, ct);
@@ -237,6 +317,39 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx, str
         }
     }
 
+    /// <summary>A card (#230): in its parent's slot at the parent's site, with ports named for the slot.</summary>
+    private async Task CreateCardAsync(PlanOp op, JsonElement p, EquipmentType type, long parent, CancellationToken ct)
+    {
+        var slot = p.GetProperty("slot").GetString()!;
+        var equipment = await ScalarAsync<long>("""
+            INSERT INTO equipment (equipment_type_id, site_id, parent_id, slot, name)
+            SELECT t.id, e.site_id, e.id, $3, $4 FROM equipment_type t, equipment e WHERE t.key = $1 AND e.id = $2 RETURNING id
+            """, ct, type.Key, parent, slot, p.GetProperty("name").GetString()!);
+        Ids[Planned.ObjectId(op.Id)] = equipment;
+        if (p.TryGetProperty("attributes", out var attributes) && attributes.ValueKind == JsonValueKind.Object)
+        {
+            await ExecuteAsync("UPDATE equipment SET attributes = $2::jsonb WHERE id = $1", ct, equipment, attributes.GetRawText());
+        }
+        await FromSourceAsync("equipment", equipment, p, ct);
+        var ports = PortExpansion.Expand(type, slot);
+        var terminals = await NewTerminalsAsync("port", ports.Count, ct);
+        await ExecuteAsync("""
+            INSERT INTO port (terminal_id, kind, equipment_id, name, port_type, port_group, position)
+            SELECT t, 'port', $1, n, pt, pg, pos FROM unnest($2::bigint[], $3::text[], $4::text[], $5::text[], $6::int[]) AS u(t, n, pt, pg, pos)
+            """, ct, equipment, terminals, ports.Select(x => x.Name).ToArray(), ports.Select(x => x.Type).ToArray(),
+            ports.Select(x => x.Group).ToArray(), ports.Select(x => x.Position).ToArray());
+        for (var i = 0; i < ports.Count; i++)
+        {
+            Ids[Planned.Terminal(op.Id, ports[i].Position)] = terminals[i];
+        }
+    }
+
+    /// <summary>A circuit's path (#230): its hops in order.</summary>
+    private async Task HopsAsync(long circuit, long[] hops, CancellationToken ct) =>
+        await ExecuteAsync("""
+            INSERT INTO circuit_hop (circuit_id, seq, terminal_id) SELECT $1, n - 1, t FROM unnest($2::bigint[]) WITH ORDINALITY AS u(t, n)
+            """, ct, circuit, hops);
+
     /// <summary>
     /// An object reconciliation (#216) creates keeps its source's lifecycle and id, so that the next run matches it on the
     /// source and id instead of creating it again. Objects planned by hand start as planned, with no source.
@@ -255,7 +368,7 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx, str
         }
     }
 
-    private async Task CreateCableAsync(PlanOp op, JsonElement p, CancellationToken ct)
+    private async Task<bool> CreateCableAsync(PlanOp op, JsonElement p, CancellationToken ct)
     {
         var typeKey = p.GetProperty("typeKey").GetString()!;
         // A route given with the cable (an import, #170) is kept between the two sites; otherwise a straight line.
@@ -305,6 +418,7 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx, str
             Ids[Planned.Terminal(op.Id, (2 * k) - 1)] = ends[(2 * k) - 2];
             Ids[Planned.Terminal(op.Id, 2 * k)] = ends[(2 * k) - 1];
         }
+        return await RouteAsync(cable, p, ct);
     }
 
     /// <summary>
@@ -556,8 +670,61 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx, str
         "equipment" => "equipment",
         "cable" => "cable",
         "service" => "service",
+        "location" => "location",
+        "circuit" => "circuit",
         var t => throw new InvalidOperationException($"Unknown object type {t}."),
     };
+
+    /// <summary>A number in the payload, or a database null.</summary>
+    private static object ShortOrNull(JsonElement p, string field) =>
+        p.TryGetProperty(field, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt16() : DBNull.Value;
+
+    /// <summary>A text in the payload, or a database null.</summary>
+    private static object TextOrNull(JsonElement p, string field) =>
+        p.TryGetProperty(field, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()! : DBNull.Value;
+
+    /// <summary>
+    /// A drawn cable's way (#259): the tubes it was given along route segments, in order and each once, taken from empty;
+    /// and the new route segments its new stretches make, planned. A tube someone filled since makes the plan not fit.
+    /// </summary>
+    private async Task<bool> RouteAsync(long cable, JsonElement p, CancellationToken ct)
+    {
+        if (p.TryGetProperty("route", out var legs) && legs.ValueKind == JsonValueKind.Array)
+        {
+            var tubes = legs.EnumerateArray()
+                .Where(l => l.TryGetProperty("subduct", out var s) && s.ValueKind == JsonValueKind.Number)
+                .Select(l => l.GetProperty("subduct").GetInt64()).Distinct().ToArray();
+            if (tubes.Length > 0)
+            {
+                if (await ExecuteAsync("UPDATE subduct SET occupancy = 'cable' WHERE id = ANY($1) AND occupancy = 'empty'", ct, tubes) != tubes.Length)
+                {
+                    return false;
+                }
+                await ExecuteAsync("""
+                    INSERT INTO cable_path (cable_id, seq, subduct_id) SELECT $1, n, t FROM unnest($2::bigint[]) WITH ORDINALITY AS u(t, n)
+                    """, ct, cable, tubes);
+            }
+        }
+        if (p.TryGetProperty("newSegments", out var segments) && segments.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var segment in segments.EnumerateArray())
+            {
+                var line = segment.GetProperty("line").EnumerateArray().ToList();
+                var a = segment.GetProperty("a").GetInt64();
+                var b = segment.GetProperty("b").GetInt64();
+                var id = await ScalarAsync<long>("""
+                    INSERT INTO route_segment (code, a_site_id, b_site_id, construction, geom, lifecycle)
+                    SELECT 'TR-NY-' || gen_random_uuid(), $1, $2, $3,
+                           ST_MakeLine(ARRAY(SELECT ST_SetSRID(ST_MakePoint(x, y), 3006) FROM unnest($4::float8[], $5::float8[]) WITH ORDINALITY AS u(x, y, n) ORDER BY n)),
+                           'planned'
+                    RETURNING id
+                    """, ct, Ids.GetValueOrDefault(a, a), Ids.GetValueOrDefault(b, b), segment.GetProperty("construction").GetString()!,
+                    line.Select(pt => pt[0].GetDouble()).ToArray(), line.Select(pt => pt[1].GetDouble()).ToArray());
+                await ExecuteAsync("UPDATE route_segment SET code = 'TR-' || lpad(id::text, 6, '0') WHERE id = $1", ct, id);
+            }
+        }
+        return true;
+    }
 
     private async Task<int> ExecuteAsync(string sql, CancellationToken ct, params object[] values)
     {

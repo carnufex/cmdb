@@ -37,8 +37,10 @@ const labels: Record<Lifecycle, string> = {
 })
 export class StatusComponent {
   readonly value = input.required<Lifecycle>();
+  /** Words for the dot other than the lifecycle's own, e.g. "Bruten" for a circuit's path (#252). */
+  readonly text = input<string | null>(null);
 
-  protected readonly label = computed(() => labels[this.value()] ?? this.value());
+  protected readonly label = computed(() => this.text() ?? labels[this.value()] ?? this.value());
   protected readonly color = computed(() => {
     const v = this.value();
     const token =

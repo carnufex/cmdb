@@ -8,6 +8,9 @@
   border-bottom: var(--line);
 
   .kind {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
     font-size: var(--text-xs);
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -164,4 +167,15 @@ ul.links {
     width: 5em;
     margin-left: var(--space-1);
   }
+}
+
+/* A button that reads as a link in a panel's header (#254: Fiberritning). */
+.linkish {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-decoration: underline dotted;
+  cursor: pointer;
 }

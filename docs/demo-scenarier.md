@@ -50,3 +50,28 @@ Falsk redundans ("Mobilnät Lingonåsen norr", vars båda vägar går via Lingon
 4. Säg "ja, skapa ett ärende". Ärendet skapas på kabeln och syns i panelen.
 
 Telefoni (Twilio) används inte i demon. Samtalet går i webben.
+
+# Demoscenarier i webben (#261)
+
+Scenarierna visar att systemet går att använda utan manual, med samma syntetiska data (full skala, seed 1).
+
+## Scenario 4: kabelbrott → fiberritning → tekniker
+Kabeln i grävkonflikten (scenario 2) är `K-000001` mellan `HUB-001` och `HUB-046`, 79 km. Den bär flest kritiska tjänster.
+
+1. Sök `K-000001` med Ctrl+K och öppna kabeln. Panelen visar typ, ledare och längd. *Påverkan om kabeln bryts* visar de kritiska tjänsterna.
+2. Högerklicka på kabeln i kartan där brottet antas ligga och välj **Kabelbrott här** (#258). Fiberritningen öppnas som arbetsyta med brottpunkten satt.
+3. Ritningen visar varje fiber med färg och nummer, vad den skarvas eller termineras till i båda ändar och vad den bär. Brottpunkten ger avståndet längs kabeln till närmaste skarv eller ODF åt båda hållen, att jämföra med en OTDR-mätning (#254).
+4. **Skriv ut** ger ritningen på A3 i ljust tema, och **Spara som SVG** ger en fil att skicka till teknikern. Adressen öppnar samma ritning för den som får se den.
+5. **Tjänstevy** från en av de påverkade tjänsterna (#257) visar om tjänsten har en annan väg. Välj kabeln i ritningen, så står det direkt om tjänsten faller.
+
+## Scenario 5: planera en ny kabel i kartan
+Lingonåsen (`AGG-1191`) ska få en ny fiberkabel till en grannsite längs befintlig kanalisation.
+
+1. Öppna **Planer** och skapa planen *Ny kabel från Lingonåsen* med raden *Ny plan* (#252). Hela appen visar nu planens vy.
+2. Högerklicka på Lingonåsen i kartan och välj **Ny kabel härifrån** (#258, #259). Kanalisationen tänds och raden *Ny kabel från AGG-1191* visas över kartan.
+3. Klicka på trasésträckan `TR-012200` mot `SKP-005570`. Kabeln följer sträckan och får ett tomt rör (raden visar hur många rör som är lediga). Längden räknas löpande med andelen i befintlig kanalisation.
+4. Klicka bortom skåpet för en brytpunkt och sedan på en site utan trasé dit. Den sista biten blir en ny grävd sträcka, och raden visar andelen som är ny. Välj **luft** före klicket för en luftledning.
+5. **Lägg till kabel** lägger kabeln i planen med fiberkabel förvald. Termineringen på lediga ODF-portar i båda ändar föreslås, och **Terminera** lägger till skarvarna.
+6. Planens arbetsyta visar ändringarna som tabell, med antal per slag. **Påverkan** visar att inga kretsar bryts, och **Rita om** på kabeln öppnar ritningen igen om vägen ska ändras.
+7. **För in i produktion** gör kabeln, dess väg genom rören och den nya trasésträckan (planerad) verkliga.
+

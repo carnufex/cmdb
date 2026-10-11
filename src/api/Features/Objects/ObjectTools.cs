@@ -23,7 +23,7 @@ public sealed record AgentImpactedService(string Ref, string Code, string? Name,
 public sealed record AgentImpact(string Ref, string Url, int Circuits, int DirectCircuits, int Services, IReadOnlyList<AgentImpactedService> AffectedServices, bool Truncated);
 
 [McpServerToolType]
-public sealed class ObjectTools(RequestDb db, GraphHolder holder, AgentLinks links, ScopeMasks masks, Conduit.ConduitIndex conduit, IHttpContextAccessor http)
+public sealed class ObjectTools(RequestDb db, GraphHolder holder, Graph.GraphAtTime times, AgentLinks links, ScopeMasks masks, Conduit.ConduitIndex conduit, IHttpContextAccessor http)
 {
     private const int MaxServices = 50;
 
@@ -63,6 +63,8 @@ public sealed class ObjectTools(RequestDb db, GraphHolder holder, AgentLinks lin
         "that reaches it.")]
     public async Task<AgentImpact> Impact(
         [Description("A cable, equipment, site or route segment: \"cable:42\", \"equipment:9001\", \"site:1268\", \"route-segment:77\" or an exact code such as \"K-000123\".")] string reference,
+        [Description("Optional: the network as it was at this time (ISO 8601, e.g. \"2015-06-01\") instead of now. Not for route segments.")] string? at = null,
+        [Description("With at: \"reality\" (default) for what was in service then as known today, \"knowledge\" for what the CMDB said then.")] string? mode = null,
         CancellationToken ct = default)
     {
         var (type, id) = await ResolveAsync(reference, ct);
@@ -74,6 +76,11 @@ public sealed class ObjectTools(RequestDb db, GraphHolder holder, AgentLinks lin
         {
             throw new McpException("The network graph is still loading; try again in a few seconds.");
         }
+        if (at is not null && type == "route-segment")
+        {
+            throw new McpException("A route segment's impact is only known now; leave out at.");
+        }
+        graph = await Graph.GraphTimes.ForToolAsync(graph, times, at, mode);
         var mask = await masks.GetAsync(graph, Scope, ct);
         var impact = type == "route-segment"
             ? await conduit.RunAsync(graph, mask, db, Scope, id, ct) ?? throw new McpException($"No route segment with id {id}.")

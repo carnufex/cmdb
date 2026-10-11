@@ -8,6 +8,7 @@ import { RouteSegmentPanelComponent } from '../objects/route-segment-panel';
 import { ServicePanelComponent } from '../objects/service-panel';
 import { SitePanelComponent } from '../objects/site-panel';
 import { TracePanelComponent } from '../objects/trace-panel';
+import { IconComponent, objectIcons } from './icons';
 import { PanelStack } from './panels';
 
 /**
@@ -24,6 +25,7 @@ import { PanelStack } from './panels';
     CircuitPanelComponent,
     TracePanelComponent,
     RouteSegmentPanelComponent,
+    IconComponent,
   ],
   template: `
     @if (stack.top(); as top) {
@@ -31,6 +33,7 @@ import { PanelStack } from './panels';
         <ol>
           @for (p of stack.panels(); track $index; let i = $index; let last = $last) {
             <li>
+              <cmdb-icon class="icon" [name]="icons[p.type] ?? 'equipment'" />
               @if (last) {
                 <span aria-current="page">{{ crumb(p) }}</span>
               } @else {
@@ -101,6 +104,7 @@ import { PanelStack } from './panels';
       li {
         display: flex;
         align-items: center;
+        gap: var(--space-1);
         min-width: 0;
         white-space: nowrap;
         &:not(:last-child)::after {
@@ -108,6 +112,9 @@ import { PanelStack } from './panels';
           margin-left: var(--space-1);
           color: var(--text-muted);
         }
+      }
+      .icon {
+        color: var(--text-muted);
       }
       li button {
         padding: 0;
@@ -155,6 +162,7 @@ import { PanelStack } from './panels';
 })
 export class PanelHostComponent {
   protected readonly stack = inject(PanelStack);
+  protected readonly icons = objectIcons;
   private readonly mapView = inject(MapView);
 
   constructor() {

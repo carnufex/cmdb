@@ -12,22 +12,30 @@ import {
   input,
   linkedSignal,
   signal,
+  untracked,
 } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { ClaimsComponent } from './claims';
 import { ActivePlan } from '../plans/active-plan';
 import { CatalogKinds } from '../shell/catalog-kinds';
 import { PanelStack } from '../shell/panels';
+import { IconComponent } from '../shell/icons';
 import { StatusComponent } from '../shell/status';
 import { ImpactListComponent } from './impact-list';
 import { apiPath, CableDetail, Impact, ObjectRef } from './models';
+import { PlanDraft } from '../plans/plan-draft';
+import { Tools } from '../shell/tools';
+import { fibreTarget } from './fibre-model';
 import { ObjectLinkComponent } from './object-link';
 import { SourcesComponent } from './sources';
+import { HistoryComponent } from './history';
 
 @Component({
   selector: 'cmdb-cable-panel',
   imports: [
+    IconComponent,
     SourcesComponent,
+    HistoryComponent,
     ClassificationComponent,
     PlanMoveComponent,
     PlanRemoveComponent,
@@ -40,13 +48,14 @@ import { SourcesComponent } from './sources';
   template: `
     @if (cable.value(); as c) {
       <header class="header">
-        <div class="kind">Kabel · {{ c.medium }}</div>
+        <div class="kind"><cmdb-icon name="cable" />Kabel · {{ c.medium }}</div>
         <div class="code mono">{{ c.code }}</div>
         <div class="title">{{ c.typeName }}</div>
         <div class="meta">
           <cmdb-status [value]="c.lifecycle" />
           <span>{{ c.lengthM / 1000 | number: '1.1-1' }} km</span>
           <span>{{ c.conductorsInUse }} av {{ c.conductors }} ledare i bruk</span>
+          <button type="button" class="linkish" (click)="fibre(c.id)">Fiberritning</button>
         </div>
       </header>
       <cmdb-classification type="cable" [objectId]="c.id" />
@@ -122,7 +131,7 @@ import { SourcesComponent } from './sources';
             <p class="error" role="alert">{{ err }}</p>
           }
           @if (c.lifecycle !== 'removed') {
-            <details class="split">
+            <details class="split" [open]="splitOpen()">
               <summary>Sätt in en site i kabeln</summary>
               <p class="muted">
                 Kabeln delas vid siten. Alla ledare skarvas igenom, så kretsar och tjänster går som
@@ -256,6 +265,7 @@ import { SourcesComponent } from './sources';
         </ul>
       </section>
       <cmdb-sources [sources]="c.sources" />
+      <cmdb-history type="cable" [id]="c.id" />
     } @else if (cable.error()) {
       <p class="error">Kabeln kunde inte hämtas.</p>
     } @else {
@@ -351,6 +361,13 @@ import { SourcesComponent } from './sources';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class CablePanelComponent {
+  private readonly fibreTools = inject(Tools);
+
+  /** Opens the fibre drawing (#254) of this object as the workspace. */
+  protected fibre(id: number): void {
+    this.fibreTools.show('fibre', { fibre: fibreTarget('cables', id) });
+  }
+
   private readonly panels = inject(PanelStack);
   protected readonly kinds = inject(CatalogKinds);
   /** The cable's attributes, named from its type's schema (#211). */
@@ -365,6 +382,9 @@ export class CablePanelComponent {
 
   // Inserting a site into the cable (#168).
   protected readonly at = signal(50);
+  /** Opened from the map's context menu (#258) at the point clicked. */
+  protected readonly splitOpen = signal(false);
+  private readonly draft = inject(PlanDraft);
   protected readonly siteCode = signal('');
   protected readonly siteName = signal('');
   /** A splice point by default (the catalog's first type with that role), until the user picks another. */
@@ -496,7 +516,7 @@ export class CablePanelComponent {
   /** Loaded after the cable itself: impact analysis has its own, larger budget. */
   protected readonly impact = httpResource<Impact>(() => {
     return this.cable.value()
-      ? this.plan.request(`/api/${apiPath.cable}/${this.id()}/impact${this.plan.param(true)}`)
+      ? this.plan.request(`/api/${apiPath.cable}/${this.id()}/impact${this.plan.graphParam(true)}`)
       : undefined;
   });
   protected readonly layers: Record<string, string> = {
@@ -506,6 +526,17 @@ export class CablePanelComponent {
   };
 
   constructor() {
+    // "Sätt in en site här" from the map (#258): the form open, at the point clicked.
+    effect(() => {
+      const split = this.draft.split();
+      if (split && String(split.cableId) === this.id()) {
+        untracked(() => {
+          this.at.set(Math.min(95, Math.max(5, Math.round(split.at * 100))));
+          this.splitOpen.set(true);
+          this.draft.split.set(null);
+        });
+      }
+    });
     effect(() => {
       const c = this.cable.value();
       if (c) {

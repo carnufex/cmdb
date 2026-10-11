@@ -30,6 +30,8 @@ internal sealed class SiteConfiguration : IEntityTypeConfiguration<Site>
         e.HasIndex(x => x.Name, "ix_site_name_trgm").HasMethod("gin").HasOperators("gin_trgm_ops").HasDatabaseName("ix_site_name_trgm");
         e.Property(x => x.Geom).HasColumnType("geometry(Geometry, 3006)");
         e.HasIndex(x => x.Geom).HasMethod("gist");
+        // The content tree (#250) lists a site type's sites by code and splits them into ranges.
+        e.HasIndex(x => new { x.SiteType, x.Code }, "ix_site_type_code").HasFilter("lifecycle <> 'removed'").HasDatabaseName("ix_site_type_code");
         e.Property(x => x.Attributes).HasColumnType("jsonb").HasDefaultValueSql("'{}'");
         e.HasIndex(x => new { x.SourceSystem, x.ExternalId }).IsUnique().HasFilter("external_id IS NOT NULL");
     }

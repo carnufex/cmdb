@@ -2,25 +2,38 @@ import { httpResource } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, effect, inject, input } from '@angular/core';
 import { CatalogKinds } from '../shell/catalog-kinds';
 import { PanelStack } from '../shell/panels';
+import { IconComponent } from '../shell/icons';
 import { StatusComponent } from '../shell/status';
 import { apiPath, ServiceDetail } from './models';
 import { ClassificationComponent } from './classification';
 import { ObjectLinkComponent } from './object-link';
 import { SourcesComponent } from './sources';
+import { HistoryComponent } from './history';
 import { traceId } from './trace-model';
+import { Tools } from '../shell/tools';
 
 @Component({
   selector: 'cmdb-service-panel',
-  imports: [SourcesComponent, ClassificationComponent, ObjectLinkComponent, StatusComponent],
+  imports: [
+    IconComponent,
+    SourcesComponent,
+    HistoryComponent,
+    ClassificationComponent,
+    ObjectLinkComponent,
+    StatusComponent,
+  ],
   template: `
     @if (service.value(); as s) {
       <header class="header">
-        <div class="kind">Tjänst · {{ kinds.serviceTypeName(s.serviceType) }}</div>
+        <div class="kind">
+          <cmdb-icon name="service" />Tjänst · {{ kinds.serviceTypeName(s.serviceType) }}
+        </div>
         <div class="code mono">{{ s.code }}</div>
         <div class="title">{{ s.name }}</div>
         <div class="meta">
           <cmdb-status [value]="s.lifecycle" />
           <button type="button" class="action" (click)="trace(s.id)">Spåra ände till ände</button>
+          <button type="button" class="action" (click)="view(s.id)">Tjänstevy</button>
         </div>
       </header>
       <cmdb-classification type="service" [objectId]="s.id" />
@@ -57,6 +70,7 @@ import { traceId } from './trace-model';
         </section>
       }
       <cmdb-sources [sources]="s.sources" />
+      <cmdb-history type="service" [id]="s.id" />
     } @else if (service.error()) {
       <p class="error">Tjänsten kunde inte hämtas.</p>
     } @else {
@@ -75,6 +89,7 @@ export class ServicePanelComponent {
     () => `/api/${apiPath.service}/${this.id()}`,
   );
   protected readonly kinds = inject(CatalogKinds);
+  private readonly tools = inject(Tools);
   /** The service's attributes, named from its type's schema (#211). */
   protected readonly attributes = computed(() => {
     const s = this.service.value();
@@ -83,6 +98,11 @@ export class ServicePanelComponent {
 
   protected trace(id: number): void {
     this.panels.open({ type: 'trace', id: traceId({ by: 'service', id }) });
+  }
+
+  /** The service drawn end to end as the workspace (#257). */
+  protected view(id: number): void {
+    this.tools.show('service', { service: String(id) });
   }
 
   constructor() {

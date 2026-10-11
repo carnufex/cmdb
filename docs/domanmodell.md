@@ -122,7 +122,9 @@ Sitetyper och utrustningskategorier är katalogdata med nyckel, visningsnamn och
 | `termination` | kategori | Terminerar fibrer (ODF): där mönster och ruttförslag landar ledare. |
 | `power` | kategori | Reservkraft: riskvyn kollar batteriernas ålder. |
 
-En typ kan ha flera roller eller ingen. Okända roller, dubbla nycklar och sitemallar med okänd sitetyp ger fel vid laddning. Avancerad sökning och MCP `describe_catalog` visar namn och roller, och webben hämtar dem från `GET /api/catalog/kinds`. Datageneratorn väljer också sitetyper efter roll (se [Syntetiskt nät mot en egen katalog](#syntetiskt-nät-mot-en-egen-katalog)).
+En typ kan ha flera roller eller ingen. Okända roller, dubbla nycklar och sitemallar med okänd sitetyp ger fel vid laddning.
+
+En sitetyp eller kategori kan också ange en **ikon** (`"icon": "tower"`), som webben visar överallt där ett objekt av typen nämns (#249). Utan ikon får typen sin rolls: `hub`, `aggregation`, `cabinet` (access), `splice` (skarvpunkt), `card`, `odf` (termination), `power`, och annars `site` eller `equipment`. Namnen är webbens ikonuppsättning (se [ux.md](ux.md#ikoner)), och ett okänt namn ger fel vid laddning. Avancerad sökning och MCP `describe_catalog` visar namn och roller, och webben hämtar dem från `GET /api/catalog/kinds`. Datageneratorn väljer också sitetyper efter roll (se [Syntetiskt nät mot en egen katalog](#syntetiskt-nät-mot-en-egen-katalog)).
 
 ### Attributscheman för siter, kablar och tjänster (#211)
 
@@ -159,6 +161,7 @@ Den syntetiska katalogen i `catalog/` byggs in i API:t och datageneratorn och an
   service-types.json          valfri
   source-priority.json        valfri, vilken källa som äger vilket attribut (#215)
   source-matching.json        valfri, hur objekt från en ny källa matchas mot cmdb (#216)
+  costs.json                  valfri, valuta och pris per meter per anläggningssätt (#291)
   equipment-types/<key>.json
   duct-types/<key>.json       valfri, dukttyper för kanalisationen (ADR-0014)
   equipment-images/<fil>      valfri, bilder som modellerna pekar ut (#214)
@@ -167,6 +170,8 @@ Den syntetiska katalogen i `catalog/` byggs in i API:t och datageneratorn och an
 ```
 
 - Valideringen och synken till databasen är densamma oavsett källa. Fel anger katalogens mapp, filen och regeln, och processen startar inte.
+- **Priser (#291)** är valfria: `costPerMeter` på kabeltyper och dukttyper, `cost` på utrustningstyper och i `costs.json` valutan (`currency`, tre bokstäver) och pris per meter för att bygga trasé per anläggningssätt (`construction`: `trench`, `plough`, `aerial`, `existing`, där `existing` är indragning i befintlig kanalisation). Inga priser är negativa. Den syntetiska katalogen har syntetiska priser i SEK.
+- **Materiallistan för en plan** (`GET /api/plans/{id}/materials`, MCP `plan_materials`) härleds ur planens egna ändringar och katalogens priser, och lagras inte. Den räknar kablar per typ och meter (som ritade, #259, annars raka mellan siterna), utrustning per modell, nya trasésträckor per anläggningssätt och metrar i befintlig kanalisation. Nycklar utan pris listas i `missing` och räknas inte med i summan.
 - En satt men saknad mapp är ett fel, inte en tom katalog. Utan variabeln används den inbäddade katalogen.
 - Katalogen läses en gång när processen startar. En ändrad katalog börjar gälla vid nästa utrullning, när migreringssteget synkar den.
 
@@ -236,6 +241,11 @@ Kablar ligger i subdukter i dukter, som ligger i trasé mellan siter. Kanalisati
 - **I kartan** (#236): kryssrutan *Kanalisation* i teckenförklaringen visar trasén som ett eget lager under nätet (`GET /api/tiles/conduit/{z}/{x}/{y}`), så nätets plattor och deras budget är opåverkade. Stamtrasé (`route_segment.trunk`: en sträcka som bär en kabel med minst 96 fibrer, samma gräns som för kablarna) syns på alla zoomnivåer, med ett eget partiellt index, och övriga sträckor från detaljnivån (#243). Bredden visar antalet dukter, och luftledningar är streckade.
 - **Sträckpanelen** (`GET /api/route-segments/{id}`) visar anläggningssätt, ändar, ägare och varje dukt som ett tvärsnitt ritat ur dukttypens mall. Rörens beläggning visas som prick och text: tom, reserverad (en aktiv reservation av röret), kabel eller blåsfiber. Kabeln i röret är en länk.
 - **Kabelpanelen** visar kabelns väg genom kanalisationen (`GET /api/cables/{id}/path`): sträcka, dukt och rör från A-änden.
+- **En ny kabel ritad längs kanalisationen** (#259): `create_cable` kan få `route`, stegen som ritats från A-siten. `segment` följer en trasésträcka från den ände kabeln står vid till den andra, `site` går till en site (längs en sträcka om en förbinder dem, annars rakt) och `point` är en fri brytpunkt. En ny delsträcka grävs (`trench`) eller hängs (`aerial`), och `beside` gräver bredvid en sträcka vars rör är fulla.
+  - Servern räknar ut vägen: linjen, längden i befintlig kanalisation och längden som är ny. Varje följd sträcka får ett tomt rör, och samma rör återanvänds så länge samma dukt fortsätter. Ett rör som en tidigare kabel i planen eller planerna under har fått räknas som upptaget. En sträcka utan lediga rör ger en varning med alternativen att dra bredvid eller välja en annan väg.
+  - Operationen sparar linjen (`line`), längden, rören per sträcka (`route`), de nya trasésträckorna (`newSegments`, en per följd av nya delsträckor från site till site, hängd om någon del är det) och stegen (`steps`), så att kabeln kan ritas om.
+  - Vid införandet får kabeln sin `cable_path` och rören beläggningen `cable`. Har ett rör fyllts sedan dess passar planen inte längre. De nya sträckorna skapas med livscykel *planerad* och kod `TR-<id>`.
+  - `POST /api/plans/{id}/cable-route` ger ritningens förhandsvisning utan att spara något. `PUT /api/plans/{id}/operations/{opId}/route` ritar om en planerad kabel i samma operation, så att det som pekar på kabeln (termineringen) består. Den måste fortfarande sluta på sin B-site.
 - **Omfång:** en sträcka syns när dess geometri skär något av anroparens områden (`scope_route_segment`, materialiserad med de andra omfångstabellerna), och i plattorna klipps den vid områdets kant. Dukter och rör följer sin sträcka. En kabel utanför omfånget visas som *upptagen* utan namn, och en sträcka utanför omfånget i en kabels väg visas som dold.
 - **Påverkan per sträcka** (#237): en grävning på en trasésträcka kapar alla kablar i dess dukter (`GET /api/route-segments/{id}/impact`, MCP `impact` med `route-segment:<id>`, och *Om sträckan grävs av* i sträckpanelen). Påverkan räknas med samma kod som för en kabel, över alla kablarna tillsammans. Kablar utanför anroparens omfång räknas med för det de bär, så långt anroparen får se, och anges bara som antal.
   - Indexet sträcka → kablar hålls i minnet per grafversion. En ny graf (laddning eller ändringsflöde, #11) ger en ny version, så indexet följer grafen. Kanalisationen skrivs bara av laddningar i dag. När planer skriver den läggs tabellerna in i ändringsflödet.
@@ -249,6 +259,10 @@ Kablar ligger i subdukter i dukter, som ligger i trasé mellan siter. Kanalisati
   - Sträckor med minst N tomma rör (inte reserverade).
   - Kablar med minst N lediga fibrer: ingen krets alls går på fibern (även planerade kretsar tar den), och den är inte angiven som svartfiber eller reserv. Fibrerna räknas i grafen i minnet.
   - Kanalisationslagret i kartan visar dukter och lediga rör per sträcka vid hovring.
+
+### Fiberritning (#254)
+
+`GET /api/fibre/{cables|route-segments|sites}/{id}` och `POST /api/fibre/selection` ger en fiberritning: kablarna (en trasésträckas kablar ur kanalisationen, en sites kablar, ett urvals kablar och kablarna mellan dess siter, högst 60) med varje ledares nummer, färg (`conductor.color`, enligt kabeltypens `colorCode`), användning (tänd när en krets går på den, annars den angivna: mörk, uthyrd eller reserv) och reservation, vad dess ändar är kopplade till och vilka kretsar som går på den. Kopplingar, kretsar och tjänster kommer ur grafen, så `?plan=` ger planens vy. Med `x` och `y` (en kabel) räknas avståndet längs kabelns geometri till dess ändar (`ST_LineLocatePoint`). Tjänsternas kritikalitet är deras klassning i schemat `criticality`. Allt inom omfånget: dolda terminaler blir platshållare, dolda kablar och tjänster räknas. Budget: 200 ms för en trasésträcka.
 
 ## Livscykel
 
@@ -341,6 +355,15 @@ Utrustning i ett rack har en position, dess lägsta rackenhet (`equipment.rack_p
 - **Befintlig utrustning** staplas i sina rack från botten i id-ordning, av migreringen och av datageneratorn.
 - **Siten** visar varje rack som en frontvy med utrustningen på sina enheter och antalet lediga.
 
+### Rackens placering i rummet (#256)
+
+Ett rack kan ha en plats i sitt rum: rad (`location.room_row`) och plats i raden (`room_slot`), båda från 1, och åt vilket håll fronten vänder längs raden (`facing`: `front` eller `back`). Bara rack har en plats, och rad och plats anges tillsammans (check-constraints i modellen). Ett rack utan plats ritas i en egen rad sist.
+
+- **Datageneratorn** ställer racken i rader om tre, där varannan rad är vänd, så att fronterna möts över en kall gång.
+- **Importen** läser `row`, `slot` och `facing` i `locations.csv`. Ett nytt rack i avstämningen får sin plats med sig.
+- **I planer** kan `create_location` för ett rack få `roomRow`, `roomSlot` och `facing`. `set_rack_place` (rack, rad, plats, riktning) placerar ett befintligt rack. Servern vägrar en plats som ett annat rack i rummet redan står på, i produktion eller i planen.
+- **Rumsvyn** (`GET /api/rooms/{id}?plan=`) ger rummets rack med plats, enheter, lediga enheter, antal enheter, högsta kritikalitet på utrustningen i racket (#180) och kopplingarna mellan racken. I en plan syns nya rack (`plan: new`) och rack som placeras om (`plan: moved`). `GET /api/sites/{id}/rooms` ger sitens rum med antal rack och lediga enheter. Båda följer omfånget som utrustningen i racken.
+
 ### Förslag på väg för en ny förbindelse (#171)
 
 För en förbindelse mellan två siter föreslår systemet vägar över befintliga kablar som fortfarande har lediga fibrer, eller en ny kabel där det inte finns någon väg.
@@ -380,7 +403,7 @@ Ett befintligt nät från ett källsystem läses in i produktion med ett utbytes
 Varje källa som rapporterar ett objekt får en **källpost** (`source_record`) per objekt och källa: källans id, när den senast bekräftade objektet och värdet per attribut som källan rapporterade det. Attributen är objektets fält (`name`, `lifecycle`, `position`, `placement` …) och dess egna attribut som `attributes.<nyckel>`. Importen skriver källposterna i samma transaktion som objekten.
 
 - **Nuvarande värde jämförs vid läsning.** Objektets panel, API och MCP:s `get_object` visar under *Källor* vad varje källa sa, och om objektet ändrats i cmdb sedan dess. Ingen skrivväg behöver veta om källposterna, så de kan inte glida isär.
-- **Vem äger vad** är katalogdata: `source-priority.json` i katalogen anger per objekttyp och attribut vilka källor som får skriva, i prioritetsordning. Den mest specifika regeln gäller (`attributes.serialNumber` före `attributes.*` före `*`, objekttyp före `*`). Utan regel äger den källa som bekräftade senast. Avstämningen (#216) använder samma regler, och `autoApply` anger källorna vars ändringar av attributet förs in utan granskning.
+- **Vem äger vad** är katalogdata: `source-priority.json` i katalogen anger per objekttyp och attribut vilka källor som får skriva, i prioritetsordning. Den mest specifika regeln gäller (`attributes.serialNumber` före `attributes.*` före `*`, objekttyp före `*`). Utan regel äger den källa som bekräftade senast. Avstämningen (#216) använder samma regler, och `autoApply` anger källorna vars ändringar av attributet förs in utan granskning. Reglerna kan också gälla det som ligger mellan objekten och som ingen källpost håller (#230): `connection` med `kind`, `circuit` med `path` och `carriers`, `service` med `circuits`.
 - **Behörighet:** källposterna maskas som objektets attribut. Dolda attribut och, när omfånget döljer koordinater, `position` och `route` visas inte. Länkar till andra objekt (`placement`, `ends`) och kabelns sträckning jämförs men visas aldrig som värden, eftersom de är interna id:n som kan peka på objekt utanför omfånget. Tabellen ingår inte i den direkta databasåtkomsten (ADR-0012).
 
 ### Avstämning mot ett källsystem (#216, ADR-0020)
@@ -420,3 +443,12 @@ Bitemporal modell:
 - **Registreringstid**: när det dokumenterades.
 
 Frågor som stöds: "hur såg nätet ut datum D?" och "vad trodde vi att nätet såg ut som datum D?".
+
+Så fungerar det (#23, ADR-0006, ADR-0013):
+
+- **Giltighetstid** är `valid_from` och `valid_to` på de spårade objekten. Datageneratorn sätter syntetiska driftsättningsdatum på siter och kablar: stamnätet på 1990-talet, aggregering efter det och accessiter senare, och aldrig före det de hänger på. Planerade objekt och objekt under byggnation gäller från laddningen.
+- **Registreringstid** är `sys_from` på den gällande versionen och `sys_to` på de tidigare, som ligger i `<tabell>_history` med operationen som ersatte dem. Site, plats, utrustning, kabel, koppling, krets, tjänst, trasésträcka och dukt versioneras. Kretsarnas hopp, portar och ledare versioneras inte, eftersom de följer sina ägare.
+- **Operationen** säger vem (användaren och klienten, till exempel webben eller en agent), när, vad (kommandot och dess argument) och varför (planens namn, ett angivet skäl eller källsystemet). En bekräftelse från en integration som inte ändrar något är ingen ny version.
+- **Kartan per datum:** *verklighet* visar det som var i drift då, som vi vet i dag. *Vad vi visste* visar versionerna som var registrerade då, före senare rättelser, så en site som döpts om visar sitt gamla namn. Före laddningen visste CMDB:n ingenting.
+- **Objektets historik** visar versionerna nyast först: vad som ändrades, före och efter, och operationen bakom. Ett borttaget objekts historik ser bara den som ser hela nätet, eftersom omfånget inte längre går att avgöra.
+- **Spårning och påverkan per datum** (#302): grafen laddas för tidpunkten. *Verklighet* tar kopplingar, kablar och kretsar som var giltiga då. *Vad vi visste* tar dessutom versionerna som var registrerade då, så en koppling som tagits bort efteråt finns kvar. En borttagning räknas som en rättelse: i *verklighet* har den aldrig funnits. Kretsarnas hopp, beroenden och tjänstekopplingar versioneras inte och följer kretsen. Datageneratorn ger kopplingar och kretsar giltighetstid ur sina ändars siter och kablar, så en tjänst finns från när hela dess väg fanns. Påverkan per trasésträcka räknas bara på nuläget.

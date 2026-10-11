@@ -126,9 +126,22 @@ export class MapView {
   readonly placing = signal(false);
   readonly placed = signal<(Point & { seq: number }) | null>(null);
 
+  /**
+   * The map's context menu (#258): where it opens (pixels in the map), the point in the network's coordinates, and what
+   * lies under the pointer, nearest first. Null when it is closed.
+   */
+  readonly contextMenu = signal<ContextMenuRequest | null>(null);
+
+  /** Measuring a distance (#258): from this point to where the map is clicked next; null when not measuring. */
+  readonly measuring = signal<Point | null>(null);
+
   /** While true, the map draws a polygon (#27, a lasso); when closed, its ring lands in {@link lasso}. */
   readonly lassoing = signal(false);
-  readonly lasso = signal<{ ring: number[][]; seq: number } | null>(null);
+  readonly lasso = signal<{
+    ring: number[][];
+    mode: 'replace' | 'add' | 'remove';
+    seq: number;
+  } | null>(null);
 
   /**
    * Set by the map while it is shown: animates the view over the country and returns frame times in ms.
@@ -154,9 +167,10 @@ export class MapView {
     this.route.set({ ...route, seq: ++this.seq });
   }
 
-  closeLasso(ring: number[][]): void {
+  /** A closed lasso; Shift adds what it holds to the selection and Alt takes it away (#253). */
+  closeLasso(ring: number[][], mode: 'replace' | 'add' | 'remove' = 'replace'): void {
     this.lassoing.set(false);
-    this.lasso.set({ ring, seq: ++this.seq });
+    this.lasso.set({ ring, mode, seq: ++this.seq });
   }
 
   place(point: Point): void {
@@ -173,4 +187,19 @@ export class MapView {
       this.route.set(null);
     }
   }
+}
+
+/** Something the context menu can act on (#258). */
+export interface MapTarget {
+  type: 'site' | 'cable' | 'route-segment';
+  id: number;
+  code: string;
+}
+
+export interface ContextMenuRequest {
+  /** Where the menu opens, in pixels from the map's top left. */
+  left: number;
+  top: number;
+  point: Point;
+  targets: MapTarget[];
 }

@@ -1,6 +1,6 @@
-# ADR-0021: Integrationskonton med egen roll och eget omfång
+# ADR-0022: Integrationskonton med egen roll och eget omfång
 
-**Status:** Föreslagen · **Datum:** 2026-10-10 · **Beslut:** #248 · **Issue:** #217
+**Status:** Accepterad (alternativ A i #248) · **Datum:** 2026-10-10 · **Beslut:** #248 · **Genomförs i:** #217
 
 ## Kontext
 Integrationer är konsumenter med egna omfång (arkitektur.md), och avstämningen körs under integrationens omfång (ADR-0020). I dag ger grupperna både roll och omfång: `cmdb-full` är rollen som får skriva planer, och samma grupp ger omfånget *Hela nätet*. Ett tjänstekonto för en integration som ska få stämma av kan därför bara få `cmdb-full`, och då ser och skriver det hela nätet, oavsett vilket omfång det får i övrigt. ADR-0020 säger att avstämningen kräver `cmdb-full`.
@@ -12,7 +12,7 @@ Integrationer är konsumenter med egna omfång (arkitektur.md), och avstämninge
 - **B. Skilj roller från omfång för alla.** `cmdb-full` slutar ge *Hela nätet*, och alla, också människor, får sitt omfång från en egen grupp. Renast, men ändrar behörigheten för alla användare och demons inloggningar.
 - **C. Integrationer får `cmdb-full`.** Inget nytt, men integrationen ser och skriver hela nätet, vilket strider mot att integrationer har egna omfång.
 
-## Beslut (förslag)
+## Beslut
 **A.**
 - Rollen `cmdb-integration` tillåts på avstämningens endpoints. Den ger inte rätt att skriva eller föra in planer direkt. Avstämningen för fortfarande in den betrodda planen genom samma väg och kontroller som en människa (ADR-0020), och bara det källan är betrodd med i katalogen.
 - Varje integration har en egen grupp och ett eget omfång. Omfånget beviljas med motivering och godkännande av en andra person, som andra omfång. Omfånget behöver se avstämningens egna planer (`plans`).

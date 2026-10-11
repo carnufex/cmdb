@@ -11,7 +11,7 @@ namespace Cmdb.Api.Features.Trace;
 public sealed record AgentTrace(string Start, string Url, TraceResult Trace);
 
 [McpServerToolType]
-public sealed class TraceTools(GraphHolder holder, RequestDb db, AgentLinks links, ScopeMasks masks, IHttpContextAccessor http)
+public sealed class TraceTools(GraphHolder holder, Graph.GraphAtTime times, RequestDb db, AgentLinks links, ScopeMasks masks, IHttpContextAccessor http)
 {
     [McpServerTool(Name = "trace", Title = "Spårning", ReadOnly = true, Idempotent = true, OpenWorld = false)]
     [Description("Trace a service or circuit down through the layers it rides on (logical → transmission → physical), each " +
@@ -20,6 +20,8 @@ public sealed class TraceTools(GraphHolder holder, RequestDb db, AgentLinks link
         "the route in order.")]
     public async Task<AgentTrace> Trace(
         [Description("What to trace: \"service:1360\", \"circuit:42\" or \"terminal:123456\" (terminal ids appear in get_object for ports).")] string reference,
+        [Description("Optional: trace the network as it was at this time (ISO 8601, e.g. \"2015-06-01\") instead of now.")] string? at = null,
+        [Description("With at: \"reality\" (default) for what was in service then as known today, \"knowledge\" for what the CMDB said then.")] string? mode = null,
         CancellationToken ct = default)
     {
         var colon = reference.IndexOf(':', StringComparison.Ordinal);
@@ -32,7 +34,7 @@ public sealed class TraceTools(GraphHolder holder, RequestDb db, AgentLinks link
         {
             throw new McpException("The network graph is still loading; try again in a few seconds.");
         }
-        var graph = holder.Require();
+        var graph = await Graph.GraphTimes.ForToolAsync(holder.Require(), times, at, mode);
         var mask = await masks.GetAsync(graph, http.HttpContext!.Scope(), ct);
         var result = type switch
         {

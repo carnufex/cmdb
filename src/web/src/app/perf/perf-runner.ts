@@ -2,6 +2,8 @@ import { inject, Injectable } from '@angular/core';
 import { Auth } from '../auth/auth';
 import { GraphView } from '../graph/graph-view';
 import { FrontPanelView } from '../objects/front-panel-view';
+import { RackView } from '../objects/rack-panel';
+import { ServiceViews } from '../objects/service-views';
 import { GRID, HOME_EXTENT } from '../map/map-grid';
 import { MapView } from '../map/map-view';
 import { examples, QueryFields, toRequest } from '../query/query-model';
@@ -36,6 +38,8 @@ export class PerfRunner {
   private readonly mapView = inject(MapView);
   private readonly graphView = inject(GraphView);
   private readonly frontPanelView = inject(FrontPanelView);
+  private readonly rackView = inject(RackView);
+  private readonly serviceViews = inject(ServiceViews);
 
   async run(onProgress: (p: Progress) => void, signal: AbortSignal): Promise<Measurement[]> {
     const results: Measurement[] = [];
@@ -124,6 +128,11 @@ export class PerfRunner {
             this.request(`/api/route-segments/${segments[i % segments.length]}/impact`, signal),
         ),
       );
+      results.push(
+        await this.measure('fibre', 'Fiberritning, trasé', 200, RUNS, onProgress, signal, (i) =>
+          this.request(`/api/fibre/route-segments/${segments[i % segments.length]}`, signal),
+        ),
+      );
     }
     results.push(
       await this.measure('trace', 'Spåra tjänst', 50, RUNS, onProgress, signal, (i) =>
@@ -203,6 +212,34 @@ export class PerfRunner {
           'panel',
           `Frontpanel med bild (bildtid, ${model}, ${ports} portar)`,
           frames.map((f) => ({ server: null, browser: f })),
+          33,
+          'mål ≥ 30 fps, ej i budgeten',
+        ),
+      );
+    }
+    // The rack last shown in the rack view (#255), drawn with its pictures: a port marked every frame, both sides.
+    if (this.rackView.lastRack !== null) {
+      onProgress({ label: 'Rackvy: markerar portar', done: 0, total: 1 });
+      const r = (await this.rackView.measure(signal))!;
+      results.push(
+        summarize(
+          'rack',
+          `Rackvy (bildtid, ${r.rack}, ${r.units} U, ${r.equipment} enheter, ${r.ports} portar)`,
+          r.frames.map((f) => ({ server: null, browser: f })),
+          33,
+          'mål ≥ 30 fps, ej i budgeten',
+        ),
+      );
+    }
+    // The service last shown in the service view (#257), another cable or piece of equipment chosen every frame.
+    if (this.serviceViews.lastService !== null) {
+      onProgress({ label: 'Tjänstevy: väljer kablar och utrustning', done: 0, total: 1 });
+      const s = (await this.serviceViews.measure(signal))!;
+      results.push(
+        summarize(
+          'service',
+          `Tjänstevy (bildtid, ${s.service}, ${s.hops} hopp)`,
+          s.frames.map((f) => ({ server: null, browser: f })),
           33,
           'mål ≥ 30 fps, ej i budgeten',
         ),

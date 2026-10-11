@@ -3,6 +3,7 @@
   "manufacturer": "Acme Optical",
   "model": "OT-8",
   "category": "transmission",
+  "cost": 150000,
   "rackUnits": 1,
   "panel": { "rows": 2, "columns": 5 },
   "ports": [

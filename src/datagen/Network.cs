@@ -60,7 +60,9 @@ internal sealed class Site
     public double DistanceTo(Site other) => Math.Sqrt(((X - other.X) * (X - other.X)) + ((Y - other.Y) * (Y - other.Y)));
 }
 
-internal sealed record LocationRow(long Id, long SiteId, long? ParentId, string Kind, string Name, short? RackUnits, string Lifecycle);
+/// <param name="RoomRow">A rack's row in its room, with <paramref name="RoomSlot"/> and <paramref name="Facing"/> (#256).</param>
+internal sealed record LocationRow(long Id, long SiteId, long? ParentId, string Kind, string Name, short? RackUnits, string Lifecycle,
+    short? RoomRow = null, short? RoomSlot = null, string? Facing = null);
 
 /// <summary>A piece of equipment. Its ports are the terminals FirstTerminal .. FirstTerminal + Ports.Count - 1.</summary>
 internal sealed class Equipment

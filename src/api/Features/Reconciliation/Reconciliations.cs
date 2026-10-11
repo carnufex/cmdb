@@ -180,7 +180,7 @@ public sealed class ReconciliationIdRequest
 
 /// <summary>
 /// Earlier runs and their reports. A report is built inside the scopes of whoever ran it, so a caller sees their own
-/// runs, and an unrestricted caller every run. Reading needs no role, like other reads (ADR-0021).
+/// runs, and an unrestricted caller every run. Reading needs no role, like other reads (ADR-0022).
 /// </summary>
 public static class ReconciliationReads
 {

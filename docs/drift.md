@@ -66,6 +66,22 @@ En image från en branch kan byggas för att testa den (`scripts/deploy.sh --all
 - **Migreringar måste tåla att den förra versionen fortfarande kör** under utrullningen och vid en rollback. Lägg till först och ta bort i en senare release (expand/contract). En destruktiv migrering kräver ett issue med `type:decision`.
 - Databasen säkerhetskopieras inte. All data är syntetisk och genereras om.
 
+### Operationslogg, historik och läslogg (#23)
+
+| Inställning | Standard | Vad den gör |
+|---|---|---|
+| `Operations:HashChain` | `false` | Hashkedjar operationerna från start. Kontrollera kedjan med `GET /api/operations/verify`. Kedjan serialiserar skrivningarna (omkring 1 200 per sekund i mätningen). |
+| `Operations:MaintenanceHours` | `6` | Hur ofta partitioner skapas i förväg och läsloggen rensas. |
+| `Graph:TimeTravelCacheSize` | `1` | Hur många grafer per tidpunkt (#302) som hålls i minnet. En graf i full skala är omkring 230 MB. |
+| `ReadLog:Enabled` | `true` | Läsloggen; stäng av den bara för att mäta vad den kostar. |
+| `ReadLog:RetentionDays` | `90` | Hur länge läsloggens dygn sparas. |
+| `ReadLog:ArchivePath` | – | Mapp dit ett dygn exporteras som gzippad CSV innan det tas bort. |
+| `ReadLog:FlushMilliseconds`, `ReadLog:BatchSize`, `ReadLog:QueueLength` | `1000`, `2000`, `100000` | Läsloggens skrivare. En full kö loggas som varning med antalet poster som inte kom med. |
+
+- Partitionerna (`operation_y2026m10`, `site_history_y2026m10`, `read_log_d20261011` …) skapas av API:t. Varje partitionerad tabell har också en standardpartition, så en sen partition stoppar aldrig en skrivning, och raderna flyttas in när partitionen skapas.
+- **En migrering som lägger till en kolumn i en spårad tabell lägger till den i `<tabell>_history` också**, i samma migrering. Testet `Every_history_table_has_the_columns_of_its_table` fångar en som glömts.
+- Skrivningar direkt i databasen får en reservoperation. Sätt `SET cmdb.actor = '<namn>'` i sessionen så syns vem det var, och `SET cmdb.history = 'off'` bara vid en hel nyladdning.
+
 ### Direkt databasåtkomst
 
 Integrationer, rapporter och export som läser databasen utan API:t får en egen roll (ADR-0012):
@@ -146,7 +162,7 @@ spec:
               configMap: { name: cmdb-sync-acme-monitor }
 ```
 
-- **Kontot** är integrationens eget, medlem i `cmdb-integration` och i integrationens omfångsgrupp, aldrig i `cmdb-full` (ADR-0021).
+- **Kontot** är integrationens eget, medlem i `cmdb-integration` och i integrationens omfångsgrupp, aldrig i `cmdb-full` (ADR-0022).
 - **Anropet går inom klustret** till API:t, inte via Cloudflare, så att stora arkiv inte stoppas av gränsen för uppladdningar där.
 - **Hemligheterna** kommer från en Secret eller ExternalSecret. Konfigurationen, med tabellerna för modeller och tillstånd, ligger i en ConfigMap.
 - **Prova först** med `kubectl create job --from=cronjob/cmdb-sync-acme-monitor prova` och argumenten `["sync", "acme-monitor", "--dry-run"]`.
@@ -165,6 +181,20 @@ scripts/perf.sh --comment 13             # posta rapporten i ett issue
 - Anropen görs som agentkontot `cmdb-agent-demo`. Lösenordet hämtas ur Bitwarden (`CMDB_AGENT_TOKEN`) med `bws`, med åtkomsttoken från klustret om `BWS_ACCESS_TOKEN` saknas. Takten ligger under agentgränsen 20 anrop/s.
 - Rapporten hamnar i `artifacts/perf/<tid>-<mål>/summary.md` och `summary.json` (ignoreras av git).
 - En rad över budget, eller misslyckade anrop, markeras med ❌ och ger felkod. Kör mätningen efter varje driftsättning som rör API:t eller databasen, och kommentera rapporten i issuet.
+
+## E2e-test i webbläsaren
+
+`scripts/e2e.sh` (#288) kör de viktigaste flödena i en riktig webbläsare (Playwright, Chromium) mot en lokal stack som skriptet startar och river:
+
+- en engångs-Postgres i Docker (`postgis/postgis:17-3.5`, port 15499) laddad med det lilla syntetiska nätet (seed 1)
+- en ersättare för OpenID-leverantören (`src/web/e2e/idp.mjs`, port 8790) som loggar in en syntetisk planerare med `cmdb-full` och signerar riktiga JWT:er, som API:t litar på via `Auth__Authority`
+- API:t (port 5199) och webben på dev-servern (port 4310). `config.json` fångas upp i testet, så ingen fil ändras.
+
+Flödena är snabbsök → site, högerklicksmenyn, ny plan från raden och planens översikt, samt en kabel ritad längs kanalisationen med ångra, avslut, *Lägg till kabel*, *Rita om* och Esc (`src/web/e2e/flows.spec.ts`). En körning tar ungefär 30 s med varma byggen och 1–2 minuter kallt, varav flödena själva tar 10 s.
+
+- **När:** före merge av ändringar i webben, utöver `scripts/verify.sh`. Sviten ligger inte i `verify.sh`, eftersom parallella körningar i olika worktrees skulle krocka om portar och containernamn. Portarna kan ändras med `E2E_DB_PORT`, `E2E_API_PORT`, `E2E_IDP_PORT` och `E2E_WEB_PORT`.
+- **Felsökning:** loggar, skärmbilder och spår hamnar i `artifacts/e2e/`, och `npx playwright show-trace <trace.zip>` spelar upp ett fel. `scripts/e2e.sh --keep` låter stacken stå kvar efter körningen.
+- **Webbläsaren:** Playwright 1.64 använder Chromium-bygge 1248. Saknas det körs `npx playwright install chromium` i `src/web`.
 
 ## Händelselogg
 

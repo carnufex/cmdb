@@ -1,5 +1,6 @@
 <header class="head">
   <h2>Avancerad sökning</h2>
+  <cmdb-tool-size />
   <button type="button" class="close" aria-label="Stäng avancerad sökning" (click)="close()">
     ×
   </button>
@@ -245,7 +246,9 @@
           >
         }
         @if (r.points.length) {
-          <button type="button" class="linkish" (click)="openGrid(r)">Öppna som kalkylark</button>
+          <button type="button" class="linkish" (click)="useAsSelection(r)">
+            Använd som urval
+          </button>
         }
       </p>
       <ol>

@@ -1,10 +1,29 @@
 import { portStatus, PortStatus } from '../objects/front-panel-model';
 import { EquipmentDetail, ObjectRef, SiteDetail } from '../objects/models';
+import { locationKindName } from '../shell/icons';
 
-/** A node in the content tree (#17): site → location → equipment → card → port. */
+/** GET /api/tree: the network as the tree's root (#250). */
+export interface TreeRoot {
+  label: string;
+  sites: number;
+  groups: { siteType: string; name: string; icon: string; sites: number }[];
+}
+
+/** GET /api/tree/{siteType}: its sites, or the ranges of codes they are split into. */
+export interface TreeGroupContent {
+  chunks: { from: string; to: string; sites: number }[] | null;
+  sites: { id: number; code: string; name: string; lifecycle: string }[] | null;
+}
+
+/**
+ * A node in the content tree (#17, #250): network → site type → range of codes (for large types) → site → location →
+ * equipment → card → port.
+ */
 export interface TreeNode {
   key: string;
-  kind: 'site' | 'location' | 'equipment' | 'port';
+  kind: 'network' | 'group' | 'range' | 'site' | 'location' | 'equipment' | 'port';
+  /** What the icon follows (#249): the site type, the location kind or the equipment category; 'card' for a card. */
+  typeKey: string | null;
   label: string;
   detail: string | null;
   /** The object a click opens; ports open their equipment. */
@@ -15,8 +34,10 @@ export interface TreeNode {
   portStatus?: PortStatus;
   /** Known children; equipment children are fetched when first expanded. */
   children: TreeNode[];
-  /** Equipment with ports or cards not fetched yet. */
+  /** Children not fetched yet: a site type, a range, a site or equipment. */
   lazy: boolean;
+  /** Ranges only: the first and last code. */
+  range?: { from: string; to: string };
 }
 
 export interface TreeRow {
@@ -31,12 +52,14 @@ export const equipmentKey = (id: number) => `equipment:${id}`;
 
 function equipmentNode(
   e: { id: number; name: string; lifecycle: string },
+  typeKey: string,
   detail: string,
   lazy: boolean,
 ): TreeNode {
   return {
     key: equipmentKey(e.id),
     kind: 'equipment',
+    typeKey,
     label: e.name,
     detail,
     ref: { type: 'equipment', id: e.id, code: e.name },
@@ -46,6 +69,75 @@ function equipmentNode(
   };
 }
 
+const sites = (n: number) => `${n.toLocaleString('sv-SE')} ${n === 1 ? 'site' : 'siter'}`;
+
+/** The network with its site types; each type's sites load when it is expanded (#250). */
+export function networkTree(root: TreeRoot): TreeNode {
+  return {
+    key: 'network',
+    kind: 'network',
+    typeKey: null,
+    label: root.label,
+    detail: sites(root.sites),
+    ref: null,
+    lifecycle: null,
+    children: root.groups.map((g) => ({
+      key: `group:${g.siteType}`,
+      kind: 'group',
+      typeKey: g.siteType,
+      label: g.name,
+      detail: sites(g.sites),
+      ref: null,
+      lifecycle: null,
+      children: [],
+      lazy: g.sites > 0,
+    })),
+    lazy: false,
+  };
+}
+
+/** A site in the network tree; its locations and equipment load when it is expanded. */
+export function siteNode(
+  site: { id: number; code: string; name: string; lifecycle: string },
+  siteType: string,
+): TreeNode {
+  return {
+    key: `site:${site.id}`,
+    kind: 'site',
+    typeKey: siteType,
+    label: site.code,
+    detail: site.name,
+    ref: { type: 'site', id: site.id, code: site.code, name: site.name },
+    lifecycle: site.lifecycle,
+    children: [],
+    lazy: true,
+  };
+}
+
+/** A site type's content: its sites, or ranges of at most 500 of them by code. */
+export function groupChildren(siteType: string, content: TreeGroupContent): TreeNode[] {
+  if (content.chunks) {
+    return content.chunks.map((c) => ({
+      key: `range:${siteType}:${c.from}`,
+      kind: 'range' as const,
+      typeKey: siteType,
+      label: `${c.from} – ${c.to}`,
+      detail: sites(c.sites),
+      ref: null,
+      lifecycle: null,
+      children: [],
+      lazy: true,
+      range: { from: c.from, to: c.to },
+    }));
+  }
+  return (content.sites ?? []).map((s) => siteNode(s, siteType));
+}
+
+/** The range among a site type's children that holds the code, if the type is split into ranges. */
+export function rangeFor(group: TreeNode, code: string): TreeNode | null {
+  return group.children.find((c) => c.range && c.range.from <= code && code <= c.range.to) ?? null;
+}
+
 /** The site with its location hierarchy and the equipment in each location; ports and cards load on demand. */
 export function siteTree(site: SiteDetail): TreeNode {
   const locations = new Map<number, TreeNode>();
@@ -53,13 +145,15 @@ export function siteTree(site: SiteDetail): TreeNode {
     locations.set(l.id, {
       key: `location:${l.id}`,
       kind: 'location',
+      typeKey: l.kind,
       label: l.name,
-      detail: l.kind,
+      detail: locationKindName(l.kind),
       ref: null,
       lifecycle: null,
       children: l.equipment.map((e) =>
         equipmentNode(
           e,
+          e.category,
           `${e.model}${e.cards ? ` · ${e.cards} kort` : ''}`,
           e.ports > 0 || e.cards > 0,
         ),
@@ -70,6 +164,7 @@ export function siteTree(site: SiteDetail): TreeNode {
   const root: TreeNode = {
     key: `site:${site.id}`,
     kind: 'site',
+    typeKey: site.siteType,
     label: site.code,
     detail: site.name,
     ref: { type: 'site', id: site.id, code: site.code, name: site.name },
@@ -94,6 +189,7 @@ export function equipmentChildren(detail: EquipmentDetail): TreeNode[] {
   const cards = detail.cards.map((c) =>
     equipmentNode(
       { id: c.card.id, name: c.card.code, lifecycle: String(c.card.lifecycle ?? 'in_service') },
+      'card',
       `slot ${c.slot}`,
       true,
     ),
@@ -103,6 +199,7 @@ export function equipmentChildren(detail: EquipmentDetail): TreeNode[] {
     .map<TreeNode>((p) => ({
       key: `port:${p.terminalId}`,
       kind: 'port',
+      typeKey: null,
       label: p.name,
       detail: p.connections.length ? p.connections.map((c) => c.peer.label).join(', ') : null,
       ref: { type: 'equipment', id: detail.id, code: detail.name },

@@ -4,6 +4,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router } from '@angular/router';
 import { filter, firstValueFrom, map } from 'rxjs';
 import { MapView } from '../map/map-view';
+import { timeParam, TimeTravel } from '../map/time-travel';
 import { diffPoints, NewOperation, PlanDiff, PlanOperation, planParam } from './plan-model';
 
 /** A port picked as the first end of a connection to add to the plan. */
@@ -22,6 +23,7 @@ export class ActivePlan {
   private readonly router = inject(Router);
   private readonly http = inject(HttpClient);
   private readonly mapView = inject(MapView);
+  private readonly time = inject(TimeTravel);
 
   /** The active plan's id, or null for production. */
   readonly id = toSignal(
@@ -67,6 +69,19 @@ export class ActivePlan {
   /** `&plan=<id>` for the active plan, empty in production. */
   param(first = false): string {
     return planParam(this.id(), first);
+  }
+
+  /**
+   * For tracing and impact: the active plan's view, or else the time the map travels to (#302). A plan is always
+   * drawn as of now, so it wins.
+   */
+  graphParam(first = false): string {
+    return this.id() !== null ? this.param(first) : this.timeParam(first);
+  }
+
+  /** The time the map travels to (#302), for questions about production. */
+  timeParam(first = false): string {
+    return timeParam(this.time.point(), first);
   }
 
   activate(id: number | null): void {

@@ -18,9 +18,13 @@ public sealed record PlanSummary(long Id, string Name, string Description, strin
 /// <summary>An operation in words, with the objects it touches and, when it no longer fits, why.</summary>
 /// <param name="Conflicts">Claims on the same resources by others (#25): a reservation (blocking) or another plan.</param>
 /// <param name="Blocked">A reservation by someone else stops the plan from being applied.</param>
+/// <param name="Route">A cable drawn in the map (#259): its A site and the steps as drawn, so it can be drawn again.</param>
 public sealed record PlanOperationView(long Id, long PlanId, int Seq, string Kind, string Summary, IReadOnlyList<TraceHop> Terminals,
     ObjectRef? Target, string? ConnectionKind, string? Lifecycle, string? Name, string? Problem, string CreatedBy, DateTimeOffset CreatedAt,
-    IReadOnlyList<string> Conflicts, bool Blocked);
+    IReadOnlyList<string> Conflicts, bool Blocked, DrawnRoute? Route = null);
+
+/// <summary>A drawn cable's start and steps (#259).</summary>
+public sealed record DrawnRoute(long ASiteId, long BSiteId, System.Text.Json.JsonElement Steps);
 
 public sealed record PlanDetail(PlanSummary Plan, IReadOnlyList<PlanSummary> Dependencies, IReadOnlyList<PlanOperationView> Operations);
 
@@ -120,6 +124,9 @@ public sealed class AddOperationRequest
     public long? ASiteId { get; set; }
     public long? BSiteId { get; set; }
 
+    /// <summary>create_cable: the way it was drawn from the A site (#259), along route segments and new stretches.</summary>
+    public CableRouteStep[]? Route { get; set; }
+
     /// <summary>set_classification (#176): the schema (e.g. criticality) and the level; a null level clears it.</summary>
     public string? Schema { get; set; }
     public int? Level { get; set; }
@@ -138,6 +145,43 @@ public sealed class AddOperationRequest
 
     /// <summary>set_conductor_usage: dark, dark_fibre or spare; null clears what was stated.</summary>
     public string? Usage { get; set; }
+
+    /// <summary>create_equipment: the equipment a card sits in (#230); create_location: the parent location.</summary>
+    public long? ParentId { get; set; }
+
+    /// <summary>create_equipment: the slot a card sits in.</summary>
+    public string? Slot { get; set; }
+
+    /// <summary>create_location: building, room, rack or position.</summary>
+    public string? LocationKind { get; set; }
+
+    /// <summary>create_location: a rack's height in units.</summary>
+    public int? RackUnits { get; set; }
+
+    /// <summary>create_location of a rack, set_rack_place: its row in the room and its place in the row, from 1 (#256).</summary>
+    public int? RoomRow { get; set; }
+    public int? RoomSlot { get; set; }
+
+    /// <summary>create_location of a rack, set_rack_place: which way its front faces along the row, front or back.</summary>
+    public string? Facing { get; set; }
+
+    /// <summary>create_service: the service type.</summary>
+    public string? ServiceType { get; set; }
+
+    /// <summary>create_circuit: physical, transmission or logical.</summary>
+    public string? Layer { get; set; }
+
+    /// <summary>create_circuit, set_circuit_path: the terminals in order, existing or planned.</summary>
+    public long[]? Hops { get; set; }
+
+    /// <summary>link_circuit: the circuit the circuit (objectId) rides on.</summary>
+    public long? CarrierId { get; set; }
+
+    /// <summary>link_service: the circuit the service (objectId) runs on.</summary>
+    public long? CircuitId { get; set; }
+
+    /// <summary>link_circuit, link_service: take the link away instead of adding it.</summary>
+    public bool Remove { get; set; }
 }
 
 public sealed class AddOperationValidator : Validator<AddOperationRequest>
@@ -200,6 +244,17 @@ public sealed class AddOperationValidator : Validator<AddOperationRequest>
                 RuleFor(r => r.End).Must(e => e is not null && (e.Equals("A", StringComparison.OrdinalIgnoreCase) || e.Equals("B", StringComparison.OrdinalIgnoreCase)))
                     .WithMessage("end is A or B."));
         });
+        // A rack's place in its room (#256): row and slot together, and the way it faces.
+        RuleFor(r => r).Must(r => (r.RoomRow is null) == (r.RoomSlot is null)).WithMessage("roomRow and roomSlot go together.");
+        RuleFor(r => r.RoomRow).InclusiveBetween(1, 99).When(r => r.RoomRow is not null);
+        RuleFor(r => r.RoomSlot).InclusiveBetween(1, 99).When(r => r.RoomSlot is not null);
+        RuleFor(r => r.Facing).Must(f => f is null or "front" or "back").WithMessage("facing is front or back.");
+        When(r => r.Kind == "set_rack_place", () =>
+        {
+            RuleFor(r => r.Type).Equal("location").WithMessage("type is location.");
+            RuleFor(r => r.ObjectId).NotNull().GreaterThan(0).WithMessage("objectId is an existing rack.");
+            RuleFor(r => r.RoomRow).NotNull().WithMessage("roomRow is the rack's row in its room.");
+        });
         When(r => r.Kind == "set_conductor_usage", () =>
         {
             RuleFor(r => r.Type).Equal("cable").WithMessage("type is cable.");
@@ -226,21 +281,61 @@ public sealed class AddOperationValidator : Validator<AddOperationRequest>
         });
         When(r => r.Kind == "create_equipment", () =>
         {
-            RuleFor(r => r.SiteId).NotNull().NotEqual(0);
+            RuleFor(r => r.SiteId).NotNull().NotEqual(0).When(r => r.ParentId is null);
+            RuleFor(r => r.Slot).NotEmpty().MaximumLength(20).When(r => r.ParentId is not null);
             RuleFor(r => r.Name).NotEmpty().MaximumLength(200);
             RuleFor(r => r.Rack).MaximumLength(100);
             RuleFor(r => r.TypeKey).Must(k => k is not null && Cmdb.Catalog.TypeCatalog.Current.Find(k) is not null && !Cmdb.Catalog.TypeCatalog.Current.TypeHas(k, Cmdb.Catalog.CatalogRoles.Card))
-                .WithMessage("typeKey is an equipment model that is not a card (describe_catalog lists them).");
+                .When(r => r.ParentId is null)
+                .WithMessage("typeKey is an equipment model that is not a card (describe_catalog lists them); a card needs parentId and slot.");
         });
         When(r => r.Kind == "create_cable", () =>
         {
             RuleFor(r => r.ASiteId).NotNull().NotEqual(0);
             RuleFor(r => r.BSiteId).NotNull().NotEqual(0).NotEqual(r => r.ASiteId).WithMessage("A cable joins two different sites.");
+            RuleFor(r => r.Route).Must(r => r is null || r.Length is > 0 and <= CableRoutes.MaxSteps)
+                .WithMessage($"route is 1–{CableRoutes.MaxSteps} steps.");
             RuleFor(r => r.TypeKey).Must(k => Planned.ConductorCount(k ?? "") > 0).WithMessage("typeKey is a cable type in the catalog.");
+        });
+        When(r => r.Kind == "create_location", () =>
+        {
+            RuleFor(r => r.SiteId).NotNull().NotEqual(0);
+            RuleFor(r => r.LocationKind).Must(k => NetworkLinks.LocationKinds.Contains(k)).WithMessage("locationKind is building, room, rack or position.");
+            RuleFor(r => r).Must(r => r.RoomRow is null && r.RoomSlot is null && r.Facing is null || r.LocationKind == "rack")
+                .WithMessage("Only a rack has a place in its room.");
+            RuleFor(r => r.Name).NotEmpty().MaximumLength(200);
+            RuleFor(r => r.RackUnits).InclusiveBetween(1, 60).When(r => r.RackUnits is not null);
+        });
+        When(r => r.Kind == "create_service", () =>
+        {
+            RuleFor(r => r.Code).NotEmpty().MaximumLength(50);
+            RuleFor(r => r.Name).NotEmpty().MaximumLength(200);
+            RuleFor(r => r.ServiceType).NotEmpty().MaximumLength(50);
+        });
+        When(r => r.Kind == "create_circuit", () =>
+        {
+            RuleFor(r => r.Code).NotEmpty().MaximumLength(50);
+            RuleFor(r => r.Layer).Must(l => NetworkLinks.Layer(l) is not null).WithMessage("layer is physical, transmission or logical.");
+            RuleFor(r => r.Hops).Must(h => h is { Length: >= 2 and <= 10_000 }).WithMessage("hops is 2–10 000 terminals.");
+        });
+        When(r => r.Kind == "set_circuit_path", () =>
+        {
+            RuleFor(r => r.ObjectId).NotNull().NotEqual(0);
+            RuleFor(r => r.Hops).Must(h => h is { Length: >= 2 and <= 10_000 }).WithMessage("hops is 2–10 000 terminals.");
+        });
+        When(r => r.Kind == "link_circuit", () =>
+        {
+            RuleFor(r => r.ObjectId).NotNull().NotEqual(0);
+            RuleFor(r => r.CarrierId).NotNull().NotEqual(0);
+        });
+        When(r => r.Kind == "link_service", () =>
+        {
+            RuleFor(r => r.ObjectId).NotNull().NotEqual(0);
+            RuleFor(r => r.CircuitId).NotNull().NotEqual(0);
         });
         When(r => r.Kind == "rename", () =>
         {
-            RuleFor(r => r.Type).Must(t => t is "site" or "equipment").WithMessage("type is site or equipment.");
+            RuleFor(r => r.Type).Must(t => t is "site" or "equipment" or "location").WithMessage("type is site, equipment or location.");
             RuleFor(r => r.ObjectId).NotNull();
             RuleFor(r => r.Name).NotEmpty().MaximumLength(200);
         });
@@ -353,6 +448,7 @@ public sealed class SetDependenciesEndpoint(RequestDb db) : Endpoint<SetDependen
         }
         await using var conn = await db.OpenConnectionAsync(ct);
         await using var tx = await conn.BeginTransactionAsync(ct);
+        await Cmdb.Api.Features.Operations.Operations.BeginAsync(conn, tx, User, "set_plan_dependencies", new { plan = req.Id, dependsOn = req.DependsOn }, null, ct);
         await using (var cmd = new NpgsqlCommand("DELETE FROM plan_dependency WHERE plan_id = $1", conn, tx))
         {
             cmd.Parameters.Add(new() { Value = req.Id });
@@ -419,6 +515,7 @@ public sealed class DeleteOperationEndpoint(RequestDb db) : Endpoint<DeleteOpera
         }
         await using var conn = await db.OpenConnectionAsync(ct);
         await using var tx = await conn.BeginTransactionAsync(ct);
+        await Cmdb.Api.Features.Operations.Operations.BeginAsync(conn, tx, User, "remove_from_plan", new { plan = req.Id, operation = req.OperationId }, null, ct);
         int deleted;
         await using (var cmd = new NpgsqlCommand("DELETE FROM plan_operation WHERE plan_id = $1 AND id = $2", conn, tx))
         {

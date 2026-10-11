@@ -71,6 +71,9 @@ describe('trace ids', () => {
   it('round-trip and reject anything else', () => {
     expect(parseTraceId(traceId({ by: 'terminal', id: 42 }))).toEqual({ by: 'terminal', id: 42 });
     expect(parseTraceId('site.1')).toBeNull();
+    // In production even while a plan is active (#252, "before").
+    expect(traceId({ by: 'circuit', id: 12, production: true })).toBe('circuit.12.prod');
+    expect(parseTraceId('circuit.12.prod')).toEqual({ by: 'circuit', id: 12, production: true });
     expect(parseTraceId('service.x')).toBeNull();
   });
 });

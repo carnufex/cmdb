@@ -84,6 +84,8 @@ public sealed partial class PlanApplication(RequestDb db, GraphHolder holder, Pl
                     return PlanWrite.Fail<ApplyResult>(PlanWriteFailure.Conflict, "Planen ändrades under tiden. Försök igen.");
                 }
             }
+            await Cmdb.Api.Features.Operations.Operations.BeginAsync(conn, tx, user, "apply_plan", new { plan = plan.Id, operations = operations.Count, exception },
+                exception is null ? $"Plan {plan.Name}" : $"Plan {plan.Name}, undantag: {exception}", ct);
             run = new PlanApply(conn, tx, actor);
             foreach (var op in operations)
             {
@@ -201,6 +203,7 @@ public sealed class CancelPlanEndpoint(RequestDb db) : Endpoint<PlanIdRequest, A
         await using (var conn = await db.OpenConnectionAsync(ct))
         await using (var tx = await conn.BeginTransactionAsync(ct))
         {
+            await Cmdb.Api.Features.Operations.Operations.BeginAsync(conn, tx, User, "cancel_plan", new { plan = req.Id }, $"Plan {plan.Name}", ct);
             await using (var cmd = new NpgsqlCommand("""
                 UPDATE plan SET status = 'cancelled', cancelled_at = now(), version = version + 1, updated_at = now() WHERE id = $1 AND status = 'draft'
                 """, conn, tx))
