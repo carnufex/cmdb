@@ -8,6 +8,7 @@ import {
   ElementRef,
   inject,
   signal,
+  untracked,
   viewChild,
 } from '@angular/core';
 import OlMap from 'ol/Map';
@@ -50,7 +51,10 @@ import {
 } from './map-grid';
 import { createBasemap, esriTileUrl, parseBasemap } from './map-basemap';
 import { createStyler, Palette, readPalette, statusColor } from './map-style';
-import { MapView, Operations, PlannedObjects, Route } from './map-view';
+import { CurrentUser } from '../shell/current-user';
+import { ContextMenuComponent } from './context-menu';
+import { distanceText, MapActions } from './map-actions';
+import { MapTarget, MapView, Operations, PlannedObjects, Route } from './map-view';
 
 /** GET /api/classifications/map (#180) */
 interface ClassificationLayer {
@@ -74,7 +78,8 @@ interface Hover {
  */
 @Component({
   selector: 'cmdb-map',
-  imports: [StatusComponent, SelectionBarComponent],
+  imports: [StatusComponent, SelectionBarComponent, ContextMenuComponent],
+  host: { '(document:keydown)': 'onKey($event)' },
   templateUrl: './map.html',
   styleUrl: './map.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -107,6 +112,15 @@ export class MapComponent {
   private operations?: VectorLayer<VectorSource<Feature<Geometry>>>;
   private placedLayer?: VectorLayer<VectorSource<Feature<Geometry>>>;
   private classification?: VectorLayer<VectorSource<Feature<Geometry>>>;
+  private measureLayer?: VectorLayer<VectorSource<Feature<Geometry>>>;
+  private measureEnd?: { x: number; y: number };
+  /** A distance being measured or just measured (#258): the label by the pointer or the end point. */
+  protected readonly measured = signal<{
+    x: number;
+    y: number;
+    text: string;
+    done: boolean;
+  } | null>(null);
   private liveKey = '';
   private lassoDraw?: Draw;
   protected readonly operationsShown = signal(false);
@@ -124,7 +138,10 @@ export class MapComponent {
 
   constructor() {
     afterNextRender(() => this.create());
+    const user = inject(CurrentUser);
+    const unregister = inject(MapActions).registerCommands(() => user.canWrite());
     inject(DestroyRef).onDestroy(() => {
+      unregister();
       this.map?.setTarget(undefined);
       this.mapView.renderBenchmark = null;
     });
@@ -220,9 +237,16 @@ export class MapComponent {
       }
     });
     effect(() => {
-      const placing = this.mapView.placing();
+      const placing = this.mapView.placing() || !!this.mapView.measuring();
       if (this.map) {
         this.target().nativeElement.style.cursor = placing ? 'crosshair' : '';
+      }
+    });
+    // Measuring a distance (#258): a line from the start point that follows the pointer until the next click.
+    effect(() => {
+      const from = this.mapView.measuring();
+      if (from) {
+        untracked(() => this.drawMeasure(from, from, false));
       }
     });
     // Other parts of the app (search, panels) ask the map to go somewhere.
@@ -255,6 +279,8 @@ export class MapComponent {
       this.operations?.changed();
       this.classification?.changed();
       this.conduit?.changed();
+      this.measureStyleCache = undefined;
+      this.measureLayer?.changed();
     };
 
     this.network = new VectorTileLayer({
@@ -315,7 +341,13 @@ export class MapComponent {
       style: () => this.placedStyle(),
       zIndex: 25,
     });
+    this.measureLayer = new VectorLayer({
+      source: new VectorSource<Feature<Geometry>>(),
+      style: () => this.measureStyle(),
+      zIndex: 30,
+    });
     const layers: (TileLayer | VectorTileLayer | VectorLayer)[] = [
+      this.measureLayer,
       this.placedLayer,
       this.conduit,
       this.network,
@@ -356,6 +388,16 @@ export class MapComponent {
     };
     reportCenter();
     this.map.on('moveend', reportCenter);
+    // A finished measurement's label follows its end point as the map moves.
+    this.map.on('postrender', () => {
+      const m = this.measured();
+      if (m?.done && this.measureEnd) {
+        const [x, y] = this.map!.getPixelFromCoordinate([this.measureEnd.x, this.measureEnd.y]);
+        if (Math.abs(x - m.x) + Math.abs(y - m.y) > 0.5) {
+          this.measured.set({ ...m, x, y });
+        }
+      }
+    });
     // The keys held on the click that closes a lasso decide what it does to the selection (#253).
     const keys = (e: { originalEvent: MouseEvent | PointerEvent | KeyboardEvent }) =>
       (this.modifiers = { shift: e.originalEvent.shiftKey, alt: e.originalEvent.altKey });
@@ -368,6 +410,13 @@ export class MapComponent {
 
     this.map.on('pointermove', (e) => {
       if (e.dragging) {
+        return;
+      }
+      const from = this.mapView.measuring();
+      if (from) {
+        const [x, y] = e.coordinate;
+        this.drawMeasure(from, { x, y }, false);
+        this.hover.set(null);
         return;
       }
       const feature = this.map!.forEachFeatureAtPixel(e.pixel, (f) => f, { hitTolerance: 4 });
@@ -395,6 +444,17 @@ export class MapComponent {
       // A click while drawing a lasso is one of its corners, and the double click that closes it is not a pick either.
       if (this.mapView.lassoing() || performance.now() - this.lassoClosedAt < 500) {
         return;
+      }
+      const from = this.mapView.measuring();
+      if (from) {
+        // The second point of a measurement (#258): the line and its length stay until the next click or Escape.
+        const [x, y] = e.coordinate;
+        this.drawMeasure(from, { x, y }, true);
+        this.mapView.measuring.set(null);
+        return;
+      }
+      if (this.measured()) {
+        this.clearMeasure();
       }
       if (this.mapView.placing()) {
         const [x, y] = e.coordinate;
@@ -447,6 +507,130 @@ export class MapComponent {
         this.panels.open({ type, id: String(feature.getId()) }, { replace: true });
       }
     });
+    // The context menu (#258): what can be done with what lies under the pointer, or on the empty spot.
+    this.map.getViewport().addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      if (this.mapView.lassoing() || this.mapView.placing() || this.mapView.picking()) {
+        return;
+      }
+      this.mapView.measuring.set(null);
+      const pixel = this.map!.getEventPixel(e);
+      const [x, y] = this.map!.getCoordinateFromPixel(pixel);
+      const targets: MapTarget[] = [];
+      this.map!.forEachFeatureAtPixel(
+        pixel,
+        (f) => {
+          const t = targetOf(f);
+          if (t && !targets.some((o) => o.type === t.type && o.id === t.id)) {
+            targets.push(t);
+          }
+        },
+        { hitTolerance: 4 },
+      );
+      this.openMenu(pixel[0], pixel[1], { x, y }, targets);
+    });
+  }
+
+  private openMenu(
+    left: number,
+    top: number,
+    point: { x: number; y: number },
+    targets: MapTarget[],
+  ): void {
+    // Kept inside the map so it never opens off screen; the menu is at most about 320 px tall and 260 wide.
+    const { clientWidth, clientHeight } = this.target().nativeElement;
+    this.hover.set(null);
+    this.mapView.contextMenu.set({
+      left: Math.max(4, Math.min(left, clientWidth - 264)),
+      top: Math.max(4, Math.min(top, clientHeight - 324)),
+      point,
+      targets: targets.slice(0, 8),
+    });
+  }
+
+  /**
+   * The menu from the keyboard (#258): the menu key or Shift+F10 opens it in the middle of the map, for the open object
+   * when it is a site, a cable or a route segment. Escape ends a measurement.
+   */
+  protected onKey(event: KeyboardEvent): void {
+    if (event.key === 'Escape' && (this.mapView.measuring() || this.measured())) {
+      this.mapView.measuring.set(null);
+      this.clearMeasure();
+      return;
+    }
+    const asked = event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10');
+    const field = (event.target as HTMLElement | null)?.closest?.(
+      'input, textarea, select, [contenteditable]',
+    );
+    if (!asked || field || !this.map) {
+      return;
+    }
+    event.preventDefault();
+    const top = this.panels.top();
+    const targets: MapTarget[] =
+      top && (top.type === 'site' || top.type === 'cable' || top.type === 'route-segment')
+        ? [{ type: top.type, id: Number(top.id), code: this.panels.label(top) ?? `#${top.id}` }]
+        : [];
+    const [x, y] = this.map.getView().getCenter() ?? [0, 0];
+    const { clientWidth, clientHeight } = this.target().nativeElement;
+    this.openMenu(clientWidth / 2, clientHeight / 2, { x, y }, targets);
+  }
+
+  private drawMeasure(
+    from: { x: number; y: number },
+    to: { x: number; y: number },
+    done: boolean,
+  ): void {
+    const source = this.measureLayer?.getSource();
+    if (!source || !this.map) {
+      return;
+    }
+    source.clear(true);
+    const start = new Feature<Geometry>(new OlPoint([from.x, from.y]));
+    source.addFeatures([
+      start,
+      new Feature<Geometry>(
+        new LineString([
+          [from.x, from.y],
+          [to.x, to.y],
+        ]),
+      ),
+    ]);
+    if (done) {
+      source.addFeature(new Feature<Geometry>(new OlPoint([to.x, to.y])));
+    }
+    // SWEREF 99 TM is in metres, so the length is the plain distance between the points.
+    const metres = Math.hypot(to.x - from.x, to.y - from.y);
+    this.measureEnd = to;
+    const [px, py] = this.map.getPixelFromCoordinate([to.x, to.y]);
+    this.measured.set({ x: px, y: py, text: distanceText(metres), done });
+  }
+
+  private clearMeasure(): void {
+    this.measureLayer?.getSource()?.clear(true);
+    this.measured.set(null);
+  }
+
+  private measureStyleCache?: { key: string; style: Style };
+
+  /** A measured distance (#258): the focus colour, dashed, with its end points ringed. */
+  private measureStyle(): Style {
+    const palette = (this.palette ??= readPalette(this.host.nativeElement));
+    const key = `${palette.focus}|${palette.bg}`;
+    if (this.measureStyleCache?.key !== key) {
+      this.measureStyleCache = {
+        key,
+        style: new Style({
+          stroke: new Stroke({ color: palette.focus, width: 2.5, lineDash: [8, 6] }),
+          image: new Circle({
+            radius: 5,
+            fill: new Fill({ color: palette.bg }),
+            stroke: new Stroke({ color: palette.focus, width: 2.5 }),
+          }),
+        }),
+      };
+    }
+    return this.measureStyleCache.style;
   }
 
   private restyle: () => void = () => undefined;
@@ -1082,4 +1266,21 @@ function alpha(hex: string, opacity: number): string {
           .toString(16)
           .padStart(2, '0')
     : hex;
+}
+
+/** What the context menu (#258) can act on for a feature under the pointer: production sites, cables and route segments. */
+function targetOf(f: FeatureLike): MapTarget | null {
+  const id = Number(f.getId());
+  const code = String(f.get('code') ?? '');
+  if (!id || !code || f.get('planned')) {
+    return null;
+  }
+  const layer = f.get('layer') ?? f.get('cls');
+  return layer === 'sites' || layer === 'site'
+    ? { type: 'site', id, code }
+    : layer === 'cables' || layer === 'cable'
+      ? { type: 'cable', id, code }
+      : layer === 'routes'
+        ? { type: 'route-segment', id, code }
+        : null;
 }

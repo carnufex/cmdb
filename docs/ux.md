@@ -46,6 +46,13 @@ Varje objekttyp har en ikon, så att man ser vad något är utan att läsa (#249
 - **Inga modala kedjor.** Redigering sker direkt i panelen.
 - **Kommandopaletten (Ctrl+K) gör saker**, inte bara söker: "ny site från mall", "patcha 1–24", "spåra tjänst". Tom palett visar åtgärderna för det öppna objektet, text ger matchande åtgärder före objektträffar och `>` först ger bara åtgärder. Åtgärder registreras i `CommandRegistry`, och en panel kan lägga till tillfälliga åtgärder för det som är markerat, till exempel "Spåra från port bh1" (#21).
 - **Tangentbord först** för återkommande flöden.
+- **Högerklick i kartan (#258)** visar vad som går att göra just där. Ligger flera objekt under pekaren väljer man först vilket.
+  - *Tom yta:* Ny site här, Ny kabel härifrån, Mät avstånd (klicka där mätningen slutar; Escape eller nästa klick rensar) och Kopiera koordinat (SWEREF 99 TM).
+  - *Site:* Öppna, Innehåll, Rackvy, Påverkan om siten faller, Grannskap, Ny kabel härifrån och Lägg till i urvalet.
+  - *Kabel:* Öppna, Sätt in en site här (där man klickade på kabeln), Kabelbrott här (fiberritningen med avstånd från punkten), Fiberritning, Reservera fiber och Lägg till i urvalet.
+  - *Trasésträcka:* Öppna, Påverkan vid grävning och Fiberritning.
+  - Ändringar visas bara för den som får ändra (cmdb-full) och hamnar i den aktiva planen via planpanelens formulär, som kontrollerar dem som vanligt. Utan aktiv plan står det *· ny plan* vid åtgärden, och menyn frågar efter planens namn i samma steg, utan modal.
+  - Menytangenten eller Shift+F10 öppnar menyn mitt i kartan för det öppna objektet. Pilar flyttar, Enter kör, Escape stänger. Samma åtgärder (utom de som behöver en punkt i kartan) finns i kommandopaletten för det öppna objektet.
 
 ## Massprovisionering
 

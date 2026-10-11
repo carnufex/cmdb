@@ -1,7 +1,7 @@
-import { httpResource } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { Auth } from './auth/auth';
+import { CurrentUser } from './shell/current-user';
 import { PanelStack } from './shell/panels';
 import { PanelHostComponent } from './shell/panel-host';
 import { registerCoreCommands } from './shell/core-commands';
@@ -19,16 +19,6 @@ import { VoiceCallComponent } from './voice/voice-call';
 import { VoicePanelComponent } from './voice/voice-panel';
 import { RackPanelComponent } from './objects/rack-panel';
 import { FibrePanelComponent } from './objects/fibre-panel';
-
-/** The user as the API sees them (GET /api/me). */
-export interface Me {
-  username: string;
-  name: string | null;
-  email: string | null;
-  groups: string[];
-  /** Access scopes that apply (#22), by name. */
-  scopes: string[] | null;
-}
 
 @Component({
   selector: 'app-root',
@@ -61,9 +51,7 @@ export class App {
   protected readonly tools = inject(Tools);
   protected readonly plan = inject(ActivePlan);
   protected readonly changelog = inject(ChangelogStore);
-  protected readonly me = httpResource<Me>(() =>
-    this.auth.isAuthenticated() ? '/api/me' : undefined,
-  );
+  protected readonly me = inject(CurrentUser).me;
 
   constructor() {
     registerCoreCommands();

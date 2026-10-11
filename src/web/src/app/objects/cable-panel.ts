@@ -12,6 +12,7 @@ import {
   input,
   linkedSignal,
   signal,
+  untracked,
 } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { ClaimsComponent } from './claims';
@@ -22,6 +23,7 @@ import { IconComponent } from '../shell/icons';
 import { StatusComponent } from '../shell/status';
 import { ImpactListComponent } from './impact-list';
 import { apiPath, CableDetail, Impact, ObjectRef } from './models';
+import { PlanDraft } from '../plans/plan-draft';
 import { Tools } from '../shell/tools';
 import { fibreTarget } from './fibre-model';
 import { ObjectLinkComponent } from './object-link';
@@ -127,7 +129,7 @@ import { SourcesComponent } from './sources';
             <p class="error" role="alert">{{ err }}</p>
           }
           @if (c.lifecycle !== 'removed') {
-            <details class="split">
+            <details class="split" [open]="splitOpen()">
               <summary>Sätt in en site i kabeln</summary>
               <p class="muted">
                 Kabeln delas vid siten. Alla ledare skarvas igenom, så kretsar och tjänster går som
@@ -377,6 +379,9 @@ export class CablePanelComponent {
 
   // Inserting a site into the cable (#168).
   protected readonly at = signal(50);
+  /** Opened from the map's context menu (#258) at the point clicked. */
+  protected readonly splitOpen = signal(false);
+  private readonly draft = inject(PlanDraft);
   protected readonly siteCode = signal('');
   protected readonly siteName = signal('');
   /** A splice point by default (the catalog's first type with that role), until the user picks another. */
@@ -518,6 +523,17 @@ export class CablePanelComponent {
   };
 
   constructor() {
+    // "Sätt in en site här" from the map (#258): the form open, at the point clicked.
+    effect(() => {
+      const split = this.draft.split();
+      if (split && String(split.cableId) === this.id()) {
+        untracked(() => {
+          this.at.set(Math.min(95, Math.max(5, Math.round(split.at * 100))));
+          this.splitOpen.set(true);
+          this.draft.split.set(null);
+        });
+      }
+    });
     effect(() => {
       const c = this.cable.value();
       if (c) {
