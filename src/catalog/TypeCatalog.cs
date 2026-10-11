@@ -66,6 +66,11 @@ public sealed class TypeCatalog
     /// <summary>The currency and the price per metre of each construction (#291); empty when the catalog has no costs.json.</summary>
     public CatalogCosts Costs { get; private init; } = CatalogCosts.None;
 
+    /// <summary>Service point types (#292) in catalog order; empty when the catalog has no service-point-types.json.</summary>
+    public IReadOnlyList<ServicePointType> ServicePointTypes { get; private init; } = [];
+
+    public ServicePointType? FindServicePointType(string key) => ServicePointTypes.FirstOrDefault(t => t.Key == key);
+
     public DuctType? FindDuct(string key) => _ductTypes.GetValueOrDefault(key);
 
     /// <summary>The site types in catalog order (#208).</summary>
@@ -144,7 +149,7 @@ public sealed class TypeCatalog
     /// <param name="imageExists">Whether a panel image is in the catalog's <c>equipment-images/</c> (#214); null skips the check.</param>
     public static TypeCatalog Parse(IEnumerable<(string File, string Json)> files, string cableTypesJson = "[]",
         string? siteTypesJson = null, string? categoriesJson = null, string? serviceTypesJson = null, Func<string, bool>? imageExists = null,
-        IEnumerable<(string File, string Json)>? ductTypeFiles = null, string? costsJson = null)
+        IEnumerable<(string File, string Json)>? ductTypeFiles = null, string? costsJson = null, string? servicePointTypesJson = null)
     {
         var types = new List<EquipmentType>();
         var schemas = new Dictionary<string, JsonSchema>(StringComparer.Ordinal);
@@ -265,11 +270,24 @@ public sealed class TypeCatalog
             }
         }
         CatalogRules.CheckCosts(types, cableTypes, ductTypes, costs, errors);
+        List<ServicePointType> servicePointTypes = [];
+        if (servicePointTypesJson is not null)
+        {
+            try
+            {
+                servicePointTypes = JsonSerializer.Deserialize<List<ServicePointType>>(servicePointTypesJson, Json) ?? [];
+            }
+            catch (JsonException ex)
+            {
+                errors.Add($"service-point-types.json: {ex.Message}");
+            }
+        }
+        CatalogRules.CheckServicePointTypes(servicePointTypes, errors);
         if (errors.Count > 0)
         {
             throw new InvalidOperationException("Invalid type catalog:" + Environment.NewLine + string.Join(Environment.NewLine, errors));
         }
-        return new TypeCatalog(types, schemas, cableTypes, siteTypes, categories, serviceTypes, objectSchemas, ductTypes) { Costs = costs };
+        return new TypeCatalog(types, schemas, cableTypes, siteTypes, categories, serviceTypes, objectSchemas, ductTypes) { Costs = costs, ServicePointTypes = servicePointTypes };
     }
 
     /// <summary>Loads and validates the equipment and cable types from <paramref name="source"/>.</summary>
@@ -280,7 +298,7 @@ public sealed class TypeCatalog
             string Required(string file) =>
                 source.Read(file) ?? throw new InvalidOperationException("Invalid type catalog:" + Environment.NewLine + $"{file}: missing");
             return Parse(source.Files("equipment-types"), Required("cable-types.json"), Required("site-types.json"), Required("equipment-categories.json"),
-                source.Read("service-types.json") ?? "[]", file => source.Image(file) is not null, source.Files("duct-types"), source.Read("costs.json"));
+                source.Read("service-types.json") ?? "[]", file => source.Image(file) is not null, source.Files("duct-types"), source.Read("costs.json"), source.Read("service-point-types.json"));
         }
         catch (InvalidOperationException ex)
         {

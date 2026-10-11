@@ -55,6 +55,7 @@ public sealed record PlanOp(long Id, long PlanId, int Seq, string Kind, JsonElem
         "split_cable" or "move" => new[] { Payload.GetProperty("site").GetInt64() }.Where(id => id < 0),
         "set_classification" => new[] { Payload.GetProperty("id").GetInt64() }.Where(id => id < 0),
         _ when NetworkLinks.Kinds.Contains(Kind) => NetworkLinks.References(this),
+        _ when ServicePoints.ServicePointPlans.Kinds.Contains(Kind) => ServicePoints.ServicePointPlans.References(this),
         _ => [],
     };
 }
@@ -101,7 +102,7 @@ public sealed record PlanView(PlanChain Chain, Cmdb.Graph.Graph Graph, IReadOnly
 internal static class PlanKinds
 {
     public static readonly string[] Operations =
-        ["connect", "disconnect", "set_lifecycle", "rename", "set_attributes", "create_site", "create_equipment", "create_cable", "split_cable", "remove", "set_classification", "move", "set_conductor_usage", "set_rack_place", .. NetworkLinks.Kinds];
+        ["connect", "disconnect", "set_lifecycle", "rename", "set_attributes", "create_site", "create_equipment", "create_cable", "split_cable", "remove", "set_classification", "move", "set_conductor_usage", "set_rack_place", .. NetworkLinks.Kinds, .. ServicePoints.ServicePointPlans.Kinds];
 
     public static readonly string[] Connections = ["patch", "splice", "termination", "internal"];
 

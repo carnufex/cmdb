@@ -120,3 +120,10 @@ public sealed record CatalogCosts(string Currency, IReadOnlyDictionary<string, d
 
 /// <param name="ColorCode">The colour sequence the tubes follow, e.g. "IEC 60304"; tube N gets the N-th colour.</param>
 public sealed record SubductTemplate(int Count, int InnerDiameterMm, string? ColorCode = null);
+
+/// <summary>
+/// A service point type (#292, ADR-0021) from the optional <c>service-point-types.json</c>: a house, a block of flats, a
+/// business. <paramref name="Units"/> is the homes or premises a point of the type has unless it says otherwise;
+/// <paramref name="UnitsVary"/> means every point gives its own number (a block of flats).
+/// </summary>
+public sealed record ServicePointType(string Key, string Name, int Units = 1, bool UnitsVary = false);

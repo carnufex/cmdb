@@ -1,7 +1,8 @@
 import { ResourceClaims } from './claims';
 import { Lifecycle } from '../shell/status';
 
-export type ObjectType = 'site' | 'equipment' | 'cable' | 'service' | 'circuit' | 'route-segment';
+export type ObjectType =
+  'site' | 'equipment' | 'cable' | 'service' | 'circuit' | 'route-segment' | 'service-point';
 
 /** A link to another object (ObjectRef in the API). */
 export interface ObjectRef {
@@ -218,6 +219,7 @@ export const typeLabels: Record<ObjectType, string> = {
   service: 'Tjänst',
   circuit: 'Krets',
   'route-segment': 'Trasé',
+  'service-point': 'Anslutningspunkt',
 };
 
 export const apiPath: Record<ObjectType, string> = {
@@ -227,6 +229,7 @@ export const apiPath: Record<ObjectType, string> = {
   service: 'services',
   circuit: 'circuits',
   'route-segment': 'route-segments',
+  'service-point': 'service-points',
 };
 
 export function asLifecycle(value: string | null | undefined): Lifecycle {

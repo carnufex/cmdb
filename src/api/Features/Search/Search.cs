@@ -46,7 +46,7 @@ public sealed class SearchValidator : Validator<SearchRequest>
 }
 
 /// <summary>
-/// Quick search over sites, equipment, cables, services and circuits (pg_trgm, see #12). Ranking: exact code or
+/// Quick search over sites, equipment, cables, services, circuits and service points (#292) (pg_trgm, see #12). Ranking: exact code or
 /// id, then prefix, then contains; within a level by object type, distance to <c>near</c> and similarity.
 /// </summary>
 public sealed class SearchEndpoint(RequestDb db) : Endpoint<SearchRequest, IReadOnlyList<SearchHit>>
@@ -95,6 +95,13 @@ public sealed class SearchEndpoint(RequestDb db) : Endpoint<SearchRequest, IRead
             "r.code LIKE $4::text",
             "r.code ILIKE $6::text",
             ScopeSql.Circuit("r.id", 11)),
+        new("service-point", 5,
+            "p.id, p.code, p.address, p.type_key, p.status, ST_X(p.geom), ST_Y(p.geom), greatest(similarity(p.code, $1::text), similarity(coalesce(p.address, ''), $1::text))",
+            "service_point p",
+            "p.code = $2::text OR p.id = $10::bigint",
+            "p.code LIKE $4::text OR p.address ILIKE $5::text",
+            "p.code ILIKE $6::text OR p.address ILIKE $6::text OR p.name ILIKE $6::text",
+            ScopeSql.ServicePoint("p.geom", 11)),
     ];
 
     // Every level is a LIMIT without ORDER BY, so Postgres stops reading as soon as it has enough candidates

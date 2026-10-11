@@ -177,6 +177,13 @@ internal static class PlanSql
         var objects = await ObjectsAsync(db, [.. operations.Where(o => o.Kind is "set_lifecycle" or "rename" or "set_attributes" or "remove" or "set_classification" or "move" or "set_conductor_usage" or "set_rack_place").Select(o => (o.ObjectType!, o.ObjectId)).Distinct()],
             scope, ct);
 
+        // Service points and sites that service point operations name (#292).
+        var pointOps = operations.Where(o => o.Kind == "update_service_point").ToList();
+        var pointCodes = await ServicePoints.ServicePointPlans.CodesAsync(db, scope, [.. pointOps.Select(o => o.ObjectId).Where(id => id > 0).Distinct()], ct);
+        var siteCodes = (await ObjectsAsync(db, [.. pointOps.Where(o => o.Payload.TryGetProperty("site", out var s) && s.GetInt64() > 0)
+            .Select(o => ("site", o.Payload.GetProperty("site").GetInt64())).Distinct()], scope, ct))
+            .Where(kv => kv.Value.Visible).ToDictionary(kv => kv.Key.Item2, kv => kv.Value.Ref.Code);
+
         // Circuits and services that path and link operations name (#230).
         var linkNames = await LinkNamesAsync(db, [.. operations.Where(o => o.Kind is "set_circuit_path" or "link_circuit" or "link_service")], scope, ct);
 
@@ -216,6 +223,17 @@ internal static class PlanSql
                     : linkNames.TryGetValue((type, id), out var code) ? code : $"#{id}";
                 list.Add(new PlanOperationView(op.Id, op.PlanId, op.Seq, op.Kind, NetworkLinks.Text(op, Name), [], null, null, null, null, problem,
                     op.CreatedBy, op.CreatedAt, [], false));
+                continue;
+            }
+            if (op.Kind == "update_service_point")
+            {
+                string PointName(string type, long id) => planned.Objects.TryGetValue((type, id), out var known) ? known.Code
+                    : type == "site" && siteCodes.TryGetValue(id, out var siteCode) ? siteCode
+                    : type == ServicePoints.ServicePointPlans.Type && pointCodes.TryGetValue(id, out var code) ? code : "dold";
+                var exists = op.ObjectId < 0 ? planned.Objects.ContainsKey((ServicePoints.ServicePointPlans.Type, op.ObjectId)) : pointCodes.ContainsKey(op.ObjectId);
+                list.Add(new PlanOperationView(op.Id, op.PlanId, op.Seq, op.Kind, ServicePoints.ServicePointPlans.Text(op, PointName), [],
+                    new ObjectRef(ServicePoints.ServicePointPlans.Type, op.ObjectId, PointName(ServicePoints.ServicePointPlans.Type, op.ObjectId)), null, null, null,
+                    problem ?? (exists ? null : "Anslutningspunkten finns inte längre."), op.CreatedBy, op.CreatedAt, [], false));
                 continue;
             }
             if (op.Kind.StartsWith("create_", StringComparison.Ordinal))

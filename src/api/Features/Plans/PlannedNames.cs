@@ -66,6 +66,10 @@ public sealed class PlannedNames
                     names.Objects[("location", id)] = new ObjectRef("location", id, p.GetProperty("name").GetString()!, p.GetProperty("kind").GetString(), "planned");
                     names._locationSites[id] = Site(p.GetProperty("site").GetInt64());
                     break;
+                case "create_service_point":
+                    names.Objects[(ServicePoints.ServicePointPlans.Type, id)] = new ObjectRef(ServicePoints.ServicePointPlans.Type, id,
+                        p.GetProperty("code").GetString()!, p.TryGetProperty("address", out var address) ? address.GetString() : null, "planned");
+                    break;
                 case "create_service":
                     names.Objects[("service", id)] = new ObjectRef("service", id, p.GetProperty("code").GetString()!, p.GetProperty("name").GetString(), "planned");
                     break;
@@ -157,6 +161,8 @@ public sealed class PlannedNames
                     return (NetworkLinks.Text(op, (t, x) => t == "site" && site is not null ? $"{site.Code} {site.Name}".TrimEnd()
                         : Objects.TryGetValue((t, x), out var o) ? o.Code : $"#{x}"), created);
                 }
+            case "create_service_point":
+                return (ServicePoints.ServicePointPlans.CreateText(p), Objects[(ServicePoints.ServicePointPlans.Type, id)]);
             case "create_equipment":
                 {
                     var equipment = Objects[("equipment", id)];

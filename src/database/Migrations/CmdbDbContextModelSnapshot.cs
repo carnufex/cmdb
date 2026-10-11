@@ -1593,7 +1593,7 @@ namespace Cmdb.Database.Migrations
 
                     b.ToTable("plan_operation", null, t =>
                         {
-                            t.HasCheckConstraint("ck_plan_operation_kind", "kind IN ('connect', 'disconnect', 'set_lifecycle', 'rename', 'set_attributes', 'create_site', 'create_equipment', 'create_cable', 'split_cable', 'remove', 'set_classification', 'move', 'set_conductor_usage', 'create_location', 'create_service', 'create_circuit', 'set_circuit_path', 'link_circuit', 'link_service', 'set_rack_place')");
+                            t.HasCheckConstraint("ck_plan_operation_kind", "kind IN ('connect', 'disconnect', 'set_lifecycle', 'rename', 'set_attributes', 'create_site', 'create_equipment', 'create_cable', 'split_cable', 'remove', 'set_classification', 'move', 'set_conductor_usage', 'create_location', 'create_service', 'create_circuit', 'set_circuit_path', 'link_circuit', 'link_service', 'set_rack_place', 'create_service_point', 'update_service_point')");
 
                             t.HasCheckConstraint("ck_plan_operation_payload", "jsonb_typeof(payload) = 'object'");
                         });
@@ -2184,6 +2184,129 @@ namespace Cmdb.Database.Migrations
                         .HasDatabaseName("ix_service_circuit_circuit_id");
 
                     b.ToTable("service_circuit", (string)null);
+                });
+
+            modelBuilder.Entity("Cmdb.Database.Model.ServicePoint", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Address")
+                        .HasColumnType("text")
+                        .HasColumnName("address");
+
+                    b.Property<string>("Attributes")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("attributes")
+                        .HasDefaultValueSql("'{}'");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("code");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("ExternalId")
+                        .HasColumnType("text")
+                        .HasColumnName("external_id");
+
+                    b.Property<Point>("Geom")
+                        .IsRequired()
+                        .HasColumnType("geometry(Point, 3006)")
+                        .HasColumnName("geom");
+
+                    b.Property<string>("Name")
+                        .HasColumnType("text")
+                        .HasColumnName("name");
+
+                    b.Property<long?>("SiteId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("site_id");
+
+                    b.Property<string>("SourceSystem")
+                        .HasColumnType("text")
+                        .HasColumnName("source_system");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("planned")
+                        .HasColumnName("status");
+
+                    b.Property<long?>("TerminalId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("terminal_id");
+
+                    b.Property<string>("TypeKey")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("type_key");
+
+                    b.Property<int>("Units")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1)
+                        .HasColumnName("units");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.HasKey("Id")
+                        .HasName("pk_service_point");
+
+                    b.HasIndex("Code")
+                        .IsUnique()
+                        .HasDatabaseName("ix_service_point_code");
+
+                    b.HasIndex("Geom")
+                        .HasDatabaseName("ix_service_point_geom");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("Geom"), "gist");
+
+                    b.HasIndex("SiteId")
+                        .HasDatabaseName("ix_service_point_site_id");
+
+                    b.HasIndex("TerminalId")
+                        .HasDatabaseName("ix_service_point_terminal_id");
+
+                    b.HasIndex("SourceSystem", "ExternalId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_service_point_source_system_external_id")
+                        .HasFilter("external_id IS NOT NULL");
+
+                    b.HasIndex(new[] { "Address" }, "ix_service_point_address_trgm")
+                        .HasDatabaseName("ix_service_point_address_trgm");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex(new[] { "Address" }, "ix_service_point_address_trgm"), "gin");
+                    NpgsqlIndexBuilderExtensions.HasOperators(b.HasIndex(new[] { "Address" }, "ix_service_point_address_trgm"), new[] { "gin_trgm_ops" });
+
+                    b.HasIndex(new[] { "Code" }, "ix_service_point_code_trgm")
+                        .HasDatabaseName("ix_service_point_code_trgm");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex(new[] { "Code" }, "ix_service_point_code_trgm"), "gin");
+                    NpgsqlIndexBuilderExtensions.HasOperators(b.HasIndex(new[] { "Code" }, "ix_service_point_code_trgm"), new[] { "gin_trgm_ops" });
+
+                    b.ToTable("service_point", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_service_point_status", "status IN ('planned', 'ordered', 'connected')");
+
+                            t.HasCheckConstraint("ck_service_point_units", "units >= 1");
+                        });
                 });
 
             modelBuilder.Entity("Cmdb.Database.Model.ServiceRequest", b =>
@@ -3178,6 +3301,21 @@ namespace Cmdb.Database.Migrations
                     b.Navigation("Circuit");
 
                     b.Navigation("Service");
+                });
+
+            modelBuilder.Entity("Cmdb.Database.Model.ServicePoint", b =>
+                {
+                    b.HasOne("Cmdb.Database.Model.Site", null)
+                        .WithMany()
+                        .HasForeignKey("SiteId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_service_point_sites_site_id");
+
+                    b.HasOne("Cmdb.Database.Model.Port", null)
+                        .WithMany()
+                        .HasForeignKey("TerminalId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_service_point_port_terminal_id");
                 });
 
             modelBuilder.Entity("Cmdb.Database.Model.Subduct", b =>

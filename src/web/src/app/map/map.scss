@@ -103,6 +103,23 @@
     font-size: var(--text-xs);
   }
 
+  /* Service points (#292): small squares in their status colour, as in the map. */
+  .sym.point {
+    width: 8px;
+    height: 8px;
+    border-radius: 0;
+    transform: rotate(45deg) scale(0.85);
+    &.planned {
+      background: var(--status-planned);
+    }
+    &.ordered {
+      background: var(--status-construction);
+    }
+    &.connected {
+      background: var(--status-in-service);
+    }
+  }
+
   .sym.amber {
     width: 10px;
     height: 10px;

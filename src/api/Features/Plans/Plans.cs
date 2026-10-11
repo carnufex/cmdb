@@ -52,7 +52,11 @@ public sealed class PlanViewRequest
 /// What the plan creates (#107) and removes (#168, #172), for the map: planned sites and cables with their geometry, and the
 /// sites and cables it takes away.
 /// </summary>
-public sealed record PlannedMap(IReadOnlyList<PlannedSite> Sites, IReadOnlyList<PlannedCable> Cables, PlannedRemovals? Removed = null);
+public sealed record PlannedMap(IReadOnlyList<PlannedSite> Sites, IReadOnlyList<PlannedCable> Cables, PlannedRemovals? Removed = null,
+    IReadOnlyList<PlannedServicePoint>? ServicePoints = null);
+
+/// <summary>A service point the plan creates (#292), where the plan puts it last.</summary>
+public sealed record PlannedServicePoint(long Id, string Code, string Status, double X, double Y);
 
 public sealed record PlannedRemovals(IReadOnlyList<PlanSite> Sites, IReadOnlyList<PlannedCable> Cables);
 
@@ -182,6 +186,24 @@ public sealed class AddOperationRequest
 
     /// <summary>link_circuit, link_service: take the link away instead of adding it.</summary>
     public bool Remove { get; set; }
+
+    /// <summary>create_service_point (#292): the address.</summary>
+    public string? Address { get; set; }
+
+    /// <summary>create_service_point: homes or premises behind the point; the type's number when left out.</summary>
+    public int? Units { get; set; }
+
+    /// <summary>create_service_point, update_service_point: planned, ordered or connected.</summary>
+    public string? Status { get; set; }
+
+    /// <summary>create_service_point: the point's id in the system it comes from.</summary>
+    public string? ExternalId { get; set; }
+
+    /// <summary>create_service_point, update_service_point: the port that serves it, on <see cref="SiteId"/>.</summary>
+    public long? TerminalId { get; set; }
+
+    /// <summary>update_service_point: no longer served by a site.</summary>
+    public bool Disconnect { get; set; }
 }
 
 public sealed class AddOperationValidator : Validator<AddOperationRequest>
@@ -332,6 +354,28 @@ public sealed class AddOperationValidator : Validator<AddOperationRequest>
         {
             RuleFor(r => r.ObjectId).NotNull().NotEqual(0);
             RuleFor(r => r.CircuitId).NotNull().NotEqual(0);
+        });
+        When(r => r.Kind == "create_service_point", () =>
+        {
+            RuleFor(r => r.Code).NotEmpty().MaximumLength(50);
+            RuleFor(r => r.Name).MaximumLength(200);
+            RuleFor(r => r.Address).MaximumLength(300);
+            RuleFor(r => r.ExternalId).MaximumLength(100);
+            RuleFor(r => r.TypeKey).Must(k => k is not null && Cmdb.Catalog.TypeCatalog.Current.FindServicePointType(k) is not null)
+                .WithMessage(_ => $"typeKey is one of {string.Join(", ", Cmdb.Catalog.TypeCatalog.Current.ServicePointTypes.Select(t => t.Key))}.");
+            RuleFor(r => r.Units).InclusiveBetween(1, 10_000).When(r => r.Units is not null);
+            RuleFor(r => r.X).NotNull().InclusiveBetween(Map.TileGrid.MinX, Map.TileGrid.MaxX);
+            RuleFor(r => r.Y).NotNull().InclusiveBetween(Map.TileGrid.MinY, Map.TileGrid.MaxY);
+        });
+        When(r => r.Kind == "update_service_point", () =>
+        {
+            RuleFor(r => r.ObjectId).NotNull().NotEqual(0).WithMessage("objectId is a service point, or one the plan creates (negative id).");
+            RuleFor(r => r).Must(r => (r.X is null) == (r.Y is null)).WithMessage("x and y go together.");
+            RuleFor(r => r.X).InclusiveBetween(Map.TileGrid.MinX, Map.TileGrid.MaxX).When(r => r.X is not null);
+            RuleFor(r => r.Y).InclusiveBetween(Map.TileGrid.MinY, Map.TileGrid.MaxY).When(r => r.Y is not null);
+            RuleFor(r => r).Must(r => r.X is not null || r.Status is not null || r.SiteId is not null || r.Disconnect)
+                .WithMessage("Give a new position, a status, a site to connect to, or disconnect.");
+            RuleFor(r => r).Must(r => !(r.Disconnect && r.SiteId is not null)).WithMessage("Connect or disconnect, not both.");
         });
         When(r => r.Kind == "rename", () =>
         {
@@ -603,7 +647,29 @@ public sealed class PlanViewEndpoint(RequestDb db, GraphHolder holder, PlanViews
     private async Task<PlannedMap> PlannedMapAsync(IReadOnlyList<PlanOp> operations, UserScope scope, CancellationToken ct)
     {
         var map = await CreatedAsync(operations, ct);
-        return map with { Removed = await RemovedAsync(operations, scope, ct) };
+        return map with { Removed = await RemovedAsync(operations, scope, ct), ServicePoints = PlannedServicePoints(operations) };
+    }
+
+    /// <summary>Service points the plan creates, moved and with the status later operations in the plan give them.</summary>
+    private static List<PlannedServicePoint> PlannedServicePoints(IReadOnlyList<PlanOp> operations)
+    {
+        var points = operations.Where(o => o.Kind == "create_service_point").ToDictionary(o => Planned.ObjectId(o.Id), o => new PlannedServicePoint(
+            Planned.ObjectId(o.Id), o.Payload.GetProperty("code").GetString()!, o.Payload.GetProperty("status").GetString()!,
+            o.Payload.GetProperty("x").GetDouble(), o.Payload.GetProperty("y").GetDouble()));
+        foreach (var op in operations.Where(o => o.Kind == "update_service_point"))
+        {
+            var p = op.Payload;
+            if (points.TryGetValue(p.GetProperty("id").GetInt64(), out var point))
+            {
+                points[point.Id] = point with
+                {
+                    X = p.TryGetProperty("x", out var x) ? x.GetDouble() : point.X,
+                    Y = p.TryGetProperty("y", out var y) ? y.GetDouble() : point.Y,
+                    Status = p.TryGetProperty("status", out var st) ? st.GetString()! : point.Status,
+                };
+            }
+        }
+        return [.. points.Values];
     }
 
     /// <summary>Sites and cables the plan removes, and the cables a split replaces, as they stand in production.</summary>

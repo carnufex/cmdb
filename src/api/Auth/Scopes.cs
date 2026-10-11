@@ -329,6 +329,13 @@ public static class ScopeSql
     public static string Service(string idColumn, int param) =>
         $"(${param}::text[] IS NULL OR EXISTS (SELECT 1 FROM scope_service z WHERE z.scope_key = ANY(${param}) AND z.service_id = {idColumn}))";
 
+    /// <summary>
+    /// A service point (#292, ADR-0021): shown when it lies in one of the caller's scope areas, or a scope has no area.
+    /// <paramref name="geomColumn"/> is its point.
+    /// </summary>
+    public static string ServicePoint(string geomColumn, int param) =>
+        $"(${param}::text[] IS NULL OR EXISTS (SELECT 1 FROM access_scope a WHERE a.key = ANY(${param}) AND (a.area IS NULL OR ST_Covers(a.area, {geomColumn}))))";
+
     /// <summary>A route segment (ADR-0014): shown when its geometry crosses one of the caller's scope areas.</summary>
     public static string RouteSegment(string idColumn, int param) =>
         $"(${param}::text[] IS NULL OR EXISTS (SELECT 1 FROM scope_route_segment z WHERE z.scope_key = ANY(${param}) AND z.route_segment_id = {idColumn}))";

@@ -33,6 +33,30 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx, str
                 await CreateEquipmentAsync(op, p, ct);
                 return true;
 
+            case "create_service_point":
+                Ids[Planned.ObjectId(op.Id)] = await ScalarAsync<long>("""
+                    INSERT INTO service_point (code, name, address, type_key, units, status, geom, external_id, site_id, terminal_id)
+                    VALUES ($1, $2, $3, $4, $5, $6, ST_SetSRID(ST_MakePoint($7, $8), 3006), $9, $10, $11) RETURNING id
+                    """, ct, p.GetProperty("code").GetString()!, TextOrNull(p, "name"), TextOrNull(p, "address"), p.GetProperty("typeKey").GetString()!,
+                    p.GetProperty("units").GetInt32(), p.GetProperty("status").GetString()!, p.GetProperty("x").GetDouble(), p.GetProperty("y").GetDouble(),
+                    TextOrNull(p, "externalId"), LongOrNull(p, "site"), LongOrNull(p, "terminal"));
+                return true;
+
+            case "update_service_point":
+                // Only what the operation names changes; a point removed since the plan was made no longer fits.
+                return await ScalarAsync<int>("""
+                    WITH changed AS (
+                        UPDATE service_point SET
+                            geom = CASE WHEN $2::float8 IS NULL THEN geom ELSE ST_SetSRID(ST_MakePoint($2, $3), 3006) END,
+                            status = coalesce($4::text, status),
+                            site_id = CASE WHEN $7 THEN NULL ELSE coalesce($5::bigint, site_id) END,
+                            terminal_id = CASE WHEN $7 OR $5::bigint IS NOT NULL THEN $6::bigint ELSE terminal_id END,
+                            updated_at = now()
+                        WHERE id = $1 RETURNING 1)
+                    SELECT count(*)::int FROM changed
+                    """, ct, p.GetProperty("id").GetInt64(), DoubleOrNull(p, "x"), DoubleOrNull(p, "y"), TextOrNull(p, "status"),
+                    LongOrNull(p, "site"), LongOrNull(p, "terminal"), p.TryGetProperty("disconnect", out _)) == 1;
+
             case "create_cable":
                 return await CreateCableAsync(op, p, ct);
 
@@ -226,6 +250,7 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx, str
             "create_equipment" => ["site", "parent"],
             "split_cable" or "move" => ["site"],
             _ when NetworkLinks.IdFields(op.Kind).Length > 0 => NetworkLinks.IdFields(op.Kind),
+            _ when ServicePoints.ServicePointPlans.IdFields(op.Kind).Length > 0 => ServicePoints.ServicePointPlans.IdFields(op.Kind),
             "set_classification" => ["id"],
             _ => [],
         };
@@ -678,6 +703,14 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx, str
     /// <summary>A number in the payload, or a database null.</summary>
     private static object ShortOrNull(JsonElement p, string field) =>
         p.TryGetProperty(field, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt16() : DBNull.Value;
+
+    /// <summary>A whole number in the payload, or a database null.</summary>
+    private static object LongOrNull(JsonElement p, string field) =>
+        p.TryGetProperty(field, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt64() : DBNull.Value;
+
+    /// <summary>A decimal number in the payload, or a database null.</summary>
+    private static object DoubleOrNull(JsonElement p, string field) =>
+        p.TryGetProperty(field, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetDouble() : DBNull.Value;
 
     /// <summary>A text in the payload, or a database null.</summary>
     private static object TextOrNull(JsonElement p, string field) =>

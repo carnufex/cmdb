@@ -8,6 +8,7 @@ import { RouteSegmentPanelComponent } from '../objects/route-segment-panel';
 import { ServicePanelComponent } from '../objects/service-panel';
 import { SitePanelComponent } from '../objects/site-panel';
 import { TracePanelComponent } from '../objects/trace-panel';
+import { ServicePointPanelComponent } from '../objects/service-point-panel';
 import { IconComponent, objectIcons } from './icons';
 import { PanelStack } from './panels';
 
@@ -25,6 +26,7 @@ import { PanelStack } from './panels';
     CircuitPanelComponent,
     TracePanelComponent,
     RouteSegmentPanelComponent,
+    ServicePointPanelComponent,
     IconComponent,
   ],
   template: `
@@ -70,6 +72,9 @@ import { PanelStack } from './panels';
           }
           @case ('route-segment') {
             <cmdb-route-segment-panel [id]="top.id" />
+          }
+          @case ('service-point') {
+            <cmdb-service-point-panel [id]="top.id" />
           }
           @default {
             <p class="unknown">Okänd objekttyp.</p>

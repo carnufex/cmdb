@@ -1,0 +1,7 @@
+[
+  { "key": "villa", "name": "Villa", "units": 1 },
+  { "key": "radhus", "name": "Radhus", "units": 1 },
+  { "key": "flerbostadshus", "name": "Flerbostadshus", "units": 12, "unitsVary": true },
+  { "key": "foretag", "name": "Företag", "units": 1 },
+  { "key": "mast", "name": "Mast", "units": 1 }
+]

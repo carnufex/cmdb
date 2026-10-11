@@ -81,9 +81,16 @@ public sealed class TilesEndpoint(RequestDb db) : Endpoint<TileRequest>
                   AND {When("c")}
                   AND ($1 >= {TileGrid.DetailZoom} OR ct.conductor_count >= 96)
                   AND {ScopeSql.Cable("c.id", 4)}
+            ), service_points AS (
+                SELECT ST_AsMVTGeom(p.geom, b.geom, 4096, 64, true) AS geom, p.id, p.code, p.status, p.type_key AS kind, p.units
+                FROM service_point p, bounds b
+                WHERE $1 >= {TileGrid.ServicePointZoom} AND {(at is null ? "true" : "false")}
+                  AND p.geom && b.geom
+                  AND {ScopeSql.ServicePoint("p.geom", 4)}
             )
             SELECT (SELECT coalesce(ST_AsMVT(cables, 'cables', 4096, 'geom'), '') FROM cables)
                 || (SELECT coalesce(ST_AsMVT(sites, 'sites', 4096, 'geom'), '') FROM sites)
+                || (SELECT coalesce(ST_AsMVT(service_points, 'service_points', 4096, 'geom'), '') FROM service_points)
             """);
         cmd.Parameters.Add(new NpgsqlParameter { Value = req.Z });
         cmd.Parameters.Add(new NpgsqlParameter { Value = req.X });
@@ -112,4 +119,7 @@ public static class TileGrid
 
     /// <summary>First zoom level that includes access sites and small cables.</summary>
     public const int DetailZoom = 5;
+
+    /// <summary>First zoom level that includes service points (#292): a few streets, where houses can be told apart.</summary>
+    public const int ServicePointZoom = 9;
 }

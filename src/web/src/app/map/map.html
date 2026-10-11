@@ -79,6 +79,13 @@
       <p class="hint">Klassningen kunde inte läsas.</p>
     }
   }
+  @if (zoom() >= servicePointZoom) {
+    <ul class="ops" aria-label="Anslutningspunkter">
+      <li><span class="sym point planned" aria-hidden="true"></span>Anslutningspunkt, planerad</li>
+      <li><span class="sym point ordered" aria-hidden="true"></span>Beställd</li>
+      <li><span class="sym point connected" aria-hidden="true"></span>Ansluten</li>
+    </ul>
+  }
   @if (zoom() < detailZoom) {
     <p class="hint">Zooma in för att se accessiter och små kablar.</p>
   }
