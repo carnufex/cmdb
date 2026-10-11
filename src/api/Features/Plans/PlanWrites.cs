@@ -45,6 +45,7 @@ public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views
         }
         await using var conn = await db.OpenConnectionAsync(ct);
         await using var tx = await conn.BeginTransactionAsync(ct);
+        await Cmdb.Api.Features.Operations.Operations.BeginAsync(conn, tx, user, "create_plan", new { name, via, dependsOn }, description, ct);
         long id;
         await using (var cmd = new NpgsqlCommand("""
             INSERT INTO plan (name, description, created_by, created_via, client) VALUES ($1, $2, $3, $4, $5) RETURNING id
@@ -196,6 +197,7 @@ public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views
 
         await using var conn = await db.OpenConnectionAsync(ct);
         await using var tx = await conn.BeginTransactionAsync(ct);
+        await Cmdb.Api.Features.Operations.Operations.BeginAsync(conn, tx, user, "add_to_plan", new { plan = req.Id, kind = req.Kind }, null, ct);
         long opId;
         await using (var cmd = new NpgsqlCommand("""
             INSERT INTO plan_operation (plan_id, seq, kind, payload, created_by)

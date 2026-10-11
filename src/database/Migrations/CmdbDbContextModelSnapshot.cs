@@ -180,6 +180,12 @@ namespace Cmdb.Database.Migrations
                         .HasColumnType("text")
                         .HasColumnName("source_system");
 
+                    b.Property<DateTimeOffset>("SysFrom")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("sys_from")
+                        .HasDefaultValueSql("now()");
+
                     b.Property<DateTimeOffset>("ValidFrom")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("timestamp with time zone")
@@ -442,6 +448,12 @@ namespace Cmdb.Database.Migrations
                     b.Property<string>("SourceSystem")
                         .HasColumnType("text")
                         .HasColumnName("source_system");
+
+                    b.Property<DateTimeOffset>("SysFrom")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("sys_from")
+                        .HasDefaultValueSql("now()");
 
                     b.Property<DateTimeOffset>("ValidFrom")
                         .ValueGeneratedOnAdd()
@@ -729,6 +741,12 @@ namespace Cmdb.Database.Migrations
                         .HasColumnType("text")
                         .HasColumnName("source_system");
 
+                    b.Property<DateTimeOffset>("SysFrom")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("sys_from")
+                        .HasDefaultValueSql("now()");
+
                     b.Property<DateTimeOffset>("ValidFrom")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("timestamp with time zone")
@@ -804,6 +822,12 @@ namespace Cmdb.Database.Migrations
                     b.Property<string>("SourceSystem")
                         .HasColumnType("text")
                         .HasColumnName("source_system");
+
+                    b.Property<DateTimeOffset>("SysFrom")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("sys_from")
+                        .HasDefaultValueSql("now()");
 
                     b.Property<DateTimeOffset>("ValidFrom")
                         .ValueGeneratedOnAdd()
@@ -985,6 +1009,12 @@ namespace Cmdb.Database.Migrations
                     b.Property<string>("SourceSystem")
                         .HasColumnType("text")
                         .HasColumnName("source_system");
+
+                    b.Property<DateTimeOffset>("SysFrom")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("sys_from")
+                        .HasDefaultValueSql("now()");
 
                     b.Property<DateTimeOffset>("ValidFrom")
                         .ValueGeneratedOnAdd()
@@ -1348,6 +1378,12 @@ namespace Cmdb.Database.Migrations
                     b.Property<string>("SourceSystem")
                         .HasColumnType("text")
                         .HasColumnName("source_system");
+
+                    b.Property<DateTimeOffset>("SysFrom")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("sys_from")
+                        .HasDefaultValueSql("now()");
 
                     b.Property<DateTimeOffset>("ValidFrom")
                         .ValueGeneratedOnAdd()
@@ -1882,6 +1918,12 @@ namespace Cmdb.Database.Migrations
                         .HasColumnType("text")
                         .HasColumnName("source_system");
 
+                    b.Property<DateTimeOffset>("SysFrom")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("sys_from")
+                        .HasDefaultValueSql("now()");
+
                     b.Property<bool>("Trunk")
                         .HasColumnType("boolean")
                         .HasColumnName("trunk");
@@ -2074,6 +2116,12 @@ namespace Cmdb.Database.Migrations
                         .HasColumnType("text")
                         .HasColumnName("source_system");
 
+                    b.Property<DateTimeOffset>("SysFrom")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("sys_from")
+                        .HasDefaultValueSql("now()");
+
                     b.Property<DateTimeOffset>("ValidFrom")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("timestamp with time zone")
@@ -2264,6 +2312,12 @@ namespace Cmdb.Database.Migrations
                     b.Property<string>("SourceSystem")
                         .HasColumnType("text")
                         .HasColumnName("source_system");
+
+                    b.Property<DateTimeOffset>("SysFrom")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("sys_from")
+                        .HasDefaultValueSql("now()");
 
                     b.Property<DateTimeOffset>("ValidFrom")
                         .ValueGeneratedOnAdd()

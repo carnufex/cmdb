@@ -3,6 +3,7 @@ using Cmdb.Database.Model;
 using FastEndpoints;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Cmdb.Api.Features.Objects;
 
@@ -27,8 +28,8 @@ public sealed class UpdateObjectValidator : Validator<UpdateObjectRequest>
 }
 
 /// <summary>
-/// PATCH a site's or equipment's name and lifecycle. Writes go through EF; the operation log that records
-/// who, when and why arrives with #23.
+/// PATCH a site's or equipment's name and lifecycle. Writes go through EF, in a transaction that starts with the
+/// operation saying who and what (#23).
 /// </summary>
 public sealed class UpdateObjectEndpoint(CmdbDbContext db) : Endpoint<UpdateObjectRequest>
 {
@@ -69,7 +70,14 @@ public sealed class UpdateObjectEndpoint(CmdbDbContext db) : Endpoint<UpdateObje
         {
             entity.Lifecycle = Enum.Parse<LifecycleState>(req.Lifecycle.Replace("_", "", StringComparison.Ordinal), ignoreCase: true);
         }
-        await db.SaveChangesAsync(ct);
+        await using (var tx = await db.Database.BeginTransactionAsync(ct))
+        {
+            await Operations.Operations.BeginAsync((Npgsql.NpgsqlConnection)db.Database.GetDbConnection(),
+                (Npgsql.NpgsqlTransaction)tx.GetDbTransaction(), User, "update_object",
+                new { type = isSite ? "site" : "equipment", id = req.Id, name = req.Name, lifecycle = req.Lifecycle }, null, ct);
+            await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+        }
         await Send.NoContentAsync(ct);
     }
 }

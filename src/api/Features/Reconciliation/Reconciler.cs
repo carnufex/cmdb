@@ -95,6 +95,7 @@ public sealed partial class Reconciler(RequestDb db, PlanApplication application
 
         await using var conn = await db.OpenConnectionAsync(ct);
         await using var tx = await conn.BeginTransactionAsync(ct);
+        await Cmdb.Api.Features.Operations.Operations.BeginAsync(conn, tx, user, "reconcile", new { source, dryRun }, $"Avstämning mot {source}", ct);
         var matched = new Dictionary<string, Dictionary<int, long>>();
         var diffs = new List<Diff>();
         var newRows = new Dictionary<string, List<Incoming>>();

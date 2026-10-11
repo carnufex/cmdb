@@ -1,6 +1,7 @@
 using Cmdb.Api.Agents;
 using Cmdb.Api.Auth;
 using Cmdb.Api.Diagnostics;
+using Cmdb.Api.Features.Operations;
 using Cmdb.Catalog;
 using Cmdb.Database;
 using FastEndpoints;
@@ -73,6 +74,11 @@ builder.Services.AddScoped(sp => sp.GetRequiredService<IHttpContextAccessor>().H
 builder.Services.AddSingleton<Cmdb.Graph.IGraphChangeFeed>(sp => new Cmdb.Graph.PostgresGraphChangeFeed(sp.GetRequiredService<Cmdb.Api.Auth.SystemDb>().Source));
 builder.Services.AddHostedService<Cmdb.Api.Features.Graph.GraphLoadingService>();
 builder.Services.AddHostedService<Cmdb.Api.Features.Graph.GraphChangePruning>();
+// The operation log (#23): the read log's writer and the partitions ahead.
+builder.Services.AddSingleton<Cmdb.Api.Features.Operations.ReadLogWriter>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<Cmdb.Api.Features.Operations.ReadLogWriter>());
+builder.Services.AddSingleton<Cmdb.Api.Features.Operations.OperationLogMaintenance>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<Cmdb.Api.Features.Operations.OperationLogMaintenance>());
 builder.Services.AddCmdbOpenApi();
 
 var app = builder.Build();
@@ -108,6 +114,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.UseRateLimiter();
 app.UseAgentLogging();
+app.UseReadLog();
 app.UseFastEndpoints(c => c.Endpoints.RoutePrefix = "api");
 app.MapCmdbMcp();
 await app.RunAsync();

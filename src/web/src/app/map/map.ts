@@ -57,6 +57,7 @@ import { CableDrawingBarComponent } from './cable-drawing-bar';
 import { CableDrawing, CableRouteStep } from '../plans/cable-drawing';
 import { distanceText, MapActions } from './map-actions';
 import { MapTarget, MapView, Operations, PlannedObjects, Route } from './map-view';
+import { timeBannerText, timeQuery, TimeTravel } from './time-travel';
 
 /** GET /api/classifications/map (#180) */
 interface ClassificationLayer {
@@ -94,6 +95,9 @@ export class MapComponent {
   private readonly mapView = inject(MapView);
   private readonly selection = inject(Selection);
   private readonly kinds = inject(CatalogKinds);
+  /** Tidsresa (#23): the network's tiles drawn at a time, with a banner and the way back. */
+  protected readonly time = inject(TimeTravel);
+  protected readonly timeBanner = timeBannerText;
   /** Shift and Alt as the lasso closes: add to the selection or take away from it (#253). */
   private modifiers = { shift: false, alt: false };
   private lassoClosedAt = 0;
@@ -228,6 +232,13 @@ export class MapComponent {
       }
     });
     effect(() => {
+      const query = timeQuery(this.time.point());
+      // A new key makes the source drop its tiles and fetch them again for the time.
+      this.network
+        ?.getSource()
+        ?.setTileUrlFunction(([z, x, y]) => tileUrl(z, x, y, query), 'network' + query);
+    });
+    effect(() => {
       // Read before the layer exists too: an optional call would skip the read and leave the effect with nothing to follow.
       const shown = this.conduitShown();
       this.conduit?.setVisible(shown);
@@ -311,7 +322,7 @@ export class MapComponent {
         format: new MVT({ idProperty: 'id' }),
         projection: SWEREF,
         tileGrid: networkTileGrid(),
-        tileUrlFunction: ([z, x, y]) => tileUrl(z, x, y),
+        tileUrlFunction: ([z, x, y]) => tileUrl(z, x, y, timeQuery(untracked(this.time.point))),
         tileLoadFunction: (tile, url) => this.loadTile(tile as VectorTile<FeatureLike>, url),
       }),
       style: styler,

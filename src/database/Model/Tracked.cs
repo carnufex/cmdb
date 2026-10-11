@@ -11,9 +11,15 @@ public abstract class Tracked
 {
     public LifecycleState Lifecycle { get; set; } = LifecycleState.Planned;
 
-    /// <summary>When this was true in reality (valid time). Full bitemporality arrives in phase 3.</summary>
+    /// <summary>When this was true in reality (valid time).</summary>
     public DateTimeOffset ValidFrom { get; set; }
     public DateTimeOffset? ValidTo { get; set; }
+
+    /// <summary>
+    /// When this version was recorded (system time, #23, ADR-0013). Earlier versions are in the table's <c>_history</c>
+    /// table with the time they were superseded; a trigger keeps both in the writing transaction.
+    /// </summary>
+    public DateTimeOffset SysFrom { get; set; }
 
     public string? SourceSystem { get; set; }
     public string? ExternalId { get; set; }
@@ -27,6 +33,7 @@ internal static class TrackedConfiguration
     {
         e.Property(x => x.Lifecycle).HasDefaultValue(LifecycleState.Planned).HasSentinel((LifecycleState)(-1));
         e.Property(x => x.ValidFrom).HasDefaultValueSql("now()");
+        e.Property(x => x.SysFrom).HasDefaultValueSql("now()");
         e.ToTable(table, t => t.HasCheckConstraint($"ck_{table}_valid_time", "valid_to IS NULL OR valid_to > valid_from"));
     }
 }

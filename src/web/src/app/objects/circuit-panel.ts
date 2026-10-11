@@ -6,11 +6,18 @@ import { StatusComponent } from '../shell/status';
 import { apiPath, CircuitDetail } from './models';
 import { ObjectLinkComponent } from './object-link';
 import { SourcesComponent } from './sources';
+import { HistoryComponent } from './history';
 import { traceId } from './trace-model';
 
 @Component({
   selector: 'cmdb-circuit-panel',
-  imports: [IconComponent, SourcesComponent, ObjectLinkComponent, StatusComponent],
+  imports: [
+    IconComponent,
+    SourcesComponent,
+    HistoryComponent,
+    ObjectLinkComponent,
+    StatusComponent,
+  ],
   template: `
     @if (circuit.value(); as c) {
       <header class="header">
@@ -66,6 +73,7 @@ import { traceId } from './trace-model';
         </ol>
       </section>
       <cmdb-sources [sources]="c.sources" />
+      <cmdb-history type="circuit" [id]="c.id" />
     } @else if (circuit.error()) {
       <p class="error">Kretsen kunde inte hämtas.</p>
     } @else {

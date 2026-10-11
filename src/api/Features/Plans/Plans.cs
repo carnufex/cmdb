@@ -448,6 +448,7 @@ public sealed class SetDependenciesEndpoint(RequestDb db) : Endpoint<SetDependen
         }
         await using var conn = await db.OpenConnectionAsync(ct);
         await using var tx = await conn.BeginTransactionAsync(ct);
+        await Cmdb.Api.Features.Operations.Operations.BeginAsync(conn, tx, User, "set_plan_dependencies", new { plan = req.Id, dependsOn = req.DependsOn }, null, ct);
         await using (var cmd = new NpgsqlCommand("DELETE FROM plan_dependency WHERE plan_id = $1", conn, tx))
         {
             cmd.Parameters.Add(new() { Value = req.Id });
@@ -514,6 +515,7 @@ public sealed class DeleteOperationEndpoint(RequestDb db) : Endpoint<DeleteOpera
         }
         await using var conn = await db.OpenConnectionAsync(ct);
         await using var tx = await conn.BeginTransactionAsync(ct);
+        await Cmdb.Api.Features.Operations.Operations.BeginAsync(conn, tx, User, "remove_from_plan", new { plan = req.Id, operation = req.OperationId }, null, ct);
         int deleted;
         await using (var cmd = new NpgsqlCommand("DELETE FROM plan_operation WHERE plan_id = $1 AND id = $2", conn, tx))
         {

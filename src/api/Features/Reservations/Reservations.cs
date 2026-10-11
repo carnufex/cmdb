@@ -108,10 +108,14 @@ public sealed class CreateReservationEndpoint(RequestDb db, GraphHolder holder, 
         long id;
         try
         {
-            await using var cmd = db.CreateCommand("""
+            await using var conn = await db.OpenConnectionAsync(ct);
+            await using var tx = await conn.BeginTransactionAsync(ct);
+            await Cmdb.Api.Features.Operations.Operations.BeginAsync(conn, tx, User, "reserve", new { resource = req.ResourceKind, id = req.ResourceId, slot = req.Slot, holder = holderKind, holderId },
+                string.IsNullOrWhiteSpace(req.Reason) ? null : req.Reason, ct);
+            await using var cmd = new NpgsqlCommand("""
                 INSERT INTO reservation (resource_kind, resource_id, slot, holder_kind, holder_id, reason, created_by)
                 VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id
-                """);
+                """, conn, tx);
             cmd.Parameters.Add(new() { Value = req.ResourceKind });
             cmd.Parameters.Add(new() { Value = req.ResourceId });
             cmd.Parameters.Add(new() { Value = (object?)req.Slot ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text });
@@ -120,6 +124,7 @@ public sealed class CreateReservationEndpoint(RequestDb db, GraphHolder holder, 
             cmd.Parameters.Add(new() { Value = req.Reason });
             cmd.Parameters.Add(new() { Value = PlanSql.Actor(User) });
             id = (long)(await cmd.ExecuteScalarAsync(ct))!;
+            await tx.CommitAsync(ct);
         }
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
         {
@@ -163,9 +168,15 @@ public sealed class DeleteReservationEndpoint(RequestDb db) : Endpoint<Reservati
             }
             var (kind, holderId) = (reader.GetString(0), reader.GetInt64(1));
             await reader.DisposeAsync();
-            await using var release = db.CreateCommand("UPDATE reservation SET released_at = now() WHERE id = $1");
-            release.Parameters.Add(new() { Value = req.Id });
-            await release.ExecuteNonQueryAsync(ct);
+            await using (var conn = await db.OpenConnectionAsync(ct))
+            await using (var tx = await conn.BeginTransactionAsync(ct))
+            {
+                await Cmdb.Api.Features.Operations.Operations.BeginAsync(conn, tx, User, "release", new { reservation = req.Id }, null, ct);
+                await using var release = new NpgsqlCommand("UPDATE reservation SET released_at = now() WHERE id = $1", conn, tx);
+                release.Parameters.Add(new() { Value = req.Id });
+                await release.ExecuteNonQueryAsync(ct);
+                await tx.CommitAsync(ct);
+            }
             if (kind == "plan")
             {
                 await ReservationSql.TouchPlanAsync(db, holderId, ct);

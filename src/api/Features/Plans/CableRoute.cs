@@ -450,6 +450,7 @@ public sealed class CableRedrawEndpoint(RequestDb db, GraphHolder holder, PlanVi
         CableRoutes.Write(payload, a, route, req.Route);
         await using var conn = await db.OpenConnectionAsync(ct);
         await using var tx = await conn.BeginTransactionAsync(ct);
+        await Cmdb.Api.Features.Operations.Operations.BeginAsync(conn, tx, User, "redraw_cable", new { plan = req.Id, operation = op.Id, steps = req.Route.Length }, null, ct);
         await using (var cmd = new NpgsqlCommand("UPDATE plan_operation SET payload = $3::jsonb WHERE plan_id = $1 AND id = $2", conn, tx))
         {
             cmd.Parameters.Add(new() { Value = req.Id });
