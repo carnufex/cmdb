@@ -235,7 +235,7 @@ export class SitePanelComponent {
   /** Loaded after the site itself: impact analysis has its own, larger budget. */
   protected readonly impact = httpResource<Impact>(() => {
     return this.site.value()
-      ? this.plan.request(`${this.url()}/impact${this.plan.param(true)}`)
+      ? this.plan.request(`${this.url()}/impact${this.plan.graphParam(true)}`)
       : undefined;
   });
 

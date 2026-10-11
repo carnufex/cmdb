@@ -31,7 +31,7 @@ claude mcp add --transport http cmdb https://cmdb.rosenvall.se/mcp --header "Aut
 
 `CMDB_AGENT_TOKEN` är tjänstekontots app-lösenord i Bitwarden. Tokenet gäller en timme. Nya tjänstekonton läggs till i homelabbets blueprint `apps-cmdb.yaml` i gruppen `cmdb-agents`, med app-lösenordet i Bitwarden.
 
-**Identitet och gränser:** API:t litar på tokens från cmdb-applikationerna i Authentik (`cmdb`, `cmdb-mcp` och `cmdb-agents`) men inte från andra applikationer i homelabbet. Varje MCP-anrop loggas med användare och klient (`azp`), och hamnar i läsloggen med verktyg, argument, omfång och en hash av svaret (#23). En plan som en agent skapar blir en operation med agenten som aktör, och `/api/me` visar klienten. Agenter begränsas till 20 anrop per sekund (60 i skur) per klient och användare. Människor i webben begränsas inte.
+**Identitet och gränser:** API:t litar på tokens från cmdb-applikationerna i Authentik (`cmdb`, `cmdb-mcp` och `cmdb-agents`) men inte från andra applikationer i homelabbet. Varje MCP-anrop loggas med användare och klient (`azp`), och hamnar i läsloggen med verktyg, argument, omfång och en hash av svaret (#23). `trace` och `impact` tar `at` (ISO 8601) och `mode` (`reality` eller `knowledge`) för nätet som det var (#302). En plan som en agent skapar blir en operation med agenten som aktör, och `/api/me` visar klienten. Agenter begränsas till 20 anrop per sekund (60 i skur) per klient och användare. Människor i webben begränsas inte.
 
 ### Verktyg
 

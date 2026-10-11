@@ -24,7 +24,12 @@ export interface TimePoint {
 
 /** The tile query for a time: nothing for now. */
 export function timeQuery(point: TimePoint | null): string {
-  return point ? `?at=${encodeURIComponent(point.at)}&mode=${point.mode}` : '';
+  return timeParam(point, true);
+}
+
+/** The time as a query parameter for any graph question (#302), first or after others; nothing for now. */
+export function timeParam(point: TimePoint | null, first = false): string {
+  return point ? `${first ? '?' : '&'}at=${encodeURIComponent(point.at)}&mode=${point.mode}` : '';
 }
 
 /** The end of a chosen day in the browser's time zone: the network as it stood that evening. */

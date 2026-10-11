@@ -74,6 +74,8 @@ builder.Services.AddScoped(sp => sp.GetRequiredService<IHttpContextAccessor>().H
 builder.Services.AddSingleton<Cmdb.Graph.IGraphChangeFeed>(sp => new Cmdb.Graph.PostgresGraphChangeFeed(sp.GetRequiredService<Cmdb.Api.Auth.SystemDb>().Source));
 builder.Services.AddHostedService<Cmdb.Api.Features.Graph.GraphLoadingService>();
 builder.Services.AddHostedService<Cmdb.Api.Features.Graph.GraphChangePruning>();
+// The graph at a time (#302), loaded on demand next to the current one.
+builder.Services.AddSingleton<Cmdb.Api.Features.Graph.GraphAtTime>();
 // The operation log (#23): the read log's writer and the partitions ahead.
 builder.Services.AddSingleton<Cmdb.Api.Features.Operations.ReadLogWriter>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<Cmdb.Api.Features.Operations.ReadLogWriter>());

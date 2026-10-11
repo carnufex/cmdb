@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { tileUrl } from './map-grid';
-import { endOfDay, timeBannerText, timeQuery, TimeTravel } from './time-travel';
+import { endOfDay, timeBannerText, timeParam, timeQuery, TimeTravel } from './time-travel';
 
 describe('time travel', () => {
   it('draws now without a query and a time with its mode', () => {
@@ -13,6 +13,8 @@ describe('time travel', () => {
     expect(timeQuery(point)).toBe(
       `?at=${encodeURIComponent(endOfDay('2010-06-01'))}&mode=knowledge`,
     );
+    expect(timeParam(point)).toBe(`&at=${encodeURIComponent(point.at)}&mode=knowledge`);
+    expect(timeParam(null)).toBe('');
     time.back();
     expect(time.point()).toBeNull();
   });

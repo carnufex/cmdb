@@ -1,5 +1,6 @@
 using Cmdb.Api.Auth;
 using System.Diagnostics;
+using Cmdb.Api.Features.Graph;
 using Cmdb.Api.Features.Trace;
 using Cmdb.Graph;
 using FastEndpoints;
@@ -14,6 +15,13 @@ public sealed class ImpactRequest
     /// <summary>Impact in a plan's view (#24) instead of production.</summary>
     [QueryParam]
     public long? Plan { get; set; }
+
+    /// <summary>Asks at a time (#302) instead of now: <c>reality</c> (default) or <c>knowledge</c>, as in the map.</summary>
+    [QueryParam]
+    public DateTimeOffset? At { get; set; }
+
+    [QueryParam]
+    public string? Mode { get; set; }
 }
 
 /// <param name="Path">How the outage reaches the service: the service's circuit first, down to the circuit hit directly.</param>
@@ -37,7 +45,7 @@ public sealed record Impact(int Circuits, int Direct, IReadOnlyList<ImpactedServ
 /// path of circuits that reaches it. The walk is in memory (ADR-0002); only names come from the database.
 /// Budget: 200 ms for a cable span (docs/plan.md).
 /// </summary>
-public sealed class ImpactEndpoint(GraphHolder holder, RequestDb db, ScopeMasks masks, Cmdb.Api.Features.Plans.PlanViews plans) : Endpoint<ImpactRequest, Impact>
+public sealed class ImpactEndpoint(GraphHolder holder, GraphAtTime times, RequestDb db, ScopeMasks masks, Cmdb.Api.Features.Plans.PlanViews plans) : Endpoint<ImpactRequest, Impact>
 {
     public override void Configure() => Get("/cables/{id}/impact", "/sites/{id}/impact", "/equipment/{id}/impact");
 
@@ -52,6 +60,15 @@ public sealed class ImpactEndpoint(GraphHolder holder, RequestDb db, ScopeMasks 
         var type = path.Contains("/sites/", StringComparison.Ordinal) ? "site"
             : path.Contains("/equipment/", StringComparison.Ordinal) ? "equipment"
             : "cable";
+        if (!GraphTimes.TryParse(req.At, req.Mode, out var time) || (time is not null && req.Plan is not null))
+        {
+            await Send.ResultAsync(TypedResults.Problem("Give a mode of reality or knowledge, and a time or a plan, not both.", statusCode: StatusCodes.Status400BadRequest));
+            return;
+        }
+        if (time is not null)
+        {
+            graph = await times.GetAsync(time).WaitAsync(ct);
+        }
         if (req.Plan is { } planId)
         {
             if (await plans.GetAsync(graph, planId, HttpContext.Scope(), ct) is not { } view)

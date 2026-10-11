@@ -290,7 +290,7 @@ export class TracePanelComponent {
     const s = this.start();
     return s
       ? this.plan.request(
-          `/api/trace?${s.by}=${s.id}&geometry=true${s.production ? '' : this.plan.param()}`,
+          `/api/trace?${s.by}=${s.id}&geometry=true${s.production ? this.plan.timeParam() : this.plan.graphParam()}`,
         )
       : undefined;
   });

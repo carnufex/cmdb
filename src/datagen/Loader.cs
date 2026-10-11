@@ -243,7 +243,8 @@ internal static class Loader
             w.Write(c.Subduct);
         }, ct);
 
-        await Copy(conn, log, "connection", "id, a_terminal_id, b_terminal_id, kind, lifecycle",
+        var terminals = built.Terminals(net);
+        await Copy(conn, log, "connection", "id, a_terminal_id, b_terminal_id, kind, lifecycle, valid_from",
             net.Connections.Select((c, i) => (Id: i + 1L, Connection: c)), (w, c) =>
             {
                 w.Write(c.Id);
@@ -257,6 +258,7 @@ internal static class Loader
                     _ => "internal",
                 }, NpgsqlDbType.Text);
                 w.Write(c.Connection.Planned ? Lifecycle.Planned : Lifecycle.InService, NpgsqlDbType.Text);
+                w.Write(c.Connection.Planned ? built.Now : terminals.Of(c.Connection.A, c.Connection.B), NpgsqlDbType.TimestampTz);
             }, ct);
 
         await Copy(conn, log, "channel", "id, terminal_id, kind, number", net.Channels, (w, c) =>
@@ -277,7 +279,8 @@ internal static class Loader
             w.Write(s.Lifecycle, NpgsqlDbType.Text);
         }, ct);
 
-        await Copy(conn, log, "circuit", "id, code, layer, a_terminal_id, b_terminal_id, lifecycle", net.Circuits, (w, c) =>
+        var circuitDates = terminals.Circuits(net);
+        await Copy(conn, log, "circuit", "id, code, layer, a_terminal_id, b_terminal_id, lifecycle, valid_from", net.Circuits, (w, c) =>
         {
             w.Write(c.Id);
             w.Write(c.Code);
@@ -285,6 +288,7 @@ internal static class Loader
             w.Write(c.A);
             w.Write(c.B);
             w.Write(c.Lifecycle, NpgsqlDbType.Text);
+            w.Write(c.Lifecycle == Lifecycle.InService && circuitDates.TryGetValue(c.Id, out var from) ? from : built.Now, NpgsqlDbType.TimestampTz);
         }, ct);
 
         await Copy(conn, log, "circuit_hop", "circuit_id, seq, terminal_id, channel_id", net.Hops, (w, h) =>
@@ -505,5 +509,65 @@ internal sealed class BuiltDates(DateTimeOffset now)
         return date < now ? date : now;
     }
 
+    public DateTimeOffset Now => now;
+
+    /// <summary>When each terminal came into service (#302): a port with its site, a conductor end with its cable.</summary>
+    public TerminalDates Terminals(Network net)
+    {
+        var sites = net.Sites.ToDictionary(s => s.Id);
+        var ranges = net.Equipment.Select(e => (Start: e.FirstTerminal, End: e.FirstTerminal + e.Ports.Count, Date: Of(sites[e.SiteId])))
+            .Concat(net.Cables.Select(c => (Start: c.FirstEndTerminal, End: c.FirstEndTerminal + (2L * c.Count), Date: Of(c))))
+            .OrderBy(r => r.Start)
+            .ToArray();
+        return new TerminalDates([.. ranges.Select(r => r.Start)], [.. ranges.Select(r => r.End)], [.. ranges.Select(r => r.Date)], now);
+    }
+
     private static int Spread(long id, int days) => days <= 0 ? 0 : (int)((ulong)(id * 2654435761L) % (ulong)days);
+}
+
+/// <summary>Terminal ranges and their in-service dates; a connection is in service from when both its ends are.</summary>
+internal sealed class TerminalDates(long[] starts, long[] ends, DateTimeOffset[] dates, DateTimeOffset now)
+{
+    public DateTimeOffset Of(long a, long b)
+    {
+        var da = Of(a);
+        var db = Of(b);
+        return da > db ? da : db;
+    }
+
+    /// <summary>
+    /// A circuit is in service from when every terminal on its path and every circuit it rides on is (#302), so tracing
+    /// back in time finds no circuit on cables that were not there yet.
+    /// </summary>
+    public Dictionary<long, DateTimeOffset> Circuits(Network net)
+    {
+        var dates = new Dictionary<long, DateTimeOffset>();
+        foreach (var h in net.Hops)
+        {
+            var d = Of(h.TerminalId);
+            if (!dates.TryGetValue(h.CircuitId, out var known) || d > known)
+            {
+                dates[h.CircuitId] = d;
+            }
+        }
+        // Carriers below come first in the layers, so a few passes settle circuits riding on circuits riding on others.
+        for (var pass = 0; pass < 3; pass++)
+        {
+            foreach (var (circuit, carrier) in net.Dependencies)
+            {
+                if (dates.TryGetValue(carrier, out var c) && (!dates.TryGetValue(circuit, out var known) || c > known))
+                {
+                    dates[circuit] = c;
+                }
+            }
+        }
+        return dates;
+    }
+
+    private DateTimeOffset Of(long terminal)
+    {
+        var i = Array.BinarySearch(starts, terminal);
+        i = i >= 0 ? i : ~i - 1;
+        return i >= 0 && terminal < ends[i] ? dates[i] : now;
+    }
 }
