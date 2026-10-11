@@ -3,7 +3,7 @@ import { Auth } from '../auth/auth';
 import { GraphView } from '../graph/graph-view';
 import { FrontPanelView } from '../objects/front-panel-view';
 import { RackView } from '../objects/rack-panel';
-import { ServiceViews } from '../objects/service-drawing';
+import { ServiceViews } from '../objects/service-views';
 import { GRID, HOME_EXTENT } from '../map/map-grid';
 import { MapView } from '../map/map-view';
 import { examples, QueryFields, toRequest } from '../query/query-model';

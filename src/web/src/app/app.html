@@ -174,7 +174,11 @@
     } @else if (tools.open() === 'tree') {
       <aside class="tool" aria-label="Innehåll"><cmdb-tree-panel /></aside>
     } @else if (tools.open() === 'plans') {
-      <aside class="tool" aria-label="Planer"><cmdb-plan-panel /></aside>
+      <aside class="tool" aria-label="Planer">
+        @defer (on immediate) {
+          <cmdb-plan-panel />
+        }
+      </aside>
     } @else if (tools.open() === 'grid') {
       <aside class="tool wide" aria-label="Massredigering"><cmdb-grid-panel /></aside>
     } @else if (tools.open() === 'changelog') {
@@ -182,11 +186,23 @@
     } @else if (tools.open() === 'voice') {
       <aside class="tool" aria-label="Driftagent"><cmdb-voice-panel /></aside>
     } @else if (tools.open() === 'fibre') {
-      <aside class="tool" aria-label="Fiberritning"><cmdb-fibre-panel /></aside>
+      <aside class="tool" aria-label="Fiberritning">
+        @defer (on immediate) {
+          <cmdb-fibre-panel />
+        }
+      </aside>
     } @else if (tools.open() === 'service') {
-      <aside class="tool" aria-label="Tjänstevy"><cmdb-service-view /></aside>
+      <aside class="tool" aria-label="Tjänstevy">
+        @defer (on immediate) {
+          <cmdb-service-view />
+        }
+      </aside>
     } @else if (tools.open() === 'rack') {
-      <aside class="tool" aria-label="Rackvy"><cmdb-rack-panel /></aside>
+      <aside class="tool" aria-label="Rackvy">
+        @defer (on immediate) {
+          <cmdb-rack-panel />
+        }
+      </aside>
     } @else if (tools.open() === 'perf') {
       <aside class="tool wide" aria-label="Prestanda"><cmdb-perf-panel /></aside>
     }

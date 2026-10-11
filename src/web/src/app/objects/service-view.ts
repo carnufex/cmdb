@@ -9,7 +9,8 @@ import { ToolSizeComponent } from '../shell/tool-size';
 import { metres } from './fibre-model';
 import { ObjectRef } from './models';
 import { ObjectLinkComponent } from './object-link';
-import { ServiceDrawingComponent, ServiceViews } from './service-drawing';
+import { ServiceDrawingComponent } from './service-drawing';
+import { ServiceViews } from './service-views';
 import { otherWays, serviceLayout, ServiceDrawing } from './service-view-model';
 import { traceId } from './trace-model';
 
