@@ -3,6 +3,7 @@
   "manufacturer": "Acme Networks",
   "model": "IX-8",
   "category": "switch",
+  "cost": 45000,
   "panel": { "rows": 1, "columns": 10 },
   "ports": [
     {

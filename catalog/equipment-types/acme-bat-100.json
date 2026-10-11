@@ -3,6 +3,7 @@
   "manufacturer": "Acme Power",
   "model": "BAT-100",
   "category": "power",
+  "cost": 9000,
   "rackUnits": 3,
   "panel": { "rows": 1, "columns": 2 },
   "ports": [

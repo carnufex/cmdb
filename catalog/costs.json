@@ -1,0 +1,9 @@
+{
+  "currency": "SEK",
+  "construction": {
+    "trench": 850,
+    "plough": 320,
+    "aerial": 210,
+    "existing": 25
+  }
+}

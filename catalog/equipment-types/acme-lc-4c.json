@@ -3,6 +3,7 @@
   "manufacturer": "Acme Networks",
   "model": "LC-4C",
   "category": "card",
+  "cost": 25000,
   "panel": { "rows": 1, "columns": 4 },
   "ports": [
     {

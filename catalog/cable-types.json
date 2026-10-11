@@ -4,6 +4,7 @@
     "name": "Fiberkabel 12",
     "medium": "fiber",
     "conductorCount": 12,
+    "costPerMeter": 18,
     "colorCode": "IEC 60304",
     "attributes": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -28,6 +29,7 @@
     "name": "Fiberkabel 24",
     "medium": "fiber",
     "conductorCount": 24,
+    "costPerMeter": 22,
     "colorCode": "IEC 60304",
     "attributes": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -52,6 +54,7 @@
     "name": "Fiberkabel 48",
     "medium": "fiber",
     "conductorCount": 48,
+    "costPerMeter": 30,
     "colorCode": "IEC 60304",
     "attributes": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -76,6 +79,7 @@
     "name": "Fiberkabel 96",
     "medium": "fiber",
     "conductorCount": 96,
+    "costPerMeter": 45,
     "colorCode": "IEC 60304",
     "attributes": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -100,6 +104,7 @@
     "name": "Fiberkabel 144",
     "medium": "fiber",
     "conductorCount": 144,
+    "costPerMeter": 60,
     "colorCode": "IEC 60304",
     "attributes": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -124,6 +129,7 @@
     "name": "Fiberkabel 288",
     "medium": "fiber",
     "conductorCount": 288,
+    "costPerMeter": 95,
     "colorCode": "IEC 60304",
     "attributes": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -148,6 +154,7 @@
     "name": "Kopparkabel 50 par",
     "medium": "copper",
     "conductorCount": 50,
+    "costPerMeter": 40,
     "colorCode": "Parfärg",
     "attributes": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -172,6 +179,7 @@
     "name": "Kraftkabel 4 ledare",
     "medium": "power",
     "conductorCount": 4,
+    "costPerMeter": 35,
     "attributes": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",

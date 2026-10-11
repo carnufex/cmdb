@@ -3,6 +3,7 @@
   "manufacturer": "Acme Optical",
   "model": "OT-40",
   "category": "transmission",
+  "cost": 150000,
   "rackUnits": 2,
   "panel": { "rows": 2, "columns": 21 },
   "ports": [

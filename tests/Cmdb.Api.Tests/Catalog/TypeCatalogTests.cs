@@ -77,6 +77,24 @@ public sealed class TypeCatalogTests
     }
 
     [Fact]
+    public void Prices_are_optional_never_negative_and_in_a_named_currency()
+    {
+        // The embedded catalog has synthetic prices in SEK for every cable and the constructions (#291).
+        var catalog = TypeCatalog.Current;
+        catalog.Costs.Currency.ShouldBe("SEK");
+        catalog.CableTypes.ShouldAllBe(t => t.CostPerMeter > 0);
+        catalog.Costs.Construction.Keys.Order().ShouldBe(["aerial", "existing", "plough", "trench"]);
+
+        var json = Type("""{ "name": "p", "type": "LC", "at": [0, 0] }""").Replace("\"odf\",", "\"odf\", \"cost\": -1,", StringComparison.Ordinal);
+        var ex = Should.Throw<InvalidOperationException>(() => TypeCatalog.Parse([("t.json", json)],
+            costsJson: """{ "currency": "kronor", "construction": { "trench": 100, "tunnel": 5000 } }"""));
+        ex.Message.ShouldContain("cost cannot be negative");
+        ex.Message.ShouldContain("currency is a three-letter code");
+        ex.Message.ShouldContain("construction 'tunnel'");
+        TypeCatalog.Parse([("t.json", Type("""{ "name": "p", "type": "LC", "at": [0, 0] }"""))]).Costs.ShouldBe(CatalogCosts.None);
+    }
+
+    [Fact]
     public void Unknown_categories_and_misnamed_files_are_rejected()
     {
         var json = Type("""{ "name": "p", "type": "LC", "at": [0, 0] }""").Replace("\"odf\"", "\"toaster\"", StringComparison.Ordinal);

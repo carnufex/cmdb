@@ -4,6 +4,7 @@
   "manufacturer": "Acme Duct",
   "model": "MD-7x16",
   "outerDiameterMm": 50,
+  "costPerMeter": 35,
   "subducts": {
     "count": 7,
     "innerDiameterMm": 12,
