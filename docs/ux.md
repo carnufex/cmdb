@@ -90,6 +90,7 @@ Så är det byggt (#26):
 | Frontpanel | Vilka portar, vad är kopplat? |
 | Rackvy | Vad sitter var i racket, och vad är ledigt? |
 | Spårschema | Vilken väg tar tjänsten? |
+| Tjänstevy | Hur är tjänsten uppbyggd, steg för steg, och har den en annan väg? |
 | Grannskapsgraf | Vad finns runt omkring? Expandera och backa. |
 
 **Frontpanelen** (#18) visar utrustningens portar med status. Har katalogen en bild av modellen (#214) ritas bilden med portarna som klickbara ytor ovanpå. Annars ritas portarna som ett rutnät. Status är en färgton över porten på bilden och förklaras alltid med prick och text under panelen. En ledig port har bara en kontur. Klick markerar, Shift-klick markerar ett intervall och pilarna går till närmaste port i pilens riktning, på bilden räknat från portytornas mitt. Har modellen portar på baksidan växlar *Framsida | Baksida* över panelen mellan sidorna, och panelen vänder sig själv när en port på andra sidan markeras, till exempel från trädet.
@@ -104,6 +105,17 @@ Så är det byggt (#26):
 - **Skriv ut** ger ritningen ensam på A3 liggande i ljust tema, och kan sparas som PDF ur utskriftsdialogen. **Spara som SVG** laddar ned den som bild.
 - **I en plan** ritas planens vy: ett planerat ingrepp syns före och efter.
 - **Behörighet:** det som ligger utanför omfånget visas som *dold* och kablar utanför det räknas bara, som i spårningen.
+
+**Tjänstevyn** (#257) ritar en tjänsts hela väg från vänster till höger, utan kartan. Den öppnas med *Tjänstevy* i tjänstepanelen och i spårningen av en tjänst, som arbetsyta (#251). Adressen (`?tool=service&service=<id>`) öppnar samma vy.
+
+- **Per site** visas utrustningen med modellens bild (#214), där de portar tjänsten använder lyser och resten är nedtonat. En modell utan bild ritas som en neutral front med modellnamnet. En site med bara skarvade ledare är en skarvpunkt.
+- **Mellan siterna** ritas kablarna med kod, kabeltyp, längd och ledarnummer, plus ledarens färg enligt IEC 60304.
+- **Lagren** syns samtidigt: transmissions- och logiska kretsar är band ovanför det fysiska lagret, över de siter de spänner.
+- **Redundanta vägar** (flera fysiska kretsar) ritas som parallella rader, *Väg 1*, *Väg 2* …
+- **Klick** öppnar objektet i panelstacken. En vald kabel eller utrustning säger dessutom om tjänsten har en annan väg, eller faller (#10).
+- *Visa i kartan* går till halva skärmen med vägen ritad och spårningen bredvid.
+- Hopp utanför omfånget visas som *Dold*, som i spårningen. I en plan ritas planens vy med planerade objekt streckade violetta.
+- Data kommer från `GET /api/services/{id}/drawing`: spårningen plus modellbilder, portarnas platser och kablarnas typ och längd. Bildtiden mäts i prestandapanelen när tjänstevyn har visats (mål 33 ms per bild). En tjänst med 58 hopp ritas om på under 1 ms vid val.
 
 **Innehållsträdet** (verktyget *Innehåll*, #17, #250) visar hela nätet med **Sverige** som rot, eller omfångets namn (till exempel *Region Nord*) för den som bara ser en del: sitetyp → site → plats → utrustning → kort → port. En sitetyp med fler än 500 siter delas i intervall efter kod (*SKP-00001 – SKP-00500*), så att ingen nivå får fler än 500 barn. Roten och varje grupp visar antalet siter, räknat inom omfånget. Varje nivå hämtas när den fälls ut, och raderna virtualiseras (Angular CDK), så hela nätet går att bläddra i och även ett nav med tusentals portar är smidigt. När en site eller utrustning öppnas fälls vägen dit ut från roten, och raden markeras och scrollas fram. *Expandera siten* fäller ut allt i den öppna siten, aldrig hela nätet. Grupperna är sitetyper och inte områden, eftersom omfångens områden bara täcker delar av nätet och kan överlappa. Tangentbordet fungerar som i ett vanligt träd: pilar, Home/End och Enter. Enter på en kopplad port öppnar spårningen från porten.
 

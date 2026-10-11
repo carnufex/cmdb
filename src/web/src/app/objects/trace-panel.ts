@@ -2,6 +2,7 @@ import { httpResource } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, effect, inject, input } from '@angular/core';
 import { MapView } from '../map/map-view';
 import { ActivePlan } from '../plans/active-plan';
+import { Tools } from '../shell/tools';
 import { PanelStack } from '../shell/panels';
 import { ObjectLinkComponent } from './object-link';
 import {
@@ -47,6 +48,9 @@ import { IconComponent } from '../shell/icons';
             }
             @if (t.route?.cables?.length || t.route?.sites?.length) {
               <button type="button" class="action" (click)="showRoute()">Visa i kartan</button>
+              @if (start()?.by === 'service') {
+                <button type="button" class="action" (click)="view()">Tjänstevy</button>
+              }
             }
           </div>
         </header>
@@ -277,6 +281,7 @@ export class TracePanelComponent {
   private readonly panels = inject(PanelStack);
   private readonly mapView = inject(MapView);
   private readonly plan = inject(ActivePlan);
+  private readonly tools = inject(Tools);
 
   readonly id = input.required<string>();
 
@@ -326,6 +331,14 @@ export class TracePanelComponent {
     });
     // Drawn when loaded; the panel host clears it once no trace is left in the stack.
     effect(() => this.showRoute());
+  }
+
+  /** The traced service drawn end to end as the workspace (#257). */
+  protected view(): void {
+    const s = this.start();
+    if (s) {
+      this.tools.show('service', { service: String(s.id) });
+    }
   }
 
   protected showRoute(): void {

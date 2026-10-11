@@ -19,6 +19,7 @@ import { VoiceCallComponent } from './voice/voice-call';
 import { VoicePanelComponent } from './voice/voice-panel';
 import { RackPanelComponent } from './objects/rack-panel';
 import { FibrePanelComponent } from './objects/fibre-panel';
+import { ServiceViewComponent } from './objects/service-view';
 
 @Component({
   selector: 'app-root',
@@ -38,6 +39,7 @@ import { FibrePanelComponent } from './objects/fibre-panel';
     VoiceCallComponent,
     RackPanelComponent,
     FibrePanelComponent,
+    ServiceViewComponent,
   ],
   templateUrl: './app.html',
   styleUrl: './app.scss',

@@ -5,7 +5,16 @@ import { map } from 'rxjs';
 
 /** Tools opened from the toolbar. They sit over the left edge of the lens, never on top of the panel stack. */
 export type Tool =
-  'query' | 'perf' | 'tree' | 'plans' | 'grid' | 'changelog' | 'voice' | 'rack' | 'fibre';
+  | 'query'
+  | 'perf'
+  | 'tree'
+  | 'plans'
+  | 'grid'
+  | 'changelog'
+  | 'voice'
+  | 'rack'
+  | 'fibre'
+  | 'service';
 
 /**
  * How much room a tool takes (#251): a panel over the map, half the screen beside it, or the whole workspace under
@@ -30,13 +39,18 @@ export const toolSpecs: Record<Tool, ToolSpec> = {
   perf: { sizes: ['panel', 'half', 'workspace'], initial: 'panel' },
   rack: { sizes: ['half', 'workspace'], initial: 'workspace' },
   fibre: { sizes: ['half', 'workspace'], initial: 'workspace' },
+  service: { sizes: ['half', 'workspace'], initial: 'workspace' },
 };
 
 /**
  * What a tool shows, in the address beside it: the rack view's rack (#255), the fibre drawing's object and break point
- * (#254). Cleared when the tool closes.
+ * (#254), the service view's service (#257). Cleared when the tool closes.
  */
-const toolParams: Record<string, readonly string[]> = { rack: ['rack'], fibre: ['fibre', 'at'] };
+const toolParams: Record<string, readonly string[]> = {
+  rack: ['rack'],
+  fibre: ['fibre', 'at'],
+  service: ['service'],
+};
 
 export const toolSizeNames: Record<ToolSize, string> = {
   panel: 'Panel',

@@ -183,6 +183,8 @@
       <aside class="tool" aria-label="Driftagent"><cmdb-voice-panel /></aside>
     } @else if (tools.open() === 'fibre') {
       <aside class="tool" aria-label="Fiberritning"><cmdb-fibre-panel /></aside>
+    } @else if (tools.open() === 'service') {
+      <aside class="tool" aria-label="Tjänstevy"><cmdb-service-view /></aside>
     } @else if (tools.open() === 'rack') {
       <aside class="tool" aria-label="Rackvy"><cmdb-rack-panel /></aside>
     } @else if (tools.open() === 'perf') {
