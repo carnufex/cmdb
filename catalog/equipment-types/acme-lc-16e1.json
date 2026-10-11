@@ -3,6 +3,7 @@
   "manufacturer": "Acme Networks",
   "model": "LC-16E1",
   "category": "card",
+  "cost": 25000,
   "panel": { "rows": 2, "columns": 8 },
   "ports": [
     {

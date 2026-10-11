@@ -3,6 +3,7 @@
   "manufacturer": "Acme Radio",
   "model": "ANT-4P",
   "category": "antenna",
+  "cost": 12000,
   "panel": { "rows": 1, "columns": 4 },
   "ports": [
     {

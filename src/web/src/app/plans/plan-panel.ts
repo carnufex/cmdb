@@ -16,6 +16,7 @@ import { PlanCreateComponent } from './plan-create';
 import { PlanChangesComponent } from './plan-changes';
 import { PlanDraft } from './plan-draft';
 import { PlanImpactComponent } from './plan-impact';
+import { PlanMaterialsComponent } from './plan-materials';
 import { PlanListComponent } from './plan-list';
 import { StatusComponent } from '../shell/status';
 import { Tools } from '../shell/tools';
@@ -36,7 +37,7 @@ import {
 import { ToolSizeComponent } from '../shell/tool-size';
 
 /** The parts of the active plan, one at a time (#252). */
-type PlanTab = 'changes' | 'impact' | 'reservations' | 'add';
+type PlanTab = 'changes' | 'impact' | 'materials' | 'reservations' | 'add';
 
 /**
  * Plans (#24) as a workspace (#252): an overview of the active plan with its next step, what needs attention first,
@@ -53,6 +54,7 @@ type PlanTab = 'changes' | 'impact' | 'reservations' | 'add';
     PlanRouteComponent,
     PlanChangesComponent,
     PlanImpactComponent,
+    PlanMaterialsComponent,
     PlanListComponent,
   ],
   template: `
@@ -242,6 +244,9 @@ type PlanTab = 'changes' | 'impact' | 'reservations' | 'add';
               }
               @case ('impact') {
                 <cmdb-plan-impact [planId]="d.plan.id" />
+              }
+              @case ('materials') {
+                <cmdb-plan-materials [planId]="d.plan.id" [planName]="d.plan.name" />
               }
               @case ('reservations') {
                 <ul class="ops">
@@ -549,6 +554,7 @@ export class PlanPanelComponent {
     const list: { id: PlanTab; label: string; count: number | null }[] = [
       { id: 'changes', label: 'Ändringar', count: this.total() },
       { id: 'impact', label: 'Påverkan', count: null },
+      { id: 'materials', label: 'Material', count: null },
       { id: 'reservations', label: 'Reservationer', count: this.held().length },
     ];
     return draft ? [...list, { id: 'add' as const, label: 'Lägg till', count: null }] : list;

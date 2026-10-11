@@ -3,6 +3,7 @@
   "manufacturer": "Acme Networks",
   "model": "PP-24",
   "category": "patch",
+  "cost": 4000,
   "rackUnits": 1,
   "panel": {
     "rows": 1,

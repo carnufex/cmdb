@@ -3,6 +3,7 @@
   "manufacturer": "Acme Radio",
   "model": "RR-2",
   "category": "radio",
+  "cost": 60000,
   "panel": { "rows": 1, "columns": 4 },
   "ports": [
     {

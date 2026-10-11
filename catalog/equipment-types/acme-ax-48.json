@@ -3,6 +3,7 @@
   "manufacturer": "Acme Networks",
   "model": "AX-48",
   "category": "switch",
+  "cost": 45000,
   "rackUnits": 1,
   "panel": {
     "rows": 2,

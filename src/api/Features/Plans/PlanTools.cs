@@ -163,7 +163,7 @@ public sealed class AgentPlanOperation
 /// </summary>
 [McpServerToolType]
 public sealed class PlanTools(RequestDb db, PlanWrites writes, PlanViews views, GraphHolder holder, ScopeMasks masks, AgentLinks links,
-    PlanPatterns patterns, PlanImport import, RoutePlanner routes, IHttpContextAccessor http)
+    PlanPatterns patterns, PlanImport import, RoutePlanner routes, Materials materials, IHttpContextAccessor http)
 {
     private const int MaxOperations = 100;
 
@@ -179,6 +179,20 @@ public sealed class PlanTools(RequestDb db, PlanWrites writes, PlanViews views, 
         return [.. plans.Where(p => scope.SeesPlan(p.Id))
             .OrderBy(p => p.Status == "draft" ? 0 : 1).ThenByDescending(p => p.UpdatedAt)
             .Select(ToAgent)];
+    }
+
+    [McpServerTool(Name = "plan_materials", Title = "Material för en plan", ReadOnly = true, Idempotent = true, OpenWorld = false)]
+    [Description("What a plan needs and costs (#291): the cables it creates by type and metres (as drawn along the conduit, or " +
+        "straight), the equipment by model, new route segments by construction and metres pulled through existing conduit, priced " +
+        "from the catalog in its currency. Keys without a price are listed in missing and left out of the total.")]
+    public async Task<PlanMaterials> PlanMaterials([Description("The plan, \"plan:12\".")] string plan, CancellationToken ct = default)
+    {
+        var planId = ParseRef(plan, "plan");
+        if (await views.GetAsync(holder.Require(), planId, Http.Scope(), ct) is not { } view)
+        {
+            throw new McpException($"{plan} finns inte.");
+        }
+        return await materials.ForAsync(view, planId, ct);
     }
 
     [McpServerTool(Name = "create_plan", Title = "Skapa plan", Destructive = false, OpenWorld = false)]

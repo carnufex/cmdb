@@ -3,6 +3,7 @@
   "manufacturer": "Acme Networks",
   "model": "CR-8",
   "category": "router",
+  "cost": 180000,
   "rackUnits": 8,
   "panel": { "rows": 1, "columns": 2 },
   "ports": [

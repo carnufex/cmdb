@@ -3,6 +3,7 @@
   "manufacturer": "Acme Radio",
   "model": "MW-1",
   "category": "radio",
+  "cost": 60000,
   "panel": { "rows": 1, "columns": 3 },
   "ports": [
     {

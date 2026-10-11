@@ -4,6 +4,7 @@
   "manufacturer": "Acme Duct",
   "model": "MD-24x7",
   "outerDiameterMm": 45,
+  "costPerMeter": 28,
   "subducts": {
     "count": 24,
     "innerDiameterMm": 5,

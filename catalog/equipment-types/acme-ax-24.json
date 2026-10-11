@@ -3,6 +3,7 @@
   "manufacturer": "Acme Networks",
   "model": "AX-24",
   "category": "switch",
+  "cost": 45000,
   "rackUnits": 1,
   "panel": { "rows": 2, "columns": 14 },
   "ports": [

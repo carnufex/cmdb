@@ -3,6 +3,7 @@
   "manufacturer": "Acme Networks",
   "model": "LC-24X",
   "category": "card",
+  "cost": 25000,
   "panel": { "rows": 2, "columns": 12 },
   "ports": [
     {

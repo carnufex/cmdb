@@ -161,6 +161,7 @@ Den syntetiska katalogen i `catalog/` byggs in i API:t och datageneratorn och an
   service-types.json          valfri
   source-priority.json        valfri, vilken källa som äger vilket attribut (#215)
   source-matching.json        valfri, hur objekt från en ny källa matchas mot cmdb (#216)
+  costs.json                  valfri, valuta och pris per meter per anläggningssätt (#291)
   equipment-types/<key>.json
   duct-types/<key>.json       valfri, dukttyper för kanalisationen (ADR-0014)
   equipment-images/<fil>      valfri, bilder som modellerna pekar ut (#214)
@@ -169,6 +170,8 @@ Den syntetiska katalogen i `catalog/` byggs in i API:t och datageneratorn och an
 ```
 
 - Valideringen och synken till databasen är densamma oavsett källa. Fel anger katalogens mapp, filen och regeln, och processen startar inte.
+- **Priser (#291)** är valfria: `costPerMeter` på kabeltyper och dukttyper, `cost` på utrustningstyper och i `costs.json` valutan (`currency`, tre bokstäver) och pris per meter för att bygga trasé per anläggningssätt (`construction`: `trench`, `plough`, `aerial`, `existing`, där `existing` är indragning i befintlig kanalisation). Inga priser är negativa. Den syntetiska katalogen har syntetiska priser i SEK.
+- **Materiallistan för en plan** (`GET /api/plans/{id}/materials`, MCP `plan_materials`) härleds ur planens egna ändringar och katalogens priser, och lagras inte. Den räknar kablar per typ och meter (som ritade, #259, annars raka mellan siterna), utrustning per modell, nya trasésträckor per anläggningssätt och metrar i befintlig kanalisation. Nycklar utan pris listas i `missing` och räknas inte med i summan.
 - En satt men saknad mapp är ett fel, inte en tom katalog. Utan variabeln används den inbäddade katalogen.
 - Katalogen läses en gång när processen startar. En ändrad katalog börjar gälla vid nästa utrullning, när migreringssteget synkar den.
 

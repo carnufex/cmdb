@@ -16,7 +16,8 @@ public sealed record EquipmentType(
     Panel Panel,
     IReadOnlyList<PortTemplate> Ports,
     IReadOnlyList<SlotTemplate>? Slots,
-    JsonElement Attributes)
+    JsonElement Attributes,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] decimal? Cost = null)
 {
     public IReadOnlyList<SlotTemplate> SlotList => Slots ?? [];
 }
@@ -96,13 +97,26 @@ public sealed record PortBox(string Side, int X, int Y, int Width, int Height)
 
 /// <summary>A cable model from <c>catalog/cable-types.json</c>. Medium is fiber, copper, coax or power.</summary>
 /// <param name="Attributes">Optional JSON Schema for the cable's attributes (#211); without one they are free.</param>
-public sealed record CableType(string Key, string Name, string Medium, int ConductorCount, string? ColorCode = null, JsonElement? Attributes = null);
+/// <param name="CostPerMeter">The price per metre in the catalog's currency (#291), for a plan's materials.</param>
+public sealed record CableType(string Key, string Name, string Medium, int ConductorCount, string? ColorCode = null, JsonElement? Attributes = null,
+    decimal? CostPerMeter = null);
 
 /// <summary>
 /// A duct model from <c>catalog/duct-types/&lt;key&gt;.json</c> (ADR-0014): its outer size and the template its subducts are
 /// generated from, as ports are from a port template. A new size is a catalog entry, not a migration.
 /// </summary>
-public sealed record DuctType(string Key, string Name, string Manufacturer, string Model, int OuterDiameterMm, SubductTemplate Subducts);
+/// <param name="CostPerMeter">The price per metre in the catalog's currency (#291).</param>
+public sealed record DuctType(string Key, string Name, string Manufacturer, string Model, int OuterDiameterMm, SubductTemplate Subducts,
+    decimal? CostPerMeter = null);
+
+/// <summary>
+/// Prices that belong to no type (#291), from the optional <c>costs.json</c>: the currency every price in the catalog is in,
+/// and the price per metre of building a route segment by each construction (trench, plough, aerial, existing).
+/// </summary>
+public sealed record CatalogCosts(string Currency, IReadOnlyDictionary<string, decimal> Construction)
+{
+    public static readonly CatalogCosts None = new("SEK", new Dictionary<string, decimal>());
+}
 
 /// <param name="ColorCode">The colour sequence the tubes follow, e.g. "IEC 60304"; tube N gets the N-th colour.</param>
 public sealed record SubductTemplate(int Count, int InnerDiameterMm, string? ColorCode = null);

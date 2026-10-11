@@ -267,6 +267,38 @@ internal static partial class CatalogRules
         }
     }
 
+    /// <summary>Prices (#291): never negative, and costs.json names a currency and only constructions route segments have.</summary>
+    public static void CheckCosts(List<EquipmentType> types, List<CableType> cableTypes, List<DuctType> ductTypes, CatalogCosts costs, List<string> errors)
+    {
+        foreach (var t in types.Where(t => t.Cost < 0))
+        {
+            errors.Add($"equipment-types/{t.Key}.json: cost cannot be negative");
+        }
+        foreach (var t in cableTypes.Where(t => t.CostPerMeter < 0))
+        {
+            errors.Add($"cable-types.json: '{t.Key}' costPerMeter cannot be negative");
+        }
+        foreach (var t in ductTypes.Where(t => t.CostPerMeter < 0))
+        {
+            errors.Add($"duct-types/{t.Key}.json: costPerMeter cannot be negative");
+        }
+        if (string.IsNullOrWhiteSpace(costs.Currency) || costs.Currency.Length != 3)
+        {
+            errors.Add("costs.json: currency is a three-letter code, e.g. SEK");
+        }
+        foreach (var (construction, price) in costs.Construction ?? new Dictionary<string, decimal>())
+        {
+            if (construction is not ("trench" or "plough" or "aerial" or "existing"))
+            {
+                errors.Add($"costs.json: construction '{construction}' is not trench, plough, aerial or existing");
+            }
+            if (price < 0)
+            {
+                errors.Add($"costs.json: construction '{construction}' cannot cost less than nothing");
+            }
+        }
+    }
+
     public static void CheckCableTypes(List<CableType> cableTypes, List<string> errors)
     {
         foreach (var type in cableTypes)

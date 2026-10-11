@@ -3,6 +3,7 @@
   "manufacturer": "Acme Optical",
   "model": "ODF-24",
   "category": "odf",
+  "cost": 6500,
   "rackUnits": 1,
   "panel": { "rows": 2, "columns": 12 },
   "ports": [

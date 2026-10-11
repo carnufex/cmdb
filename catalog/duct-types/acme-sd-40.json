@@ -4,6 +4,7 @@
   "manufacturer": "Acme Duct",
   "model": "SD-40",
   "outerDiameterMm": 40,
+  "costPerMeter": 12,
   "subducts": {
     "count": 1,
     "innerDiameterMm": 33
