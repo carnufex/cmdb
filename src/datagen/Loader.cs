@@ -332,6 +332,8 @@ internal static class Loader
         {
             // The operations agent's demo scenarios (#132) change the generated network, so only the demo loads them.
             await DemoScenarios.SeedAsync(conn, log, ct, net.Catalog);
+            // An area without network to plan a new one in (#296), beside the station the scenarios name.
+            await Greenfield.SeedAsync(conn, log, ct);
         }
         await Cmdb.Database.Scopes.ScopeVisibility.RefreshAsync(db, ct);
         log.WriteLine($"  scopes  {sw.Elapsed.TotalSeconds,6:0.0} s");
