@@ -38,7 +38,15 @@ cleanup() {
     echo "Stacken står kvar (--keep): webb :$WEB_PORT, API :$API_PORT, idp :$IDP_PORT, Postgres :$DB_PORT."
     return
   fi
-  for pid in "${PIDS[@]:-}"; do [[ -n "$pid" ]] && kill "$pid" 2>/dev/null || true; done
+  # The whole process tree: npx and dotnet start children (the dev server, sass, the API) that a plain kill leaves running
+  # on Windows, holding files in node_modules.
+  for pid in "${PIDS[@]:-}"; do
+    [[ -n "$pid" ]] || continue
+    if [[ -r "/proc/$pid/winpid" ]] && command -v taskkill >/dev/null; then
+      taskkill //F //T //PID "$(cat "/proc/$pid/winpid")" >/dev/null 2>&1 || true
+    fi
+    kill "$pid" 2>/dev/null || true
+  done
   docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
