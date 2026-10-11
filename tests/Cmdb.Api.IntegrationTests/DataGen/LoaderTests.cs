@@ -89,11 +89,14 @@ public sealed class LoaderTests(ApiFactory factory)
         ((long)(await cmd.ExecuteScalarAsync(Ct))!).ShouldBe(2);
     }
 
-    [Fact]
-    public async Task The_operations_agents_scenarios_are_seeded_the_same_when_run_again()
+    // Seed 58 has a backhaul service with two carriers through the station, which once made both backups the same service (#301).
+    [Theory]
+    [InlineData(1)]
+    [InlineData(58)]
+    public async Task The_operations_agents_scenarios_are_seeded_the_same_when_run_again(int seed)
     {
         await using var db = await factory.NewDatabaseAsync();
-        await Loader.LoadAsync(db, NetworkBuilder.Build(1, Scale.Small, TypeCatalog.Current), reset: false, TextWriter.Null, scenarios: true, ct: Ct);
+        await Loader.LoadAsync(db, NetworkBuilder.Build(seed, Scale.Small, TypeCatalog.Current), reset: false, TextWriter.Null, scenarios: true, ct: Ct);
         var circuits = await Count(db, "circuit");
 
         await using (var conn = await db.OpenConnectionAsync(Ct))
