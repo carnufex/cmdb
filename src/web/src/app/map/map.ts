@@ -134,6 +134,9 @@ export class MapComponent {
   } | null>(null);
   private liveKey = '';
   private lassoDraw?: Draw;
+  private areaDraw?: Draw;
+  /** Project areas (#293), outlined with their names. */
+  private areaLayer?: VectorLayer<VectorSource<Feature<Geometry>>>;
   protected readonly operationsShown = signal(false);
 
   /** The conduit layer (#236): route segments, off until asked for. */
@@ -211,6 +214,38 @@ export class MapComponent {
         this.map.removeInteraction(this.lassoDraw);
         this.lassoDraw = undefined;
       }
+    });
+    // A project's area being drawn (#293): a polygon until it is closed, then its ring goes to the project tool.
+    effect(() => {
+      const on = this.mapView.drawingArea();
+      if (!this.map) {
+        return;
+      }
+      if (on && !this.areaDraw) {
+        this.areaDraw = new Draw({ source: new VectorSource(), type: 'Polygon' });
+        this.areaDraw.on('drawend', (e) => {
+          const ring = (e.feature.getGeometry() as Polygon).getCoordinates()[0];
+          this.mapView.closeArea(ring.map((p) => [Math.round(p[0]), Math.round(p[1])]));
+        });
+        this.map.addInteraction(this.areaDraw);
+      } else if (!on && this.areaDraw) {
+        this.map.removeInteraction(this.areaDraw);
+        this.areaDraw = undefined;
+      }
+    });
+    effect(() => {
+      const areas = this.mapView.areas();
+      const source = this.areaLayer?.getSource();
+      source?.clear(true);
+      source?.addFeatures(
+        areas.flatMap((a) =>
+          a.rings.map((ring) => {
+            const f = new Feature<Geometry>(new Polygon([ring.map((p) => [p[0], p[1]])]));
+            f.set('area', a.name);
+            return f;
+          }),
+        ),
+      );
     });
     // What the active plan creates (#107): planned sites and cables, dashed in the planned colour.
     effect(() => {
@@ -347,6 +382,12 @@ export class MapComponent {
       zIndex: 5,
     });
 
+    this.areaLayer = new VectorLayer({
+      source: new VectorSource<Feature<Geometry>>(),
+      style: (f) => this.areaStyle(f),
+      zIndex: 4,
+    });
+
     this.marks = new VectorLayer({
       source: new VectorSource<Feature<OlPoint>>(),
       style: () => this.markStyle(),
@@ -391,6 +432,7 @@ export class MapComponent {
       this.measureLayer,
       this.drawLayer,
       this.placedLayer,
+      this.areaLayer,
       this.conduit,
       this.network,
       this.marks,
@@ -857,6 +899,22 @@ export class MapComponent {
       };
     }
     return this.markStyleCache.style;
+  }
+
+  /** A project's area (#293): a dashed outline in the focus colour with a faint fill, and its name. */
+  private areaStyle(feature: FeatureLike): Style {
+    const palette = (this.palette ??= readPalette(this.host.nativeElement));
+    return new Style({
+      stroke: new Stroke({ color: palette.focus, width: 2, lineDash: [10, 6] }),
+      fill: new Fill({ color: 'rgba(0, 0, 0, 0.04)' }),
+      text: new Text({
+        text: String(feature.get('area') ?? ''),
+        font: '600 12px system-ui, sans-serif',
+        fill: new Fill({ color: palette.focus }),
+        stroke: new Stroke({ color: palette.bg, width: 3 }),
+        overflow: true,
+      }),
+    });
   }
 
   private plannedStyleCache?: {

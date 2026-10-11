@@ -42,6 +42,7 @@ Inget verktyg ändrar produktion. Agenter föreslår ändringar som planer, och 
 | `search` | Objekt på kod, namn, id eller attributtext (samma som snabbsöket) |
 | `get_object` | Allt UI:t visar för ett objekt. Tar `"site:1268"` eller en exakt kod, till exempel `RAD-000007`. |
 | `find_sites` | Strukturerade frågor: sitetyp, livscykel, utrustning (kategori, modell, attribut, antal) och tjänster (samma som avancerad sökning) |
+| `list_projects`, `get_project` | Projekt (#293): områden som byggs ut i etapper, med etappernas status, ändringar, kabel, kostnad och nästa steg |
 | `find_service_points` | Anslutningspunkter (#292): adresser och kunder i ett område, nära en punkt eller betjänade av en site, med status, enheter och antal per status |
 | `impact` | Vad ett avbrott på en kabel, utrustning eller site påverkar: kretsar och tjänster, med kedjan av kretsar som når varje tjänst |
 | `trace` | Spåra en tjänst eller krets ned genom lagren, eller den fysiska vägen från en terminal genom patchar, skarvar och ledare |

@@ -145,6 +145,15 @@ export class MapView {
     seq: number;
   } | null>(null);
 
+  /** While true, the map draws an area (#293, a project's); when closed, its ring lands in {@link drawnArea}. */
+  readonly drawingArea = signal(false);
+  readonly drawnArea = signal<{ ring: number[][]; seq: number } | null>(null);
+
+  /** Project areas to outline in the map (#293), with their names. */
+  readonly areas = signal<
+    readonly { id: number; name: string; rings: readonly (readonly number[][])[] }[]
+  >([]);
+
   /**
    * Set by the map while it is shown: animates the view over the country and returns frame times in ms.
    * Used by the performance panel (#56).
@@ -173,6 +182,11 @@ export class MapView {
   closeLasso(ring: number[][], mode: 'replace' | 'add' | 'remove' = 'replace'): void {
     this.lassoing.set(false);
     this.lasso.set({ ring, mode, seq: ++this.seq });
+  }
+
+  closeArea(ring: number[][]): void {
+    this.drawingArea.set(false);
+    this.drawnArea.set({ ring, seq: ++this.seq });
   }
 
   place(point: Point): void {

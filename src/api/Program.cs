@@ -60,6 +60,7 @@ builder.Services.AddScoped<Cmdb.Api.Features.Plans.Materials>();
 builder.Services.AddScoped<Cmdb.Api.Features.Plans.PlanPatterns>();
 builder.Services.AddScoped<Cmdb.Api.Features.Plans.PlanImport>();
 builder.Services.AddScoped<Cmdb.Api.Features.ServicePoints.ServicePointImport>();
+builder.Services.AddScoped<Cmdb.Api.Features.Projects.ProjectService>();
 builder.Services.AddScoped<Cmdb.Api.Features.Plans.PlanApplication>();
 builder.Services.AddScoped<Cmdb.Api.Features.Reconciliation.Reconciler>();
 builder.Services.AddScoped<Cmdb.Api.Features.Plans.RoutePlanner>();
