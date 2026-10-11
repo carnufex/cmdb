@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<title>Spike #30: 3D-översikt</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #10141a; color: #e6e9ef; font: 13px system-ui, sans-serif; }
+  #info { position: absolute; top: 8px; left: 8px; z-index: 2; background: rgb(0 0 0 / .6); padding: 8px 10px; border-radius: 6px; max-width: 360px; }
+  #info b { color: #fff; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/deck.gl@9.0.38/dist.min.js"></script>
+</head>
+<body>
+<div id="info">Laddar…</div>
+<script>
+// Prototype for spike #30: the synthetic network in 3D with deck.gl, in SWEREF 99 TM metres (no map projection).
+// Physical cables at ground level, transmission and logical circuits as planes above, joined to their sites.
+const info = document.getElementById('info');
+const metrics = (window.metrics = {});
+const t0 = performance.now();
+const KM = 1000;
+const LAYER_Z = { physical: 0, transmission: 60 * KM, logical: 120 * KM };
+const COLORS = { physical: [90, 160, 255], transmission: [255, 170, 60], logical: [200, 110, 255] };
+
+fetch('data.json').then(async (r) => {
+  const text = await r.text();
+  metrics.bytes = text.length;
+  const d = JSON.parse(text);
+  metrics.fetchParseMs = Math.round(performance.now() - t0);
+  const cx = 600000, cy = 6900000;
+  const at = (x, y, z = 0) => [x - cx, y - cy, z];
+  const layers = [
+    new deck.PathLayer({ id: 'cables', data: d.cables, getPath: (c) => c.map(([x, y]) => at(x, y)), getColor: [...COLORS.physical, 140], widthUnits: 'pixels', getWidth: 1 }),
+    new deck.ScatterplotLayer({ id: 'sites', data: d.sites, getPosition: (s) => at(s[0], s[1]), getFillColor: (s) => (s[2] ? [255, 255, 255] : [150, 170, 190]), radiusUnits: 'pixels', getRadius: (s) => (s[2] ? 3 : 1) }),
+  ];
+  for (const layer of ['transmission', 'logical']) {
+    const links = d.links[layer];
+    layers.push(new deck.LineLayer({ id: layer, data: links, getSourcePosition: (l) => at(l[0], l[1], LAYER_Z[layer]), getTargetPosition: (l) => at(l[2], l[3], LAYER_Z[layer]), getColor: [...COLORS[layer], 160], widthUnits: 'pixels', getWidth: (l) => Math.min(4, 1 + Math.log2(l[4])) }));
+    const ends = new Map();
+    for (const l of links) { ends.set(l[0] + ',' + l[1], [l[0], l[1]]); ends.set(l[2] + ',' + l[3], [l[2], l[3]]); }
+    layers.push(new deck.LineLayer({ id: layer + '-pins', data: [...ends.values()], getSourcePosition: (p) => at(p[0], p[1], 0), getTargetPosition: (p) => at(p[0], p[1], LAYER_Z[layer]), getColor: [...COLORS[layer], 25], widthUnits: 'pixels', getWidth: 1 }));
+  }
+  let frames = 0, firstFrame = 0, rotating = true, rotation = 0;
+  const viewState = { target: [0, 0, 40 * KM], rotationX: 35, rotationOrbit: 0, zoom: -11.2, minZoom: -14, maxZoom: 0 };
+  const g = new deck.Deck({
+    views: new deck.OrbitView({ orbitAxis: 'Z', far: 100 }),
+    initialViewState: viewState,
+    controller: true,
+    layers,
+    onAfterRender: () => { frames++; if (!firstFrame) { firstFrame = performance.now(); metrics.firstFrameMs = Math.round(firstFrame - t0); } },
+    onInteractionStateChange: (s) => { if (s.isDragging) rotating = false; },
+  });
+  // Rotate for five seconds and count frames.
+  const start = performance.now();
+  const spin = () => {
+    const now = performance.now();
+    if (now - start < 5000 && rotating) {
+      rotation += 0.6;
+      g.setProps({ initialViewState: { ...viewState, rotationOrbit: rotation, transitionDuration: 0 } });
+      requestAnimationFrame(spin);
+    } else {
+      metrics.fps = Math.round((frames * 1000) / (now - start));
+      metrics.counts = { sites: d.sites.length, cables: d.cables.length, transmission: d.links.transmission.length, logical: d.links.logical.length };
+      info.innerHTML = `<b>Spike #30</b> – syntetiskt nät i 3D<br>siter ${d.sites.length}, kablar ${d.cables.length}, transmissionslänkar ${d.links.transmission.length}, logiska ${d.links.logical.length}<br>data ${(metrics.bytes / 1e6).toFixed(1)} MB, hämtning+tolkning ${metrics.fetchParseMs} ms, första bild ${metrics.firstFrameMs} ms<br>bildfrekvens vid rotation ${metrics.fps} fps<br>Blått: kablar (marken). Orange: transmission. Lila: logiskt.`;
+    }
+  };
+  requestAnimationFrame(spin);
+});
+</script>
+</body>
+</html>
