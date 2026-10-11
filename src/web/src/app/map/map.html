@@ -3,6 +3,14 @@
 <cmdb-context-menu />
 <cmdb-cable-drawing-bar />
 
+@if (time.point(); as p) {
+  <div class="time-banner" role="status">
+    <span class="dot" aria-hidden="true"></span>
+    <span>{{ timeBanner(p) }}</span>
+    <button type="button" class="text-button" (click)="time.back()">Tillbaka till nu</button>
+  </div>
+}
+
 @if (measured(); as m) {
   <div class="hover measure" role="status" [style.left.px]="m.x + 14" [style.top.px]="m.y + 14">
     <span class="mono">{{ m.text }}</span>

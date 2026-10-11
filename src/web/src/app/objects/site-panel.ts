@@ -18,12 +18,14 @@ import { Tools } from '../shell/tools';
 import { fibreTarget } from './fibre-model';
 import { ObjectLinkComponent } from './object-link';
 import { SourcesComponent } from './sources';
+import { HistoryComponent } from './history';
 
 @Component({
   selector: 'cmdb-site-panel',
   imports: [
     IconComponent,
     SourcesComponent,
+    HistoryComponent,
     ClassificationComponent,
     PlanRemoveComponent,
     RackPreviewComponent,
@@ -166,6 +168,7 @@ import { SourcesComponent } from './sources';
         />
       </section>
       <cmdb-sources [sources]="s.sources" />
+      <cmdb-history type="site" [id]="s.id" />
     } @else if (site.error()) {
       <p class="error">Siten kunde inte hämtas.</p>
     } @else {

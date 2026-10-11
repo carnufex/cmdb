@@ -41,6 +41,32 @@ test('quick search finds a site and opens its panel', async ({ page }) => {
   await expect(page.locator('cmdb-site-panel')).toContainText('HUB-001');
 });
 
+test('the map is drawn as it was known on an earlier day, and a site shows its history', async ({
+  page,
+}) => {
+  await open(page);
+  await page.getByRole('button', { name: 'Tidsresa' }).click();
+  await page.getByLabel('Datum').fill('1990-01-01');
+  await page.getByRole('radio', { name: /Vad vi visste/ }).check();
+  const tile = page.waitForRequest(
+    (r) => r.url().includes('/api/tiles/') && r.url().includes('mode=knowledge'),
+  );
+  await page.getByRole('button', { name: 'Visa kartan' }).click();
+  await tile;
+  const banner = page.getByRole('status').filter({ hasText: 'Nätet som CMDB:n beskrev det' });
+  await expect(banner).toBeVisible();
+  await banner.getByRole('button', { name: 'Tillbaka till nu' }).click();
+  await expect(banner).toBeHidden();
+
+  const search = page.getByRole('combobox', { name: 'Sök eller kör en åtgärd' });
+  await search.fill('HUB-001');
+  await expect(page.getByRole('option').filter({ hasText: 'HUB-001' }).first()).toBeVisible();
+  await search.press('Enter');
+  const panel = page.locator('cmdb-site-panel');
+  await panel.getByText('Historik').click();
+  await expect(panel).toContainText('Första registrerade version');
+});
+
 test('the map’s context menu offers what can be done on an empty spot', async ({ page }) => {
   await open(page);
   const at = await mapPoint(page, 0.05, 0.5);

@@ -390,6 +390,8 @@ internal static class NetworkImport
             // Bulk rows skip the change stream's triggers (#11); one 'reload' entry at the end tells the graph to start over.
             await Exec(conn, "SET LOCAL cmdb.bulk = 'on'", ct);
             await Exec(conn, "SET LOCAL synchronous_commit = off", ct);
+            // One operation for the whole import (#23): its changes are versions with the source as the reason.
+            await Exec(conn, "SELECT cmdb_begin_operation('import', $1, 'import', '{}'::jsonb, 'Import från ' || $1)", ct, source);
 
             await SitesAsync(data.Sites);
             await LocationsAsync(data.Locations);

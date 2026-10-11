@@ -8,6 +8,7 @@ import { apiPath, ServiceDetail } from './models';
 import { ClassificationComponent } from './classification';
 import { ObjectLinkComponent } from './object-link';
 import { SourcesComponent } from './sources';
+import { HistoryComponent } from './history';
 import { traceId } from './trace-model';
 import { Tools } from '../shell/tools';
 
@@ -16,6 +17,7 @@ import { Tools } from '../shell/tools';
   imports: [
     IconComponent,
     SourcesComponent,
+    HistoryComponent,
     ClassificationComponent,
     ObjectLinkComponent,
     StatusComponent,
@@ -68,6 +70,7 @@ import { Tools } from '../shell/tools';
         </section>
       }
       <cmdb-sources [sources]="s.sources" />
+      <cmdb-history type="service" [id]="s.id" />
     } @else if (service.error()) {
       <p class="error">Tjänsten kunde inte hämtas.</p>
     } @else {

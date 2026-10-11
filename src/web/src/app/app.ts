@@ -21,10 +21,12 @@ import { RackPanelComponent } from './objects/rack-panel';
 import { FibrePanelComponent } from './objects/fibre-panel';
 import { ServiceViewComponent } from './objects/service-view';
 import { RoomPanelComponent } from './objects/room-panel';
+import { TimeTravelComponent } from './map/time-travel';
 
 @Component({
   selector: 'app-root',
   imports: [
+    TimeTravelComponent,
     RouterOutlet,
     RouterLink,
     RouterLinkActive,

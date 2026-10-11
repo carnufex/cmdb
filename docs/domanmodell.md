@@ -443,3 +443,12 @@ Bitemporal modell:
 - **Registreringstid**: när det dokumenterades.
 
 Frågor som stöds: "hur såg nätet ut datum D?" och "vad trodde vi att nätet såg ut som datum D?".
+
+Så fungerar det (#23, ADR-0006, ADR-0013):
+
+- **Giltighetstid** är `valid_from` och `valid_to` på de spårade objekten. Datageneratorn sätter syntetiska driftsättningsdatum på siter och kablar: stamnätet på 1990-talet, aggregering efter det och accessiter senare, och aldrig före det de hänger på. Planerade objekt och objekt under byggnation gäller från laddningen.
+- **Registreringstid** är `sys_from` på den gällande versionen och `sys_to` på de tidigare, som ligger i `<tabell>_history` med operationen som ersatte dem. Site, plats, utrustning, kabel, koppling, krets, tjänst, trasésträcka och dukt versioneras. Kretsarnas hopp, portar och ledare versioneras inte, eftersom de följer sina ägare.
+- **Operationen** säger vem (användaren och klienten, till exempel webben eller en agent), när, vad (kommandot och dess argument) och varför (planens namn, ett angivet skäl eller källsystemet). En bekräftelse från en integration som inte ändrar något är ingen ny version.
+- **Kartan per datum:** *verklighet* visar det som var i drift då, som vi vet i dag. *Vad vi visste* visar versionerna som var registrerade då, före senare rättelser, så en site som döpts om visar sitt gamla namn. Före laddningen visste CMDB:n ingenting.
+- **Objektets historik** visar versionerna nyast först: vad som ändrades, före och efter, och operationen bakom. Ett borttaget objekts historik ser bara den som ser hela nätet, eftersom omfånget inte längre går att avgöra.
+- **Tidsresa i grafen** (spårning och påverkan per datum) är inte byggd än (#302).

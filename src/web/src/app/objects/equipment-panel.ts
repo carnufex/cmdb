@@ -24,6 +24,7 @@ import { ImpactListComponent } from './impact-list';
 import { apiPath, EquipmentDetail, Impact } from './models';
 import { ObjectLinkComponent } from './object-link';
 import { SourcesComponent } from './sources';
+import { HistoryComponent } from './history';
 import { traceId, TraceResult } from './trace-model';
 
 type Port = EquipmentDetail['ports'][number];
@@ -36,6 +37,7 @@ import { IconComponent } from '../shell/icons';
   imports: [
     IconComponent,
     SourcesComponent,
+    HistoryComponent,
     ClassificationComponent,
     PlanMoveComponent,
     PlanRemoveComponent,
@@ -322,6 +324,7 @@ import { IconComponent } from '../shell/icons';
         </section>
       }
       <cmdb-sources [sources]="e.sources" />
+      <cmdb-history type="equipment" [id]="e.id" />
     } @else if (equipment.error()) {
       <p class="error">Utrustningen kunde inte hämtas.</p>
     } @else {

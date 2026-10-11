@@ -66,6 +66,21 @@ En image från en branch kan byggas för att testa den (`scripts/deploy.sh --all
 - **Migreringar måste tåla att den förra versionen fortfarande kör** under utrullningen och vid en rollback. Lägg till först och ta bort i en senare release (expand/contract). En destruktiv migrering kräver ett issue med `type:decision`.
 - Databasen säkerhetskopieras inte. All data är syntetisk och genereras om.
 
+### Operationslogg, historik och läslogg (#23)
+
+| Inställning | Standard | Vad den gör |
+|---|---|---|
+| `Operations:HashChain` | `false` | Hashkedjar operationerna från start. Kontrollera kedjan med `GET /api/operations/verify`. Kedjan serialiserar skrivningarna (omkring 1 200 per sekund i mätningen). |
+| `Operations:MaintenanceHours` | `6` | Hur ofta partitioner skapas i förväg och läsloggen rensas. |
+| `ReadLog:Enabled` | `true` | Läsloggen; stäng av den bara för att mäta vad den kostar. |
+| `ReadLog:RetentionDays` | `90` | Hur länge läsloggens dygn sparas. |
+| `ReadLog:ArchivePath` | – | Mapp dit ett dygn exporteras som gzippad CSV innan det tas bort. |
+| `ReadLog:FlushMilliseconds`, `ReadLog:BatchSize`, `ReadLog:QueueLength` | `1000`, `2000`, `100000` | Läsloggens skrivare. En full kö loggas som varning med antalet poster som inte kom med. |
+
+- Partitionerna (`operation_y2026m10`, `site_history_y2026m10`, `read_log_d20261011` …) skapas av API:t. Varje partitionerad tabell har också en standardpartition, så en sen partition stoppar aldrig en skrivning, och raderna flyttas in när partitionen skapas.
+- **En migrering som lägger till en kolumn i en spårad tabell lägger till den i `<tabell>_history` också**, i samma migrering. Testet `Every_history_table_has_the_columns_of_its_table` fångar en som glömts.
+- Skrivningar direkt i databasen får en reservoperation. Sätt `SET cmdb.actor = '<namn>'` i sessionen så syns vem det var, och `SET cmdb.history = 'off'` bara vid en hel nyladdning.
+
 ### Direkt databasåtkomst
 
 Integrationer, rapporter och export som läser databasen utan API:t får en egen roll (ADR-0012):

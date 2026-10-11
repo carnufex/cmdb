@@ -28,12 +28,14 @@ import { Tools } from '../shell/tools';
 import { fibreTarget } from './fibre-model';
 import { ObjectLinkComponent } from './object-link';
 import { SourcesComponent } from './sources';
+import { HistoryComponent } from './history';
 
 @Component({
   selector: 'cmdb-cable-panel',
   imports: [
     IconComponent,
     SourcesComponent,
+    HistoryComponent,
     ClassificationComponent,
     PlanMoveComponent,
     PlanRemoveComponent,
@@ -263,6 +265,7 @@ import { SourcesComponent } from './sources';
         </ul>
       </section>
       <cmdb-sources [sources]="c.sources" />
+      <cmdb-history type="cable" [id]="c.id" />
     } @else if (cable.error()) {
       <p class="error">Kabeln kunde inte hämtas.</p>
     } @else {
