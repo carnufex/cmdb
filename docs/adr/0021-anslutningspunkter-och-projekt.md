@@ -1,6 +1,6 @@
 # ADR-0021: Anslutningspunkter och projekt för planering av nytt nät
 
-**Status:** Föreslagen · **Datum:** 2026-10-11 · **Utredning:** [#260](../utredningar/260-nytt-fibernat.md)
+**Status:** Accepterad (alternativ B i #290) · **Datum:** 2026-10-11 · **Genomförs i:** #292–#296 · **Utredning:** [#260](../utredningar/260-nytt-fibernat.md)
 
 ## Kontext
 Att planera ett nytt fibernät i ett område (#260) kräver två saker som modellen saknar:
@@ -16,10 +16,10 @@ Att planera ett nytt fibernät i ett område (#260) kräver två saker som model
   - Båda följer omfången (ADR-0007): en anslutningspunkt som en site via sin position, och ett projekt via sitt område.
 - **C. Anslutningspunkter i ett externt system** (till exempel en kund- eller adressdatabas), som bara läses vid planering. Inget lagras här, men dimensionering, kartlager och etapper blir beroende av ett system som demon inte har.
 
-## Beslut (föreslaget)
+## Beslut
 **B.** Det håller siterna och grafen fria från tusentals tomma objekt och gör etapperna till något man kan se och följa. Kärnmodellen och planerna (ADR-0005) ändras inte. Projektet är en vy ovanpå planer, och anslutningspunkterna är data som förslagen och dimensioneringen läser.
 
-## Konsekvenser (vid B)
+## Konsekvenser
 - Nya tabeller via EF Core (ADR-0009): `service_point`, `service_point_type` (katalog), `project` och `project_plan`. Anslutningspunkter får sök, kartlager och panel.
 - Planoperationer för anslutningspunkter (ny, flytta, ändra status, koppla till site eller port), med samma kontroller som andra operationer.
 - Omfång: anslutningspunkter filtreras på position som siter. Ett projekt syns för den som ser dess område.
