@@ -75,3 +75,12 @@ Lingonåsen (`AGG-1191`) ska få en ny fiberkabel till en grannsite längs befin
 6. Planens arbetsyta visar ändringarna som tabell, med antal per slag. **Påverkan** visar att inga kretsar bryts, och **Rita om** på kabeln öppnar ritningen igen om vägen ska ändras.
 7. **För in i produktion** gör kabeln, dess väg genom rören och den nya trasésträckan (planerad) verkliga.
 
+
+## Scenario 6: planera ett nytt fibernät i Lingonåsen öst (#296)
+Öster om Lingonåsen finns ett område utan nät: byar med villor och radhus i kluster, några flerbostadshus med 8–40 lägenheter vid Centrumvägen, företag längs Industrivägen och en mast på åsen. Anslutningspunkterna (`AP-LO-0001` …, källa `demo-adresser`) och projektet **Lingonåsen öst** läggs in av datageneratorn, deterministiskt för en given seed (i full skala, seed 1: drygt 200 punkter med omkring 400 enheter). Projektet har inga etapper än. Lingonåsen och de befintliga siterna närmast områdets västkant är där det nya nätet kopplas in.
+
+1. Öppna **Projekt** och välj *Lingonåsen öst* (#293). Området ritas som en streckad kontur, och *Nästa steg* säger att den första etappen saknas. **Visa området** zoomar dit; från gatunivå syns anslutningspunkterna som fyrkanter i statusfärg (#292).
+2. Klicka på ett flerbostadshus: panelen visar typ, antal lägenheter och att punkten inte är ansluten än. `find_service_points` ger samma sak för en agent, med antal per status.
+3. **Lägg till etapp** skapar *Lingonåsen öst, etapp 1*. **Visa** öppnar den som plan.
+4. I planen: en ny fördelningsnod mitt i en by (*Ny site här* i kartans meny, eller från mall), och en kabel från Lingonåsen till noden längs kanalisationen och nya sträckor (scenario 5). Förslag på nodplacering och fördelningskablar kommer i #294 och #295.
+5. Tillbaka i **Projekt** visar etappen sina ändringar, meter ny kabel och kostnad ur materiallistan (#291), och *Nästa steg* blir att granska och föra in etappen.

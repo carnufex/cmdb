@@ -274,6 +274,7 @@ En **anslutningspunkt** (`service_point`) är en adress eller kund som nätet sk
 - **Omfång:** en punkt syns för den vars omfång har ett område som täcker punkten, eller ett omfång utan område.
 - **Läsning:** `GET /api/service-points/{id}`, `GET /api/service-points?bbox=|near=&radius=|site=&status=` (med antal per status och enheter totalt), snabbsök på kod och adress, kartplattornas lager `service_points` från zoomnivå 9, och MCP `find_service_points` och `get_object` med `service-point:<id>`.
 - Skrivningar får operationer i operationsloggen (#23). Anslutningspunkter versioneras inte i historiken i det här steget.
+- **I demon** (#296) finns greenfield-området *Lingonåsen öst* med anslutningspunkter och ett projekt utan etapper, se [demo-scenarier.md](demo-scenarier.md#scenario-6-planera-ett-nytt-fibernät-i-lingonåsen-öst-296).
 
 ## Projekt (ADR-0021, #293)
 

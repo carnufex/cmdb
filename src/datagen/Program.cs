@@ -72,6 +72,7 @@ internal static class Cli
             await using (var conn = await source.OpenConnectionAsync())
             {
                 await DemoScenarios.SeedAsync(conn, Console.Out, CancellationToken.None);
+                await Greenfield.SeedAsync(conn, Console.Out, CancellationToken.None);
             }
             await Cmdb.Database.Scopes.ScopeVisibility.RefreshAsync(source);
             return 0;

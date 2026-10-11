@@ -117,6 +117,48 @@ public sealed class LoaderTests(ApiFactory factory)
     }
 
     [Fact]
+    public async Task A_greenfield_area_with_service_points_and_a_project_lies_beside_the_station()
+    {
+        await using var db = await factory.NewDatabaseAsync();
+        await Loader.LoadAsync(db, NetworkBuilder.Build(1, Scale.Small, TypeCatalog.Current), reset: false, TextWriter.Null, scenarios: true, ct: Ct);
+
+        async Task<string> Fingerprint()
+        {
+            await using var cmd = db.CreateCommand($"""
+                SELECT md5(string_agg(code || type_key || units || address || ST_AsText(ST_SnapToGrid(geom, 1)), ',' ORDER BY code))
+                FROM service_point WHERE code LIKE '{Greenfield.CodePrefix}%'
+                """);
+            return (string)(await cmd.ExecuteScalarAsync(Ct))!;
+        }
+        var first = await Fingerprint();
+        await using (var cmd = db.CreateCommand($"""
+            SELECT count(*), sum(units), count(DISTINCT type_key),
+                   (SELECT count(*) FROM project WHERE name = '{Greenfield.Project}'),
+                   (SELECT count(*) FROM project_plan),
+                   (SELECT count(*) FROM site s, project p WHERE p.name = '{Greenfield.Project}' AND ST_Intersects(s.geom, p.area)),
+                   (SELECT count(*) FROM service_point v, project p WHERE p.name = '{Greenfield.Project}' AND NOT ST_Covers(p.area, v.geom))
+            FROM service_point WHERE code LIKE '{Greenfield.CodePrefix}%'
+            """))
+        await using (var reader = await cmd.ExecuteReaderAsync(Ct))
+        {
+            await reader.ReadAsync(Ct);
+            reader.GetInt64(0).ShouldBeGreaterThan(100);
+            reader.GetInt64(1).ShouldBeGreaterThan(reader.GetInt64(0));
+            reader.GetInt64(2).ShouldBeGreaterThanOrEqualTo(4);
+            (reader.GetInt64(3), reader.GetInt64(4), reader.GetInt64(5), reader.GetInt64(6)).ShouldBe((1L, 0L, 0L, 0L));
+        }
+
+        // Run again: the same area, not a second one.
+        await using (var conn = await db.OpenConnectionAsync(Ct))
+        {
+            await Greenfield.SeedAsync(conn, TextWriter.Null, Ct);
+        }
+        (await Fingerprint()).ShouldBe(first);
+        await using var count = db.CreateCommand($"SELECT count(*) FROM project WHERE name = '{Greenfield.Project}'");
+        ((long)(await count.ExecuteScalarAsync(Ct))!).ShouldBe(1);
+    }
+
+    [Fact]
     public async Task Cables_lie_in_conduit_whose_route_segments_give_their_route_and_corridors_are_shared()
     {
         await using var db = await factory.NewDatabaseAsync();
