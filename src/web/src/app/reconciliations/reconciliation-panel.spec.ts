@@ -109,6 +109,8 @@ describe('reconciliation panel', () => {
 
     element.querySelector<HTMLButtonElement>('.plans button')!.click();
     expect(activated).toEqual([12]);
+    // The tool follows the address, which the router changes asynchronously.
+    await settle(fixture);
     expect(TestBed.inject(Tools).open()).toBe('plans');
     http.verify();
   });
