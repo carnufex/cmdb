@@ -1708,6 +1708,98 @@ namespace Cmdb.Database.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Cmdb.Database.Model.Project", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<long>("Id"));
+
+                    b.Property<Geometry>("Area")
+                        .IsRequired()
+                        .HasColumnType("geometry(Geometry, 3006)")
+                        .HasColumnName("area");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("name");
+
+                    b.Property<string>("Owner")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("owner");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.HasKey("Id")
+                        .HasName("pk_project");
+
+                    b.HasIndex("Area")
+                        .HasDatabaseName("ix_project_area");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("Area"), "gist");
+
+                    b.HasIndex("Name")
+                        .IsUnique()
+                        .HasDatabaseName("ix_project_name");
+
+                    b.ToTable("project", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_project_area", "GeometryType(area) IN ('POLYGON', 'MULTIPOLYGON')");
+                        });
+                });
+
+            modelBuilder.Entity("Cmdb.Database.Model.ProjectPlan", b =>
+                {
+                    b.Property<long>("ProjectId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("project_id");
+
+                    b.Property<long>("PlanId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("plan_id");
+
+                    b.Property<int>("Seq")
+                        .HasColumnType("integer")
+                        .HasColumnName("seq");
+
+                    b.HasKey("ProjectId", "PlanId")
+                        .HasName("pk_project_plan");
+
+                    b.HasIndex("PlanId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_project_plan_plan_id");
+
+                    b.HasIndex("ProjectId", "Seq")
+                        .IsUnique()
+                        .HasDatabaseName("ix_project_plan_project_id_seq");
+
+                    b.ToTable("project_plan", (string)null);
+                });
+
             modelBuilder.Entity("Cmdb.Database.Model.Reconciliation", b =>
                 {
                     b.Property<long>("Id")
@@ -3200,6 +3292,23 @@ namespace Cmdb.Database.Migrations
                     b.Navigation("Equipment");
 
                     b.Navigation("Terminal");
+                });
+
+            modelBuilder.Entity("Cmdb.Database.Model.ProjectPlan", b =>
+                {
+                    b.HasOne("Cmdb.Database.Model.Plan", null)
+                        .WithMany()
+                        .HasForeignKey("PlanId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_project_plan_plan_plan_id");
+
+                    b.HasOne("Cmdb.Database.Model.Project", null)
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_project_plan_project_project_id");
                 });
 
             modelBuilder.Entity("Cmdb.Database.Model.Reconciliation", b =>

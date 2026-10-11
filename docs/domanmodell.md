@@ -275,6 +275,16 @@ En **anslutningspunkt** (`service_point`) är en adress eller kund som nätet sk
 - **Läsning:** `GET /api/service-points/{id}`, `GET /api/service-points?bbox=|near=&radius=|site=&status=` (med antal per status och enheter totalt), snabbsök på kod och adress, kartplattornas lager `service_points` från zoomnivå 9, och MCP `find_service_points` och `get_object` med `service-point:<id>`.
 - Skrivningar får operationer i operationsloggen (#23). Anslutningspunkter versioneras inte i historiken i det här steget.
 
+## Projekt (ADR-0021, #293)
+
+Ett **projekt** håller ihop en utbyggnad av ett område: namn, beskrivning, ansvarig, området som polygon (EPSG:3006) och dess **etapper**, som är planer i ordning (`project_plan`). Planerna ändras inte: en etapp är en vanlig plan som bygger på den förra (ADR-0005), och en plan hör till högst ett projekt.
+
+- **Ny etapp** skapar ett utkast som beror på närmast föregående etapp som inte är avbruten. Befintliga planer kan också läggas in och etapperna ordnas om.
+- **Per etapp** visas planens status, antal ändringar, ändringar som inte längre passar (bara för utkast), meter ny kabel och kostnad ur materiallistan (#291). Projektet summerar dem.
+- **Nästa steg** säger vad som återstår: lägg till en etapp, rita den första etappen som saknar ändringar, lös ändringar som inte passar, granska en flaggad, eller granska och för in nästa.
+- **Omfång:** ett projekt syns för den vars omfång har ett område som skär projektets, eller inget område. Etapper i planer som anroparen inte ser räknas men visas inte. Skrivningar kräver `cmdb-full` och blir operationer (#23).
+- **API och MCP:** `GET /api/projects`, `GET /api/projects/{id}`, `POST /api/projects`, `PUT /api/projects/{id}`, `POST /api/projects/{id}/stages` (ny etapp), `PUT /api/projects/{id}/stages` (ordning), och MCP `list_projects` och `get_project`.
+
 ## Livscykel
 
 ```

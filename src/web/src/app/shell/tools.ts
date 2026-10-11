@@ -10,6 +10,7 @@ export type Tool =
   | 'tree'
   | 'plans'
   | 'reconciliations'
+  | 'projects'
   | 'grid'
   | 'changelog'
   | 'voice'
@@ -36,6 +37,7 @@ export const toolSpecs: Record<Tool, ToolSpec> = {
   tree: { sizes: ['panel', 'half'], initial: 'panel' },
   plans: { sizes: ['panel', 'half', 'workspace'], initial: 'half' },
   reconciliations: { sizes: ['panel', 'half', 'workspace'], initial: 'half' },
+  projects: { sizes: ['panel', 'half', 'workspace'], initial: 'half' },
   grid: { sizes: ['half', 'workspace'], initial: 'half' },
   changelog: { sizes: ['panel', 'half'], initial: 'panel' },
   voice: { sizes: ['panel'], initial: 'panel' },

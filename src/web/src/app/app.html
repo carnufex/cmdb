@@ -34,6 +34,14 @@
     <button
       type="button"
       class="text-button tool-button"
+      [attr.aria-pressed]="tools.open() === 'projects'"
+      (click)="tools.toggle('projects')"
+    >
+      Projekt
+    </button>
+    <button
+      type="button"
+      class="text-button tool-button"
       [attr.aria-pressed]="tools.open() === 'reconciliations'"
       (click)="tools.toggle('reconciliations')"
     >
@@ -186,6 +194,12 @@
       <aside class="tool" aria-label="Planer">
         @defer (on immediate) {
           <cmdb-plan-panel />
+        }
+      </aside>
+    } @else if (tools.open() === 'projects') {
+      <aside class="tool" aria-label="Projekt">
+        @defer (on immediate) {
+          <cmdb-project-panel />
         }
       </aside>
     } @else if (tools.open() === 'reconciliations') {

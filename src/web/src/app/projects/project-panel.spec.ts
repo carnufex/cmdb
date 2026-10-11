@@ -1,0 +1,40 @@
+import { costText, ProjectStage, stageLifecycle, stageStatusText } from './project-panel';
+
+const stage = (status: string, problems = 0, flag: string | null = null): ProjectStage => ({
+  seq: 1,
+  plan: { id: 1, name: 'Etapp 1', status, flag },
+  changes: 3,
+  problems,
+  cableMetres: 1200,
+  cost: 1234567.4,
+  unpriced: false,
+});
+
+describe('project stages', () => {
+  it('show their state as a dot and text', () => {
+    expect([stageLifecycle(stage('applied')), stageStatusText(stage('applied'))]).toEqual([
+      'in_service',
+      'Införd',
+    ]);
+    expect([stageLifecycle(stage('cancelled')), stageStatusText(stage('cancelled'))]).toEqual([
+      'removed',
+      'Avbruten',
+    ]);
+    expect([stageLifecycle(stage('draft', 2)), stageStatusText(stage('draft', 2))]).toEqual([
+      'conflict',
+      '2 passar inte',
+    ]);
+    expect([
+      stageLifecycle(stage('draft', 0, 'ändrad')),
+      stageStatusText(stage('draft', 0, 'ändrad')),
+    ]).toEqual(['conflict', 'Flaggad']);
+    expect([stageLifecycle(stage('draft')), stageStatusText(stage('draft'))]).toEqual([
+      'planned',
+      'Utkast',
+    ]);
+  });
+
+  it('give costs in whole units with Swedish thousands', () => {
+    expect(costText(1234567.4, 'SEK').replace(/\s/g, ' ')).toBe('1 234 567 SEK');
+  });
+});
