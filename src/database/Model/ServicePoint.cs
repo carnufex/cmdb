@@ -69,6 +69,7 @@ internal sealed class ServicePointConfiguration : IEntityTypeConfiguration<Servi
         e.Property(x => x.UpdatedAt).HasDefaultValueSql("now()");
         e.HasIndex(x => x.Code).IsUnique();
         e.HasIndex(x => x.Code, "ix_service_point_code_trgm").HasMethod("gin").HasOperators("gin_trgm_ops").HasDatabaseName("ix_service_point_code_trgm");
+        e.HasIndex(x => x.Name, "ix_service_point_name_trgm").HasMethod("gin").HasOperators("gin_trgm_ops").HasDatabaseName("ix_service_point_name_trgm");
         e.HasIndex(x => x.Address, "ix_service_point_address_trgm").HasMethod("gin").HasOperators("gin_trgm_ops").HasDatabaseName("ix_service_point_address_trgm");
         e.HasIndex(x => x.Geom).HasMethod("gist");
         e.HasIndex(x => new { x.SourceSystem, x.ExternalId }).IsUnique().HasFilter("external_id IS NOT NULL");

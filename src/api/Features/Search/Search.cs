@@ -166,7 +166,9 @@ public sealed class SearchEndpoint(RequestDb db) : Endpoint<SearchRequest, IRead
         // bets on a sequential or full index scan filling LIMIT early, then reads the whole table (200 ms for a miss at
         // full scale). Bitmap scans build the match set from the index first and stop reading rows at LIMIT, so only
         // those are allowed. Scoped to this transaction; see #12 for the measurements.
-        await using (var setting = new NpgsqlCommand("SET LOCAL enable_seqscan = off; SET LOCAL enable_indexscan = off", conn, tx))
+        // With seq scans priced out, a source that cannot use an index looks expensive enough to be JIT compiled, which costs
+        // more than any search here (#312); JIT is off for the same transaction.
+        await using (var setting = new NpgsqlCommand("SET LOCAL enable_seqscan = off; SET LOCAL enable_indexscan = off; SET LOCAL jit = off", conn, tx))
         {
             await setting.ExecuteNonQueryAsync(ct);
         }

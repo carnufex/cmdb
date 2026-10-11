@@ -2301,6 +2301,12 @@ namespace Cmdb.Database.Migrations
                     NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex(new[] { "Code" }, "ix_service_point_code_trgm"), "gin");
                     NpgsqlIndexBuilderExtensions.HasOperators(b.HasIndex(new[] { "Code" }, "ix_service_point_code_trgm"), new[] { "gin_trgm_ops" });
 
+                    b.HasIndex(new[] { "Name" }, "ix_service_point_name_trgm")
+                        .HasDatabaseName("ix_service_point_name_trgm");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex(new[] { "Name" }, "ix_service_point_name_trgm"), "gin");
+                    NpgsqlIndexBuilderExtensions.HasOperators(b.HasIndex(new[] { "Name" }, "ix_service_point_name_trgm"), new[] { "gin_trgm_ops" });
+
                     b.ToTable("service_point", null, t =>
                         {
                             t.HasCheckConstraint("ck_service_point_status", "status IN ('planned', 'ordered', 'connected')");
