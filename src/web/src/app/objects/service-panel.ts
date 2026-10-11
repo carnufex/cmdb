@@ -9,6 +9,7 @@ import { ClassificationComponent } from './classification';
 import { ObjectLinkComponent } from './object-link';
 import { SourcesComponent } from './sources';
 import { traceId } from './trace-model';
+import { Tools } from '../shell/tools';
 
 @Component({
   selector: 'cmdb-service-panel',
@@ -30,6 +31,7 @@ import { traceId } from './trace-model';
         <div class="meta">
           <cmdb-status [value]="s.lifecycle" />
           <button type="button" class="action" (click)="trace(s.id)">Spåra ände till ände</button>
+          <button type="button" class="action" (click)="view(s.id)">Tjänstevy</button>
         </div>
       </header>
       <cmdb-classification type="service" [objectId]="s.id" />
@@ -84,6 +86,7 @@ export class ServicePanelComponent {
     () => `/api/${apiPath.service}/${this.id()}`,
   );
   protected readonly kinds = inject(CatalogKinds);
+  private readonly tools = inject(Tools);
   /** The service's attributes, named from its type's schema (#211). */
   protected readonly attributes = computed(() => {
     const s = this.service.value();
@@ -92,6 +95,11 @@ export class ServicePanelComponent {
 
   protected trace(id: number): void {
     this.panels.open({ type: 'trace', id: traceId({ by: 'service', id }) });
+  }
+
+  /** The service drawn end to end as the workspace (#257). */
+  protected view(id: number): void {
+    this.tools.show('service', { service: String(id) });
   }
 
   constructor() {
