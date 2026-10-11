@@ -6,6 +6,17 @@ Mörk, informationstät och lugn, i samma familj som Linear. Tunna linjer (1 px)
 
 **Men:** allt bygger på design-tokens med ett mörkt standardtema **och** ett ljust tema. Projektorer och dagsljus i fält gör enbart mörkt tema oanvändbart. Testa demon på den projektor som faktiskt ska användas.
 
+## Begriplighet (#261)
+
+Systemet är avancerat, men det ska gå att förstå utan manual. Sex principer gäller för allt nytt:
+
+1. **Se vad saker är.** Ikon och svenskt typnamn på varje objekt, i träd, sök, brödsmulor, paneler och kartans meny (#249).
+2. **Inget tomt läge utan ingång.** Varje verktyg visar något användbart innan något är valt: innehållsträdet visar hela nätet (#250), en tom planlista förklarar vad en plan är och har *Ny plan* (#252), och en tom tabell säger var ändringar läggs till.
+3. **Det som behöver plats får plats.** Verktyg kan ta halva eller hela skärmen, och kartan behöver inte alltid synas (#251). Planer, massredigering, fiberritning, rackvy, rumsvy och tjänstevy är arbetsytor.
+4. **Rita det som går att rita.** Frontpanel, rack, rum, tjänstens väg och fiberritningen är bilder (#214, #254, #255, #256, #257), i samma anda.
+5. **Gör saker där man tittar.** Högerklick i kartan (#258), urval med åtgärder (#253) och kablar som ritas i kartan längs kanalisationen (#259). Samma åtgärder finns i kommandopaletten.
+6. **Namn efter vad man gör**, inte efter tekniken: *Massredigering* i stället för *Kalkylark*, *Lös konflikter* i stället för en statuskod.
+
 ## Skärmstorlek
 
 Minsta stödda storlek är **1280×720 CSS-pixlar**, vilket motsvarar 1080p med 150 % skalning (#72). Där ska kartan, ett verktyg (avancerad sökning eller prestanda) och objektpanelen kunna vara öppna samtidigt, utan radbrytning i verktygsfältet och utan sidscroll. Paneler och verktyg scrollar internt. Under 1440 px bredd blir objektpanelen och verktygen smalare, så att kartan behåller ungefär 500 px. Större skärmar ger kartan all extra yta.
