@@ -107,6 +107,8 @@ export class MapComponent {
   protected readonly hover = signal<Hover | null>(null);
   protected readonly zoom = signal(0);
   protected readonly detailZoom = GRID.detailZoom;
+  /** Service points show from here (#292), as in the API's tiles. */
+  protected readonly servicePointZoom = 9;
 
   private map?: OlMap;
   private network?: VectorTileLayer;
@@ -546,6 +548,8 @@ export class MapComponent {
         this.panels.open({ type: feature.get('route'), id: String(feature.getId()) });
       } else if (feature?.get('mark')) {
         this.panels.open({ type: 'site', id: String(feature.getId()) }, { replace: true });
+      } else if (feature?.get('layer') === 'service_points') {
+        this.panels.open({ type: 'service-point', id: String(feature.getId()) }, { replace: true });
       } else if (feature) {
         const type = feature.get('layer') === 'sites' ? 'site' : 'cable';
         this.panels.open({ type, id: String(feature.getId()) }, { replace: true });
@@ -861,6 +865,7 @@ export class MapComponent {
     point: Style;
     removedLine: Style[];
     removedPoint: Style;
+    servicePoint: Style;
   };
 
   private plannedStyle(feature: FeatureLike): Style | Style[] {
@@ -889,6 +894,16 @@ export class MapComponent {
             zIndex: -1,
           }),
         ],
+        servicePoint: new Style({
+          image: new RegularShape({
+            points: 4,
+            radius: 5,
+            angle: Math.PI / 4,
+            fill: new Fill({ color: palette.bg }),
+            stroke: new Stroke({ color: palette.planned, width: 2 }),
+          }),
+          zIndex: 1,
+        }),
         removedPoint: new Style({
           image: new RegularShape({
             points: 4,
@@ -908,6 +923,8 @@ export class MapComponent {
         return this.plannedStyleCache.removedLine;
       case 'removed-site':
         return this.plannedStyleCache.removedPoint;
+      case 'service-point':
+        return this.plannedStyleCache.servicePoint;
       default:
         return this.plannedStyleCache.line;
     }
@@ -932,6 +949,12 @@ export class MapComponent {
         f.setId(s.id);
         f.set('planned', 'site');
         f.set('code', s.code);
+        return f;
+      }),
+      ...(planned.servicePoints ?? []).map((p) => {
+        const f = new Feature<Geometry>(new OlPoint([p.x, p.y]));
+        f.set('planned', 'service-point');
+        f.set('code', `${p.code} (planerad anslutningspunkt)`);
         return f;
       }),
       // Removed in the plan (#172), or replaced by a split (#168): struck out.

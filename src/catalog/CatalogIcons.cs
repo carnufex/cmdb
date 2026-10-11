@@ -10,7 +10,7 @@ public static class CatalogIcons
     {
         "network", "area", "site", "hub", "aggregation", "cabinet", "tower", "splice", "manhole", "building", "room", "rack", "position",
         "equipment", "switch", "router", "card", "radio", "antenna", "transmission", "odf", "patch", "power", "port", "cable", "conductor",
-        "route-segment", "duct", "circuit", "service", "plan", "action",
+        "route-segment", "duct", "circuit", "service", "service-point", "plan", "action",
     };
 
     /// <summary>A site type's icon: its own, or its most prominent role's.</summary>

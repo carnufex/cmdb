@@ -44,6 +44,7 @@ export const icons = {
     'M4 12l2-2 M7.5 8.5l2-2 M11 5l1-1 M2.5 12a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0Z M10.5 4a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0Z',
   duct: 'M8 2a6 6 0 1 0 0 12a6 6 0 1 0 0-12Z M6 5.5a1.5 1.5 0 1 0 0 3a1.5 1.5 0 1 0 0-3Z M10 8a1.5 1.5 0 1 0 0 3a1.5 1.5 0 1 0 0-3Z',
   circuit: 'M1.5 8h3l1.5-3.5 2.5 7 1.5-3.5h4.5',
+  'service-point': 'M2 7.5 8 2.5l6 5 M3.5 6.5v7h9v-7 M6.5 13.5v-4h3v4',
   service: 'M8 1.5l1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.3l-3.8 2 .7-4.3-3.1-3 4.3-.6Z',
   plan: 'M4 2.5h8v12H4Z M6 1.5h4v2H6Z M6 7h4 M6 9.5h4 M6 12h2',
   // What the palette can do
@@ -67,6 +68,7 @@ export const objectIcons: Record<string, IconName> = {
   duct: 'duct',
   circuit: 'circuit',
   service: 'service',
+  'service-point': 'service-point',
   plan: 'plan',
   trace: 'circuit',
 };

@@ -191,7 +191,7 @@ public sealed class PlanImport(RequestDb db, GraphHolder holder, PlanViews views
     }
 
     /// <summary>Operations appended to the plan in order; their ids in the same order.</summary>
-    private static async Task<long[]> InsertAsync(NpgsqlConnection conn, NpgsqlTransaction tx, long plan, string actor,
+    internal static async Task<long[]> InsertAsync(NpgsqlConnection conn, NpgsqlTransaction tx, long plan, string actor,
         List<(string Kind, string Payload)> ops, CancellationToken ct)
     {
         if (ops.Count == 0)

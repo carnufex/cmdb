@@ -29,14 +29,14 @@ public sealed class ObjectTools(RequestDb db, GraphHolder holder, Graph.GraphAtT
 
     /// <summary>The calling agent's scopes (#22).</summary>
     private UserScope Scope => http.HttpContext!.Scope();
-    private static readonly string[] Types = ["site", "equipment", "cable", "service", "circuit", "route-segment"];
+    private static readonly string[] Types = ["site", "equipment", "cable", "service", "circuit", "route-segment", "service-point"];
 
     [McpServerTool(Name = "get_object", Title = "Hämta objekt", ReadOnly = true, Idempotent = true, OpenWorld = false)]
     [Description("Everything the UI shows for one object: a site with locations, equipment and cables; equipment with ports and " +
         "connections; a cable with conductors; a service with its circuits; a circuit with its hops; a route segment (conduit) with its " +
-        "ducts, their tubes and the cables in them.")]
+        "ducts, their tubes and the cables in them; a service point (address or customer, #292) with its type, units, status and the site that serves it.")]
     public async Task<AgentObject> GetObject(
-        [Description("A reference \"type:id\" (site, equipment, cable, service, circuit, route-segment), e.g. \"site:1268\", or an exact code such as \"RAD-000007\".")] string reference,
+        [Description("A reference \"type:id\" (site, equipment, cable, service, circuit, route-segment, service-point), e.g. \"site:1268\", or an exact code such as \"RAD-000007\".")] string reference,
         CancellationToken ct = default)
     {
         var (type, id) = await ResolveAsync(reference, ct);
@@ -50,6 +50,7 @@ public sealed class ObjectTools(RequestDb db, GraphHolder holder, Graph.GraphAtT
                 : null,
             "service" => await GetServiceEndpoint.LoadAsync(db, id, Scope, ct),
             "route-segment" => await Conduit.RouteSegmentEndpoint.LoadAsync(db, id, Scope, ct),
+            "service-point" => await ServicePoints.ServicePointQueries.LoadAsync(db, id, Scope, ct),
             _ => await GetCircuitEndpoint.LoadAsync(db, id, Scope, ct),
         };
         return detail is null

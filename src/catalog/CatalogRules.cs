@@ -267,6 +267,26 @@ internal static partial class CatalogRules
         }
     }
 
+    /// <summary>Service point types (#292): unique keys with names, and at least one home or premises each.</summary>
+    public static void CheckServicePointTypes(List<ServicePointType> types, List<string> errors)
+    {
+        foreach (var t in types)
+        {
+            if (string.IsNullOrWhiteSpace(t.Key) || string.IsNullOrWhiteSpace(t.Name))
+            {
+                errors.Add("service-point-types.json: every type has a key and a name");
+            }
+            if (t.Units < 1)
+            {
+                errors.Add($"service-point-types.json: '{t.Key}' has at least one unit");
+            }
+        }
+        foreach (var key in types.GroupBy(t => t.Key).Where(g => g.Count() > 1).Select(g => g.Key))
+        {
+            errors.Add($"service-point-types.json: '{key}' appears more than once");
+        }
+    }
+
     /// <summary>Prices (#291): never negative, and costs.json names a currency and only constructions route segments have.</summary>
     public static void CheckCosts(List<EquipmentType> types, List<CableType> cableTypes, List<DuctType> ductTypes, CatalogCosts costs, List<string> errors)
     {

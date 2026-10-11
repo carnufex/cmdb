@@ -23,3 +23,11 @@ public sealed class GetCatalogKindsEndpoint(TypeCatalog catalog) : EndpointWitho
             [.. catalog.CableTypes.Select(t => new KindField(t.Key, t.Name, [], QueryFieldsEndpoint.Fields(t.Attributes)))],
             QueryFieldsEndpoint.ServiceTypeFields(catalog)), ct);
 }
+
+/// <summary>The catalog's service point types (#292): key, name and the units a point of the type has unless it says otherwise.</summary>
+public sealed class GetServicePointTypesEndpoint(TypeCatalog catalog) : EndpointWithoutRequest<IReadOnlyList<ServicePointType>>
+{
+    public override void Configure() => Get("/catalog/service-point-types");
+
+    public override Task HandleAsync(CancellationToken ct) => Send.OkAsync(catalog.ServicePointTypes, ct);
+}

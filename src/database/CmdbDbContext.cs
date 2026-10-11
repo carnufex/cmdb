@@ -59,6 +59,7 @@ public sealed class CmdbDbContext(DbContextOptions<CmdbDbContext> options) : DbC
     public DbSet<DuctSegment> DuctSegments => Set<DuctSegment>();
     public DbSet<Subduct> Subducts => Set<Subduct>();
     public DbSet<CablePath> CablePaths => Set<CablePath>();
+    public DbSet<ServicePoint> ServicePoints => Set<ServicePoint>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

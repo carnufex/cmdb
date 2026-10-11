@@ -59,17 +59,27 @@ interface Termination {
 
 type Tab = 'template' | 'site' | 'equipment' | 'cable' | 'import';
 
-/** POST /api/plans/{id}/import (#170) */
+/** POST /api/plans/{id}/import (#170), or service points from /api/plans/{id}/service-points/import (#292) */
 export interface ImportResult {
   dryRun: boolean;
-  sites: number;
-  equipment: number;
-  cables: number;
-  connections: number;
+  sites?: number;
+  equipment?: number;
+  cables?: number;
+  connections?: number;
+  servicePoints?: number;
+  units?: number;
   skipped: number;
   errors: { row: number; message: string }[];
-  problems: number;
+  problems?: number;
   elapsedMs: number;
+}
+
+/** What an import adds, in words. */
+export function importText(r: ImportResult): string {
+  const verb = r.dryRun ? 'Skulle lägga till' : 'Lade till';
+  return r.servicePoints !== undefined
+    ? `${verb} ${r.servicePoints} anslutningspunkter med ${r.units ?? 0} enheter`
+    : `${verb} ${r.sites ?? 0} siter, ${r.equipment ?? 0} utrustningar, ${r.connections ?? 0} kopplingar och ${r.cables ?? 0} kablar`;
 }
 
 /**
@@ -303,13 +313,44 @@ export interface ImportResult {
     }
     @if (tab() === 'import') {
       <form class="import" (submit)="$event.preventDefault()">
-        <p class="muted">
-          CSV med kolumnerna <span class="mono">kind, code, name, template</span> eller
-          <span class="mono">siteType</span>, <span class="mono">x, y</span> (SWEREF 99 TM) eller
-          <span class="mono">lat, lon</span>, och för kablar
-          <span class="mono">a, b, cableType</span>. GeoJSON: punkter blir siter och linjer kablar
-          med sin sträckning. Allt kontrolleras först; finns ett fel läggs inget till.
-        </p>
+        <fieldset class="import-kind">
+          <legend>Importera</legend>
+          <label>
+            <input
+              type="radio"
+              name="importKind"
+              [checked]="importKind() === 'network'"
+              (change)="setImportKind('network')"
+            />
+            Siter och kablar
+          </label>
+          <label>
+            <input
+              type="radio"
+              name="importKind"
+              [checked]="importKind() === 'service-points'"
+              (change)="setImportKind('service-points')"
+            />
+            Anslutningspunkter
+          </label>
+        </fieldset>
+        @if (importKind() === 'service-points') {
+          <p class="muted">
+            CSV med kolumnerna <span class="mono">code, type</span> ({{ servicePointTypes() }}),
+            <span class="mono">x, y</span> (SWEREF 99 TM) eller <span class="mono">lat, lon</span>,
+            och valfritt <span class="mono">address, name, units, status, externalId</span>.
+            GeoJSON: punkter med samma egenskaper. Allt kontrolleras först; finns ett fel läggs
+            inget till.
+          </p>
+        } @else {
+          <p class="muted">
+            CSV med kolumnerna <span class="mono">kind, code, name, template</span> eller
+            <span class="mono">siteType</span>, <span class="mono">x, y</span> (SWEREF 99 TM) eller
+            <span class="mono">lat, lon</span>, och för kablar
+            <span class="mono">a, b, cableType</span>. GeoJSON: punkter blir siter och linjer kablar
+            med sin sträckning. Allt kontrolleras först; finns ett fel läggs inget till.
+          </p>
+        }
         <label
           >Fil
           <input type="file" accept=".csv,.txt,.geojson,.json" (change)="readFile($event)" />
@@ -344,9 +385,7 @@ export interface ImportResult {
         @if (importResult(); as r) {
           <div class="result" role="status">
             <p>
-              {{ r.dryRun ? 'Skulle lägga till' : 'Lade till' }} {{ r.sites }} siter,
-              {{ r.equipment }} utrustningar, {{ r.connections }} kopplingar och
-              {{ r.cables }} kablar
+              {{ describeImport(r) }}
               @if (r.skipped) {
                 · {{ r.skipped }} fanns redan i planen
               }
@@ -845,6 +884,26 @@ export class PlanCreateComponent implements OnDestroy {
   // Bulk import into the plan (#170): checked first, then all or nothing.
   protected readonly importText = signal('');
   protected readonly importResult = signal<ImportResult | null>(null);
+  /** Sites and cables (#170), or service points (#292). */
+  protected readonly importKind = signal<'network' | 'service-points'>('network');
+  protected readonly describeImport = importText;
+  private readonly servicePointTypeList = httpResource<{ key: string; name: string }[]>(() =>
+    this.importKind() === 'service-points' ? '/api/catalog/service-point-types' : undefined,
+  );
+  protected readonly servicePointTypes = computed(() =>
+    this.servicePointTypeList.hasValue()
+      ? this.servicePointTypeList
+          .value()
+          .map((t) => t.key)
+          .join(', ')
+      : '',
+  );
+
+  protected setImportKind(kind: 'network' | 'service-points'): void {
+    this.importKind.set(kind);
+    this.importResult.set(null);
+    this.importChecked = '';
+  }
   private importChecked = '';
 
   /** A clean check of exactly this text, so importing it does what the check said. */
@@ -868,11 +927,16 @@ export class PlanCreateComponent implements OnDestroy {
     const format = content.trimStart().startsWith('{') ? 'geojson' : 'csv';
     await this.run(async () => {
       const result = await firstValueFrom(
-        this.http.post<ImportResult>(`/api/plans/${this.active.id()}/import`, {
-          format,
-          content,
-          dryRun,
-        }),
+        this.http.post<ImportResult>(
+          this.importKind() === 'service-points'
+            ? `/api/plans/${this.active.id()}/service-points/import`
+            : `/api/plans/${this.active.id()}/import`,
+          {
+            format,
+            content,
+            dryRun,
+          },
+        ),
       );
       this.importResult.set(result);
       this.importChecked = dryRun ? content : '';

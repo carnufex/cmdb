@@ -126,6 +126,15 @@ public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views
             }
             payload = link;
         }
+        else if (ServicePoints.ServicePointPlans.Kinds.Contains(req.Kind))
+        {
+            var (point, error) = await ServicePoints.ServicePointPlans.CheckAsync(db, scope, view, req, ct);
+            if (point is null)
+            {
+                return PlanWrite.Fail<PlanOperationView>(PlanWriteFailure.Invalid, error!);
+            }
+            payload = point;
+        }
         else if (req.Kind == "set_rack_place")
         {
             var (place, error) = await RackPlaceAsync(scope, view, req, ct);

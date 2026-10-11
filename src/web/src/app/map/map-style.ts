@@ -1,5 +1,5 @@
 import { FeatureLike } from 'ol/Feature';
-import { Circle, Fill, Stroke, Style } from 'ol/style';
+import { Circle, Fill, RegularShape, Stroke, Style } from 'ol/style';
 import { SiteRole } from '../shell/catalog-kinds';
 
 /** Colours read from the design tokens, so the map follows the theme. */
@@ -67,6 +67,36 @@ export function createStyler(
     const palette = getPalette();
     const selected = isSelected(feature);
     const lifecycle = String(feature.get('lifecycle'));
+
+    if (feature.get('layer') === 'service_points') {
+      // Service points (#292): small squares, so they never read as sites; status is the colour, explained in the legend.
+      const status = String(feature.get('status'));
+      const key = `p|${status}|${selected}`;
+      let style = cache.get(key);
+      if (!style) {
+        const color =
+          status === 'connected'
+            ? palette.inService
+            : status === 'ordered'
+              ? palette.construction
+              : palette.planned;
+        style = new Style({
+          image: new RegularShape({
+            points: 4,
+            radius: selected ? 6 : 3.5,
+            angle: Math.PI / 4,
+            fill: new Fill({ color }),
+            stroke: new Stroke({
+              color: selected ? palette.focus : palette.bg,
+              width: selected ? 2 : 1,
+            }),
+          }),
+          zIndex: selected ? 100 : 0,
+        });
+        cache.set(key, style);
+      }
+      return style;
+    }
 
     if (feature.get('layer') === 'sites') {
       const kind = String(feature.get('kind'));

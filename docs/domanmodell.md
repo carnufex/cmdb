@@ -264,6 +264,17 @@ Kablar ligger i subdukter i dukter, som ligger i trasé mellan siter. Kanalisati
 
 `GET /api/fibre/{cables|route-segments|sites}/{id}` och `POST /api/fibre/selection` ger en fiberritning: kablarna (en trasésträckas kablar ur kanalisationen, en sites kablar, ett urvals kablar och kablarna mellan dess siter, högst 60) med varje ledares nummer, färg (`conductor.color`, enligt kabeltypens `colorCode`), användning (tänd när en krets går på den, annars den angivna: mörk, uthyrd eller reserv) och reservation, vad dess ändar är kopplade till och vilka kretsar som går på den. Kopplingar, kretsar och tjänster kommer ur grafen, så `?plan=` ger planens vy. Med `x` och `y` (en kabel) räknas avståndet längs kabelns geometri till dess ändar (`ST_LineLocatePoint`). Tjänsternas kritikalitet är deras klassning i schemat `criticality`. Allt inom omfånget: dolda terminaler blir platshållare, dolda kablar och tjänster räknas. Budget: 200 ms för en trasésträcka.
 
+## Anslutningspunkter (ADR-0021, #292)
+
+En **anslutningspunkt** (`service_point`) är en adress eller kund som nätet ska nå: en villa, ett radhus, ett flerbostadshus, ett företag eller en mast. Den är ingen site: den har ingen utrustning, inga platser och ligger inte i grafen. Fibrer dimensioneras och noder placeras efter den.
+
+- **Fält:** kod, valfritt namn och adress, typ ur katalogen, antal **enheter** (bostäder eller lokaler bakom punkten; ett flerbostadshus har en per lägenhet), **status** (*planerad*, *beställd*, *ansluten*), en punkt i EPSG:3006, källsystem och externt id, och den site och port som betjänar den när den är ansluten.
+- **Typer** ligger i katalogens `service-point-types.json` med nyckel, namn och antal enheter som en punkt av typen har om inget annat anges (`unitsVary` för typer där varje punkt anger sitt eget, som flerbostadshus). En extern katalog kan ha egna typer.
+- **I planer:** `create_service_point` och `update_service_point` (flytta, ändra status, koppla till en site och valfritt en port på den, eller koppla bort). En ansluten punkt pekar alltid ut sin site. Planerade punkter ritas som fyrkanter i planens kartlager och skrivs när planen förs in. Importen (`POST /api/plans/{id}/service-points/import`, CSV eller GeoJSON) lägger in tusentals på en gång, alla eller ingen, och hoppar över koder som planen redan har.
+- **Omfång:** en punkt syns för den vars omfång har ett område som täcker punkten, eller ett omfång utan område.
+- **Läsning:** `GET /api/service-points/{id}`, `GET /api/service-points?bbox=|near=&radius=|site=&status=` (med antal per status och enheter totalt), snabbsök på kod och adress, kartplattornas lager `service_points` från zoomnivå 9, och MCP `find_service_points` och `get_object` med `service-point:<id>`.
+- Skrivningar får operationer i operationsloggen (#23). Anslutningspunkter versioneras inte i historiken i det här steget.
+
 ## Livscykel
 
 ```
