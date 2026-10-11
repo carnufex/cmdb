@@ -46,6 +46,20 @@ export interface PlanOperation {
   conflicts: string[];
   /** Someone else's reservation stops the plan from being applied. */
   blocked: boolean;
+  /** A cable drawn in the map (#259): its ends and the steps as drawn, so it can be drawn again. */
+  route?: { aSiteId: number; bSiteId: number; steps: CableRouteStep[] } | null;
+}
+
+/** One step when drawing a cable (#259): a route segment to follow, a site to go to, or a free break point. */
+export interface CableRouteStep {
+  kind: 'segment' | 'site' | 'point';
+  id?: number;
+  x?: number;
+  y?: number;
+  /** A new stretch to this step: trench or aerial. */
+  construction?: 'trench' | 'aerial';
+  /** A segment whose tubes are full: dig a new trench beside it instead. */
+  beside?: boolean;
 }
 
 /** GET /api/plans/{id} */
@@ -111,7 +125,13 @@ export type NewOperation =
       room?: string;
       position?: number;
     }
-  | { kind: 'create_cable'; aSiteId: number; bSiteId: number; typeKey: string }
+  | {
+      kind: 'create_cable';
+      aSiteId: number;
+      bSiteId: number;
+      typeKey: string;
+      route?: CableRouteStep[];
+    }
   | { kind: 'split_cable'; cableId: number; siteId: number; terminate: number[] }
   | { kind: 'remove'; type: 'site' | 'equipment' | 'cable'; objectId: number }
   | {

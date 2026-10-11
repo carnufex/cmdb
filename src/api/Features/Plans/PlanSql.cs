@@ -221,8 +221,10 @@ internal static class PlanSql
             if (op.Kind.StartsWith("create_", StringComparison.Ordinal))
             {
                 var (created, what) = planned.Describe(op);
+                var drawn = op.Kind == "create_cable" && op.Payload.TryGetProperty("steps", out var steps)
+                    ? new DrawnRoute(op.Payload.GetProperty("a").GetInt64(), op.Payload.GetProperty("b").GetInt64(), steps.Clone()) : null;
                 list.Add(new PlanOperationView(op.Id, op.PlanId, op.Seq, op.Kind, created, [], what, null, null, what.Name, problem,
-                    op.CreatedBy, op.CreatedAt, [], false));
+                    op.CreatedBy, op.CreatedAt, [], false, drawn));
                 continue;
             }
             var found = objects.TryGetValue((op.ObjectType!, op.ObjectId), out var o) || (op.ObjectId < 0 && planned.Objects.ContainsKey((op.ObjectType!, op.ObjectId)));

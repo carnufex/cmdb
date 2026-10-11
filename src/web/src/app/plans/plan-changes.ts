@@ -10,6 +10,7 @@ import {
   signal,
 } from '@angular/core';
 import { MapView } from '../map/map-view';
+import { CableDrawing } from './cable-drawing';
 import { ObjectLinkComponent } from '../objects/object-link';
 import { PanelStack } from '../shell/panels';
 import { StatusComponent } from '../shell/status';
@@ -130,7 +131,17 @@ const stateLifecycle = {
               <cmdb-status [value]="lifecycle[state(op)]" [text]="stateLabels[state(op)]" />
             </td>
             @if (editable()) {
-              <td>
+              <td class="row-actions">
+                @if (op.route) {
+                  <button
+                    type="button"
+                    class="redraw"
+                    [attr.aria-label]="'Rita om: ' + op.summary"
+                    (click)="$event.stopPropagation(); redraw(op)"
+                  >
+                    Rita om
+                  </button>
+                }
                 <button
                   type="button"
                   class="remove"
@@ -266,6 +277,17 @@ const stateLifecycle = {
       font-size: var(--text-sm);
       color: var(--text-muted);
     }
+    .row-actions {
+      white-space: nowrap;
+    }
+    .redraw {
+      border: 0;
+      background: none;
+      color: var(--link);
+      text-decoration: underline;
+      cursor: pointer;
+      font: inherit;
+    }
     .remove {
       border: 0;
       background: none;
@@ -288,6 +310,7 @@ const stateLifecycle = {
 export class PlanChangesComponent {
   private readonly panels = inject(PanelStack);
   private readonly mapView = inject(MapView);
+  private readonly cableDrawing = inject(CableDrawing);
 
   readonly changes = input.required<readonly PlanOperation[]>();
   /** Where the plan's sites are, to mark a row's sites in the map. */
@@ -322,6 +345,14 @@ export class PlanChangesComponent {
     computation: () => this.page,
   });
   protected readonly shown = computed(() => this.rows().slice(0, this.limit()));
+
+  /** A cable drawn in the map, drawn again (#259): its steps back in the map, saved onto the same operation. */
+  protected redraw(op: PlanOperation): void {
+    const r = op.route;
+    if (r) {
+      this.cableDrawing.start(r.aSiteId, `Rita om ${op.target?.code ?? 'kabeln'}`, r.steps, op.id);
+    }
+  }
 
   /** Opens the row's object and marks its sites in the map, which shows beside the table at half the screen. */
   protected select(op: PlanOperation): void {

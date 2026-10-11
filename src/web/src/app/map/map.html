@@ -1,6 +1,7 @@
 <div #target class="map" aria-label="Karta över nätet"></div>
 <cmdb-selection-bar />
 <cmdb-context-menu />
+<cmdb-cable-drawing-bar />
 
 @if (measured(); as m) {
   <div class="hover measure" role="status" [style.left.px]="m.x + 14" [style.top.px]="m.y + 14">

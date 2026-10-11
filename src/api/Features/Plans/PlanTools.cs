@@ -133,6 +133,11 @@ public sealed class AgentPlanOperation
     [Description("create_location of a rack, set_rack_place: which way its front faces along the row, front or back.")]
     public string? Facing { get; set; }
 
+    [Description("create_cable: the way it is drawn from aSite (#259), in order: {kind: segment, id} follows a route segment in an empty " +
+        "tube, {kind: site, id} goes to a site (along a segment when one joins them), {kind: point, x, y} is a break point in EPSG:3006; " +
+        "construction trench or aerial for a new stretch, beside true for a new trench beside a full segment. The last step is bSite.")]
+    public CableRouteStep[]? Route { get; set; }
+
     [Description("create_service: the service type (describe_catalog); code and name as for a site.")]
     public string? ServiceType { get; set; }
 
@@ -250,6 +255,7 @@ public sealed class PlanTools(RequestDb db, PlanWrites writes, PlanViews views, 
                 RoomRow = op.RoomRow,
                 RoomSlot = op.RoomSlot,
                 Facing = op.Facing,
+                Route = op.Route,
                 ServiceType = op.ServiceType,
                 Layer = op.Layer,
                 Hops = op.Hops,

@@ -18,9 +18,13 @@ public sealed record PlanSummary(long Id, string Name, string Description, strin
 /// <summary>An operation in words, with the objects it touches and, when it no longer fits, why.</summary>
 /// <param name="Conflicts">Claims on the same resources by others (#25): a reservation (blocking) or another plan.</param>
 /// <param name="Blocked">A reservation by someone else stops the plan from being applied.</param>
+/// <param name="Route">A cable drawn in the map (#259): its A site and the steps as drawn, so it can be drawn again.</param>
 public sealed record PlanOperationView(long Id, long PlanId, int Seq, string Kind, string Summary, IReadOnlyList<TraceHop> Terminals,
     ObjectRef? Target, string? ConnectionKind, string? Lifecycle, string? Name, string? Problem, string CreatedBy, DateTimeOffset CreatedAt,
-    IReadOnlyList<string> Conflicts, bool Blocked);
+    IReadOnlyList<string> Conflicts, bool Blocked, DrawnRoute? Route = null);
+
+/// <summary>A drawn cable's start and steps (#259).</summary>
+public sealed record DrawnRoute(long ASiteId, long BSiteId, System.Text.Json.JsonElement Steps);
 
 public sealed record PlanDetail(PlanSummary Plan, IReadOnlyList<PlanSummary> Dependencies, IReadOnlyList<PlanOperationView> Operations);
 
@@ -119,6 +123,9 @@ public sealed class AddOperationRequest
     /// <summary>create_cable: the sites at the two ends, existing or planned.</summary>
     public long? ASiteId { get; set; }
     public long? BSiteId { get; set; }
+
+    /// <summary>create_cable: the way it was drawn from the A site (#259), along route segments and new stretches.</summary>
+    public CableRouteStep[]? Route { get; set; }
 
     /// <summary>set_classification (#176): the schema (e.g. criticality) and the level; a null level clears it.</summary>
     public string? Schema { get; set; }
@@ -286,6 +293,8 @@ public sealed class AddOperationValidator : Validator<AddOperationRequest>
         {
             RuleFor(r => r.ASiteId).NotNull().NotEqual(0);
             RuleFor(r => r.BSiteId).NotNull().NotEqual(0).NotEqual(r => r.ASiteId).WithMessage("A cable joins two different sites.");
+            RuleFor(r => r.Route).Must(r => r is null || r.Length is > 0 and <= CableRoutes.MaxSteps)
+                .WithMessage($"route is 1–{CableRoutes.MaxSteps} steps.");
             RuleFor(r => r.TypeKey).Must(k => Planned.ConductorCount(k ?? "") > 0).WithMessage("typeKey is a cable type in the catalog.");
         });
         When(r => r.Kind == "create_location", () =>

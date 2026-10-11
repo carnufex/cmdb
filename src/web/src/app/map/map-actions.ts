@@ -6,6 +6,7 @@ import { Selection } from '../grid/selection';
 import { fibreTarget } from '../objects/fibre-model';
 import { SiteDetail } from '../objects/models';
 import { ActivePlan } from '../plans/active-plan';
+import { CableDrawing } from '../plans/cable-drawing';
 import { PlanDraft } from '../plans/plan-draft';
 import { Command, CommandContext, CommandRegistry } from '../shell/commands';
 import { PanelStack } from '../shell/panels';
@@ -38,6 +39,7 @@ export class MapActions {
   private readonly selection = inject(Selection);
   private readonly mapView = inject(MapView);
   private readonly plan = inject(ActivePlan);
+  private readonly cableDrawing = inject(CableDrawing);
   private readonly commands = inject(CommandRegistry);
 
   readonly empty: MapAction[] = [
@@ -112,8 +114,8 @@ export class MapActions {
       label: 'Ny kabel härifrån',
       changes: true,
       run: (t) => {
-        this.draft.cableFrom.set(t!.code);
-        this.openPlans();
+        // Drawn in the map from the site (#259), along the conduit.
+        this.cableDrawing.start(t!.id, `Ny kabel från ${t!.code}`);
       },
     },
     {
