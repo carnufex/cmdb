@@ -38,7 +38,7 @@ Importen (#210) är en förstagångsladdning. Den körs som systemarbete med dir
   - Uppladdningen begränsas till utbytesformatets filer i ett zip-arkiv.
 - **Kod.** Läsning och kontroll av utbytesformatet flyttas från datageneratorn till ett delat bibliotek (`Cmdb.Exchange`), så att import och avstämning läser filerna på samma sätt.
 - **Behörighet.**
-  - Avstämningen kräver rollen `cmdb-full` som andra planskrivningar.
+  - Avstämningen kräver rollen `cmdb-full` som andra planskrivningar. *Ändrat av [ADR-0022](0022-integrationskonton-med-egen-roll-och-eget-omfang.md): `cmdb-full` eller `cmdb-integration`.*
   - Automatiskt införande kräver dessutom att källan är betrodd för attributet i katalogen. Katalogen ändras bara genom en utrullning.
   - En agent (`createdVia = mcp`) får fortfarande aldrig föra in en plan (#64). Integrationer är konton, inte agenter.
 - **Importen** finns kvar för förstagångsladdning av en tom databas, eller av en källa som ingen annan källa överlappar.
