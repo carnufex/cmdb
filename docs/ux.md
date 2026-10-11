@@ -120,12 +120,16 @@ Snabbsöket (Ctrl+K) hittar objekt på namn och kod. För frågor som *alla radi
 
 ## Planer
 
-- **Planer** i verktygsfältet listar planerna du kan se, med status som prick och text: utkast (planerad), införd (i drift), avbruten (borttagen) och flaggad (konflikt). Där skapas också en ny plan, eventuellt ovanpå andra.
+- **Planer** i verktygsfältet öppnar planernas arbetsyta (#252), som standard på halva skärmen bredvid kartan (#251). Längst ned listas planerna du kan se, med status som prick och text: utkast (planerad), införd (i drift), avbruten (borttagen) och flaggad (konflikt). *Ny plan* är en kort rad: ett namn och *Skapa och visa*. Beskrivning och planer den bygger på ligger under en utfällning. Finns inga planer förklarar listan vad en plan är, med *Ny plan* som primär knapp.
 - **Att välja en plan växlar hela appen till planens vy:** produktion, plus planerna den bygger på, plus planen. Planen står i adressen (`?plan=`), så en länk öppnar samma vy. En violett etikett i verktygsfältet visar vilken plan som gäller, och × går tillbaka till produktion.
-- **I planvyn:**
-  - Spårning och påverkan räknas i planen.
-  - Siterna planen rör markeras i kartan.
-  - Planpanelen visar ändringarna, grupperade per plan i den ordning de gäller. En ändring som inte längre passar produktion visas med skälet.
+- **Arbetsytan för en plan (#252)** svarar på vad planen gör, var, vad som påverkas, vad som hindrar den och vad nästa steg är:
+  - **Översikt:** namn, status, vem som skapade den (och om en agent föreslog den), vilka planer den bygger på och antal ändringar per slag: ny, ändrad, borttagen, flyttad och kopplad. Ett klick på ett slag filtrerar tabellen. Det finns alltid ett tydligt nästa steg som primär knapp: *Lös konflikter*, *Lägg till ändringar*, *För in i produktion* eller, för en införd plan, *Visa produktion*.
+  - **Att åtgärda** står först när planen är flaggad eller när ändringar inte längre passar produktionen eller krockar med andras anspråk. Därefter kommer klassning och krav (#179) med förslag på åtgärder.
+  - **Ändringar** är en tabell med filter per slag och *Att åtgärda*, sökning och sortering (att åtgärda först, i ordning, efter slag, efter objekt). En rad visar slag, objektet med ikon, ändringen med skälet om den inte passar, och status med prick och text. Klick öppnar objektet och markerar dess siter i kartan bredvid. Tabellen visar 50 rader åt gången (*Visa fler*), så att växlingen till planen håller budgeten. Ändringar från planer den bygger på ligger utfällbara under tabellen.
+  - **Påverkan:** kretsarna genom det planen kopplar, kopplar ifrån, tar bort, flyttar, kapar eller ändrar livscykel på, kretsarna som åker på dem och kretsarna vars väg eller länkar planen ändrar. För varje krets visas om vägen är *hel*, *bruten* eller *finns inte* före och efter planen, plus antalet tjänster. Tjänster som ändras visas med *hel*, *försvagad* (några av dess kretsar bryts) eller *bruten*. *Före* och *efter* spårar kretsen i produktion respektive i planen. Spårningen i produktion heter *Spårning … i produktion*.
+  - **Reservationer** listar planens reservationer med *Släpp*.
+  - **Lägg till** (bara för utkast) har formulären för nytt i planen och vägförslag. Ett förifyllt utkast, till exempel från rackvyn eller kartans högerklick, öppnar den fliken.
+- **I planvyn** räknas spårning och påverkan i planen, och siterna planen rör markeras i kartan.
 - **Ändringar görs där objekten finns.** Välj en port i utrustningspanelen:
   - *Koppla bort i planen* bryter en koppling som finns i planens vy.
   - *Koppla i planen…* väljer första änden. Välj sedan en port på valfri utrustning och *Koppla … hit*.

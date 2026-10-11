@@ -1,6 +1,11 @@
 import {
   byPlan,
+  changeCategory,
+  changeCounts,
+  changeRows,
+  changeState,
   dependencyChoices,
+  nextStep,
   diffPoints,
   PlanOperation,
   PlanSummary,
@@ -100,5 +105,62 @@ describe('plan model', () => {
     expect(search).not.toHaveBeenCalled();
     expect(await resolveSite(' skp-000001 ', planned, search)).toBe(12);
     expect(await resolveSite('SKP-0', planned, search)).toBeNull();
+  });
+});
+
+describe('the plan workspace (#252)', () => {
+  const change = (id: number, kind: string, extra: Partial<PlanOperation> = {}): PlanOperation => ({
+    ...op(id, 1),
+    kind,
+    summary: `${kind} ${id}`,
+    ...extra,
+  });
+
+  it('sorts every kind of operation into new, changed, removed, moved or connected', () => {
+    expect(
+      ['create_site', 'create_circuit', 'rename', 'set_attributes', 'remove', 'move'].map(
+        changeCategory,
+      ),
+    ).toEqual(['new', 'new', 'changed', 'changed', 'removed', 'moved']);
+    expect(['connect', 'disconnect', 'split_cable', 'link_service'].map(changeCategory)).toEqual([
+      'connected',
+      'connected',
+      'connected',
+      'connected',
+    ]);
+  });
+
+  it('puts what needs attention first, and filters by kind, attention and text', () => {
+    const ops = [
+      change(1, 'rename', { target: { type: 'site', id: 4, code: 'AGG-0004' } }),
+      change(2, 'connect', { conflicts: ['Reserverad av Etapp 3.'] }),
+      change(3, 'create_site'),
+      change(4, 'disconnect', { problem: 'Terminalerna är inte kopplade.' }),
+    ];
+    const ids = (q: Parameters<typeof changeRows>[1]) => changeRows(ops, q).map((o) => o.id);
+    expect(ids({ filter: null, text: '', sort: 'attention' })).toEqual([4, 2, 1, 3]);
+    expect(ids({ filter: null, text: '', sort: 'seq' })).toEqual([1, 2, 3, 4]);
+    expect(ids({ filter: 'connected', text: '', sort: 'seq' })).toEqual([2, 4]);
+    expect(ids({ filter: 'attention', text: '', sort: 'seq' })).toEqual([2, 4]);
+    expect(ids({ filter: null, text: 'agg-0004', sort: 'seq' })).toEqual([1]);
+    expect(changeState(ops[3])).toBe('problem');
+    expect(changeCounts(ops)).toEqual({
+      new: 1,
+      changed: 1,
+      removed: 0,
+      moved: 0,
+      connected: 2,
+      attention: 2,
+    });
+  });
+
+  it('names one next step: resolve, add, apply, or back to production', () => {
+    expect(nextStep({ ...plan(1), operations: 3 }, 1)).toBe('resolve');
+    expect(nextStep({ ...plan(1, 'draft', 'Beroendet avbröts.'), operations: 3 }, 0)).toBe(
+      'resolve',
+    );
+    expect(nextStep({ ...plan(1), operations: 0 }, 0)).toBe('add');
+    expect(nextStep({ ...plan(1), operations: 3 }, 0)).toBe('apply');
+    expect(nextStep({ ...plan(1, 'applied'), operations: 3 }, 0)).toBe('production');
   });
 });

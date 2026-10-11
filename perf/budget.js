@@ -24,6 +24,7 @@ export const ROWS = [
   { key: 'tiles', label: 'Kartplatta per omfång', budget: 100 },
   { key: 'conduit', label: 'Kanalisationsplatta per omfång', budget: 100 },
   { key: 'plan', label: 'Växla vy mellan produktion och plan', budget: 100 },
+  { key: 'planImpact', label: 'Påverkan av en plan', budget: 200 },
 ];
 const MEASURED = ROWS.filter((r) => !r.pending);
 
@@ -130,6 +131,7 @@ export default function (data) {
     tiles: () => `/api/tiles/${randomTile()}`,
     conduit: () => `/api/tiles/conduit/${randomTile()}`,
     plan: () => `/api/plans/${pick(data.plans, n).id}/view`,
+    planImpact: () => `/api/plans/${pick(data.plans, n).id}/impact`,
   }[row.key]();
 
   const res = get(path, row.key);

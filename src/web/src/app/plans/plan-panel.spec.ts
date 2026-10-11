@@ -227,6 +227,10 @@ describe('PlanPanelComponent', () => {
     await settle(fixture);
     const root = fixture.nativeElement as HTMLElement;
 
+    // A new plan is a short row, opened from the list; what it builds on is under "more".
+    expect(root.querySelector('form')).toBeNull();
+    [...root.querySelectorAll('button')].find((b) => b.textContent!.trim() === 'Ny plan')!.click();
+    await settle(fixture);
     // Cancelled plans are not offered to build on.
     expect(root.querySelectorAll('fieldset input[type=checkbox]').length).toBe(1);
     (root.querySelector('fieldset input[type=checkbox]') as HTMLInputElement).click();
@@ -244,5 +248,74 @@ describe('PlanPanelComponent', () => {
 
     expect(TestBed.inject(ActivePlan).id()).toBe(8);
     expect(TestBed.inject(Router).url).toBe('/?plan=8');
+  });
+
+  it('opens on an overview with the next step, and resolving shows what needs attention (#252)', async () => {
+    const fixture = await open('/?plan=7');
+    const plan = summary(7, 'Etapp 2', { operations: 2 });
+    flushActive(plan, summary(5, 'Etapp 1'), [
+      operation(11, 7, 'Koppla C till D (patch)', 'Terminalerna är redan kopplade.'),
+      { ...operation(12, 7, 'Ny site AGG-NY'), kind: 'create_site' },
+    ]);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('.counts')!.textContent).toContain('1 ny');
+    expect(root.querySelector('.counts')!.textContent).toContain('1 kopplad');
+    const resolve = [...root.querySelectorAll('.overview button.primary')].find((b) =>
+      b.textContent!.includes('Lös konflikter'),
+    ) as HTMLButtonElement;
+    resolve.click();
+    await settle(fixture);
+    const rows = root.querySelector('cmdb-plan-changes')!.querySelectorAll('tbody tr');
+    expect(rows.length).toBe(1);
+    expect(rows[0].textContent).toContain('Terminalerna är redan kopplade.');
+  });
+
+  it('shows the circuits and services the plan breaks in its impact tab (#252)', async () => {
+    const fixture = await open('/?plan=7');
+    flushActive(summary(7, 'Etapp 2'), summary(5, 'Etapp 1'), [operation(11, 7, 'Koppla ifrån')]);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    [...root.querySelectorAll('[role=tab]')]
+      .find((t) => t.textContent!.includes('Påverkan'))!
+      .dispatchEvent(new Event('click'));
+    await settle(fixture);
+    http.expectOne('/api/plans/7/impact').flush({
+      circuits: [
+        {
+          circuit: { type: 'circuit', id: 40, code: 'TJ-0040' },
+          layer: 'physical',
+          before: 'intact',
+          after: 'broken',
+          services: 2,
+        },
+      ],
+      services: [
+        { service: { type: 'service', id: 9, code: 'SKP-9' }, before: 'intact', after: 'broken' },
+      ],
+      broken: 1,
+      hiddenCircuits: 0,
+      hiddenServices: 0,
+      truncated: false,
+      elapsedMs: 3.1,
+    });
+    await settle(fixture);
+    expect(root.textContent).toContain('1 kretsar bryts av planen.');
+    expect(root.textContent).toContain('TJ-0040');
+    expect(root.textContent).toContain('Bruten');
+    [...root.querySelectorAll('cmdb-plan-impact button')]
+      .find((b) => b.textContent!.includes('före'))!
+      .dispatchEvent(new Event('click'));
+    await settle(fixture);
+    expect(TestBed.inject(Router).url).toContain('trace:circuit.40.prod');
+  });
+
+  it('explains what a plan is when there are none', async () => {
+    const fixture = await open('/');
+    http.expectOne('/api/plans').flush([]);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('.empty')!.textContent).toContain('En plan samlar ändringar');
+    expect(root.querySelector('.empty button.primary')!.textContent).toContain('Ny plan');
   });
 });
