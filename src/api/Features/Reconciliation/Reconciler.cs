@@ -564,6 +564,9 @@ public sealed partial class Reconciler(RequestDb db, PlanApplication application
                 kind = l.Kind,
                 name = l.Name,
                 rackUnits = l.RackUnits,
+                roomRow = l.RoomRow,
+                roomSlot = l.RoomSlot,
+                facing = l.Facing,
                 source,
                 externalId = l.Id,
             }, OmitNull), Passes.Locations + depth, report));

@@ -51,11 +51,12 @@ internal static class ExchangeExport
                 w.Row(s.Code, s.Code, s.Name, s.SiteType, s.X, s.Y, s.Lifecycle);
             }
         });
-        Csv(folder, ExchangeFormat.Locations, ["id", "site", "parent", "kind", "name", "rackUnits"], w =>
+        Csv(folder, ExchangeFormat.Locations, ["id", "site", "parent", "kind", "name", "rackUnits", "row", "slot", "facing"], w =>
         {
             foreach (var l in net.Locations)
             {
-                w.Row(LocationId(l.Id), sites[l.SiteId].Code, l.ParentId is { } p ? LocationId(p) : null, l.Kind, l.Name, l.RackUnits);
+                w.Row(LocationId(l.Id), sites[l.SiteId].Code, l.ParentId is { } p ? LocationId(p) : null, l.Kind, l.Name, l.RackUnits,
+                    l.RoomRow, l.RoomSlot, l.Facing);
             }
         });
         Csv(folder, ExchangeFormat.Equipment, ["id", "site", "location", "parent", "slot", "name", "type", "lifecycle", "attributes"], w =>

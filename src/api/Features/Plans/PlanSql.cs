@@ -174,7 +174,7 @@ internal static class PlanSql
         var conflicts = (await ClaimsSql.ConflictsAsync(db, [.. operations.Select(o => o.PlanId).Distinct()], ct)).ToLookup(c => c.OperationId);
         var names = await TraceNames.LoadAsync(db, [.. terminals.Where(t => t > 0)], [], [], ct);
         names.AddPlanned(planned.Terminals);
-        var objects = await ObjectsAsync(db, [.. operations.Where(o => o.Kind is "set_lifecycle" or "rename" or "set_attributes" or "remove" or "set_classification" or "move" or "set_conductor_usage").Select(o => (o.ObjectType!, o.ObjectId)).Distinct()],
+        var objects = await ObjectsAsync(db, [.. operations.Where(o => o.Kind is "set_lifecycle" or "rename" or "set_attributes" or "remove" or "set_classification" or "move" or "set_conductor_usage" or "set_rack_place").Select(o => (o.ObjectType!, o.ObjectId)).Distinct()],
             scope, ct);
 
         // Circuits and services that path and link operations name (#230).
@@ -244,6 +244,7 @@ internal static class PlanSql
                 "remove" => $"Ta bort {(op.ObjectType == "cable" ? "kabel" : "utrustning")} {target.Code}",
                 "move" => MoveText(op.Payload),
                 "set_conductor_usage" => UsageText(op.Payload, target.Code),
+                "set_rack_place" => RackPlaceText(op.Payload, target.Code),
                 _ => $"Byt namn på {target.Code} till {name}",
             };
             if (problem is null && !found)
@@ -296,6 +297,14 @@ internal static class PlanSql
             names[(reader.GetString(0), reader.GetInt64(1))] = reader.GetString(2);
         }
         return names;
+    }
+
+    /// <summary>A rack's place in its room (#256), in words: "Placera Rack 2 i rad 1, plats 3, med fronten bakåt".</summary>
+    private static string RackPlaceText(JsonElement p, string rack)
+    {
+        var facing = p.TryGetProperty("facing", out var f) && f.ValueKind == JsonValueKind.String ? f.GetString() : null;
+        var turned = facing switch { "front" => ", med fronten framåt", "back" => ", med fronten bakåt", _ => "" };
+        return $"Placera {rack} i rad {p.GetProperty("roomRow").GetInt32()}, plats {p.GetProperty("roomSlot").GetInt32()}{turned}";
     }
 
     /// <summary>A stated conductor usage (#238), in words: "Sätt ledare 1–4, 7 i kabel K-000123 till svartfiber".</summary>

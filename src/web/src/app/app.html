@@ -197,6 +197,12 @@
           <cmdb-service-view />
         }
       </aside>
+    } @else if (tools.open() === 'room') {
+      <aside class="tool" aria-label="Rumsvy">
+        @defer (on immediate) {
+          <cmdb-room-panel />
+        }
+      </aside>
     } @else if (tools.open() === 'rack') {
       <aside class="tool" aria-label="Rackvy">
         @defer (on immediate) {

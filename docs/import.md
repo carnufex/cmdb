@@ -22,7 +22,7 @@ Objekten hänvisar till varandra med sitt id i källsystemet (`id`-kolumnerna), 
 | Fil | Kolumner |
 |---|---|
 | `sites.csv` | `id`, `code`, `name`, `siteType`, position som `x`/`y` (SWEREF 99 TM) eller `lat`/`lon` (WGS 84), `lifecycle` |
-| `locations.csv` | `id`, `site`, `parent`, `kind` (`building`, `room`, `rack`, `position`), `name`, `rackUnits` |
+| `locations.csv` | `id`, `site`, `parent`, `kind` (`building`, `room`, `rack`, `position`), `name`, `rackUnits`, för ett rack också `row`, `slot` (från 1, tillsammans) och `facing` (`front` eller `back`) (#256) |
 | `equipment.csv` | `id`, `site`, `location` eller `parent` + `slot` (kort), `name`, `type` (modellens nyckel i katalogen), `lifecycle`, `rackPosition` |
 | `ports.csv` | `equipment`, `name`: portar som källsystemet känner till. Portarna skapas ur katalogens portmall, och en port som inte finns i mallen rapporteras. |
 | `cables.csv` | `id`, `code`, `cableType`, `a`, `b` (siter), `lifecycle`, `route` (valfri WKT `LINESTRING` i SWEREF 99 TM, annars rakt mellan siterna). Ledarna följer av kabeltypen. |

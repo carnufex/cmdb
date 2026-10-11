@@ -31,7 +31,8 @@ public sealed class AgentPlanOperation
         "move (equipment to another rack or site, or a cable's end to another site; connections on what changes site go and nothing " +
         "that carries a circuit can move), set_conductor_usage (fibres of a cable as dark, dark_fibre (leased) or spare; lit is derived), " +
         "create_location (a building, room, rack or position on a site), create_service, create_circuit (with its path of terminals), " +
-        "set_circuit_path, link_circuit (a circuit riding on a carrier circuit) or link_service (a service running on a circuit).")]
+        "set_circuit_path, link_circuit (a circuit riding on a carrier circuit), link_service (a service running on a circuit) " +
+        "or set_rack_place (a rack's row and place in its room; target \"location:9\").")]
     public string Kind { get; set; } = "";
 
     [Description("connect/disconnect: the first terminal id (ports and conductor ends have terminal ids in get_object).")]
@@ -122,6 +123,15 @@ public sealed class AgentPlanOperation
 
     [Description("create_location: a rack's height in units.")]
     public int? RackUnits { get; set; }
+
+    [Description("create_location of a rack, set_rack_place: the rack's row in its room, from 1, with roomSlot.")]
+    public int? RoomRow { get; set; }
+
+    [Description("create_location of a rack, set_rack_place: the rack's place in its row, from 1.")]
+    public int? RoomSlot { get; set; }
+
+    [Description("create_location of a rack, set_rack_place: which way its front faces along the row, front or back.")]
+    public string? Facing { get; set; }
 
     [Description("create_service: the service type (describe_catalog); code and name as for a site.")]
     public string? ServiceType { get; set; }
@@ -237,6 +247,9 @@ public sealed class PlanTools(RequestDb db, PlanWrites writes, PlanViews views, 
                 Slot = op.Slot,
                 LocationKind = op.LocationKind,
                 RackUnits = op.RackUnits,
+                RoomRow = op.RoomRow,
+                RoomSlot = op.RoomSlot,
+                Facing = op.Facing,
                 ServiceType = op.ServiceType,
                 Layer = op.Layer,
                 Hops = op.Hops,

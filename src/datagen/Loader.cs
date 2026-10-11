@@ -78,7 +78,7 @@ internal static class Loader
             w.Write(s.Lifecycle, NpgsqlDbType.Text);
         }, ct);
 
-        await Copy(conn, log, "location", "id, site_id, parent_id, kind, name, rack_units, lifecycle", net.Locations, (w, l) =>
+        await Copy(conn, log, "location", "id, site_id, parent_id, kind, name, rack_units, lifecycle, room_row, room_slot, facing", net.Locations, (w, l) =>
         {
             w.Write(l.Id);
             w.Write(l.SiteId);
@@ -94,6 +94,16 @@ internal static class Loader
                 w.WriteNull();
             }
             w.Write(l.Lifecycle, NpgsqlDbType.Text);
+            NullableShort(w, l.RoomRow);
+            NullableShort(w, l.RoomSlot);
+            if (l.Facing is { } facing)
+            {
+                w.Write(facing);
+            }
+            else
+            {
+                w.WriteNull();
+            }
         }, ct);
 
         await Copy(conn, log, "equipment", "id, equipment_type_id, site_id, location_id, parent_id, slot, name, attributes, lifecycle", net.Equipment, (w, e) =>
@@ -355,6 +365,18 @@ internal static class Loader
         }
         var count = await importer.CompleteAsync(ct);
         log.WriteLine(string.Create(CultureInfo.InvariantCulture, $"  {table,-20} {count,11:N0} rows {sw.Elapsed.TotalSeconds,6:0.0} s"));
+    }
+
+    private static void NullableShort(NpgsqlBinaryImporter w, short? value)
+    {
+        if (value is { } v)
+        {
+            w.Write(v);
+        }
+        else
+        {
+            w.WriteNull();
+        }
     }
 
     private static void Nullable(NpgsqlBinaryImporter w, long? value)

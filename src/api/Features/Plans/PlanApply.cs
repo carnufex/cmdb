@@ -51,12 +51,19 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx, str
                     var parent = p.TryGetProperty("parent", out var pa) && pa.ValueKind == JsonValueKind.Number ? (object)pa.GetInt64() : DBNull.Value;
                     var units = p.TryGetProperty("rackUnits", out var ru) && ru.ValueKind == JsonValueKind.Number ? (object)ru.GetInt16() : DBNull.Value;
                     var location = await ScalarAsync<long>("""
-                        INSERT INTO location (site_id, parent_id, kind, name, rack_units) VALUES ($1, $2, $3, $4, $5) RETURNING id
-                        """, ct, p.GetProperty("site").GetInt64(), parent, p.GetProperty("kind").GetString()!, p.GetProperty("name").GetString()!, units);
+                        INSERT INTO location (site_id, parent_id, kind, name, rack_units, room_row, room_slot, facing)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id
+                        """, ct, p.GetProperty("site").GetInt64(), parent, p.GetProperty("kind").GetString()!, p.GetProperty("name").GetString()!, units,
+                        ShortOrNull(p, "roomRow"), ShortOrNull(p, "roomSlot"), TextOrNull(p, "facing"));
                     Ids[Planned.ObjectId(op.Id)] = location;
                     await FromSourceAsync("location", location, p, ct);
                     return true;
                 }
+
+            case "set_rack_place":
+                await ExecuteAsync("UPDATE location SET room_row = $2, room_slot = $3, facing = $4 WHERE id = $1 AND kind = 'rack'", ct,
+                    p.GetProperty("id").GetInt64(), ShortOrNull(p, "roomRow"), ShortOrNull(p, "roomSlot"), TextOrNull(p, "facing"));
+                return true;
 
             case "create_service":
                 {
@@ -667,6 +674,14 @@ internal sealed class PlanApply(NpgsqlConnection conn, NpgsqlTransaction tx, str
         "circuit" => "circuit",
         var t => throw new InvalidOperationException($"Unknown object type {t}."),
     };
+
+    /// <summary>A number in the payload, or a database null.</summary>
+    private static object ShortOrNull(JsonElement p, string field) =>
+        p.TryGetProperty(field, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt16() : DBNull.Value;
+
+    /// <summary>A text in the payload, or a database null.</summary>
+    private static object TextOrNull(JsonElement p, string field) =>
+        p.TryGetProperty(field, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()! : DBNull.Value;
 
     private async Task<int> ExecuteAsync(string sql, CancellationToken ct, params object[] values)
     {

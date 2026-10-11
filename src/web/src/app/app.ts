@@ -20,6 +20,7 @@ import { VoicePanelComponent } from './voice/voice-panel';
 import { RackPanelComponent } from './objects/rack-panel';
 import { FibrePanelComponent } from './objects/fibre-panel';
 import { ServiceViewComponent } from './objects/service-view';
+import { RoomPanelComponent } from './objects/room-panel';
 
 @Component({
   selector: 'app-root',
@@ -40,6 +41,7 @@ import { ServiceViewComponent } from './objects/service-view';
     RackPanelComponent,
     FibrePanelComponent,
     ServiceViewComponent,
+    RoomPanelComponent,
   ],
   templateUrl: './app.html',
   styleUrl: './app.scss',
