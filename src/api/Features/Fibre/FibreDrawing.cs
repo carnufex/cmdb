@@ -194,41 +194,64 @@ public sealed class FibreDrawings(RequestDb db, GraphHolder holder, ScopeMasks m
                 if (graph.TryGetNode(t, out var node))
                 {
                     endNodes[t] = node;
-                    foreach (var n in graph.Neighbours(node))
+                    // What the end connects to; the fibre's own other end is the cable, and needs no name.
+                    var targets = graph.Neighbours(node);
+                    var kinds = graph.NeighbourKinds(node);
+                    for (var i = 0; i < targets.Length; i++)
                     {
-                        terminals.Add(graph.TerminalId(n));
+                        if (kinds[i] != EdgeKind.Conductor)
+                        {
+                            terminals.Add(graph.TerminalId(targets[i]));
+                        }
                     }
                 }
             }
         }
+        // Each fibre's circuits, and the services above them: worked out once per circuit and shared, since thousands of
+        // fibres ride on the same transmission and logical circuits (one impact walk per fibre took most of the time).
         var circuitsPerFibre = new Dictionary<(long, int), int[]>();
-        var servicesPerFibre = new Dictionary<(long, int), int[]>();
+        var servicesPerFibre = new Dictionary<(long, int), int>();
         var circuitIds = new HashSet<long>();
         var serviceIndexes = new HashSet<int>();
+        var above = new Dictionary<int, int[]>();
         foreach (var cable in cables)
         {
             foreach (var k in cable.Fibres)
             {
-                var nodes = new[] { k.ATerminal, k.BTerminal }.Where(endNodes.ContainsKey).Select(t => endNodes[t]).ToArray();
-                var impact = GraphImpact.OfNodes(graph, nodes);
-                var direct = impact.Circuits.Take(impact.Direct).ToArray();
-                circuitsPerFibre[(cable.Id, k.Number)] = direct;
-                servicesPerFibre[(cable.Id, k.Number)] = impact.Services;
-                foreach (var c in direct.Where(mask.CircuitVisible))
+                var direct = new HashSet<int>();
+                foreach (var t in new[] { k.ATerminal, k.BTerminal })
+                {
+                    if (endNodes.TryGetValue(t, out var node))
+                    {
+                        foreach (var c in graph.CircuitsThrough(node))
+                        {
+                            direct.Add(c);
+                        }
+                    }
+                }
+                var directArray = direct.Order().ToArray();
+                circuitsPerFibre[(cable.Id, k.Number)] = directArray;
+                var reached = directArray.Length == 1 ? ServicesAbove(graph, directArray[0], above)
+                    : [.. directArray.SelectMany(c => ServicesAbove(graph, c, above)).Distinct()];
+                servicesPerFibre[(cable.Id, k.Number)] = reached.Count(mask.ServiceVisible);
+                foreach (var c in directArray.Where(mask.CircuitVisible))
                 {
                     circuitIds.Add(graph.CircuitId(c));
                 }
-                foreach (var s in impact.Services)
+                foreach (var sv in reached)
                 {
-                    serviceIndexes.Add(s);
+                    serviceIndexes.Add(sv);
                 }
             }
         }
         var shownServices = serviceIndexes.Where(mask.ServiceVisible).ToArray();
-        var names = await TraceNames.LoadAsync(db, [.. terminals], [.. circuitIds], [.. shownServices.Select(graph.ServiceId)], ct);
+        var names = await NamesAsync([.. terminals], [.. circuitIds], [.. shownServices.Select(graph.ServiceId)], ct);
         if (view is not null)
         {
-            names.AddPlanned((await PlannedNames.BuildAsync(db, view.Chain.Operations, ct)).Terminals);
+            foreach (var (terminal, hop) in (await PlannedNames.BuildAsync(db, view.Chain.Operations, ct)).Terminals)
+            {
+                names.Terminals[terminal] = (hop.Kind, hop.Label);
+            }
         }
         var criticality = await CriticalityAsync([.. shownServices.Select(graph.ServiceId)], ct);
         var schema = ClassificationCatalog.Current.Find("criticality");
@@ -249,8 +272,15 @@ public sealed class FibreDrawings(RequestDb db, GraphHolder holder, ScopeMasks m
                 {
                     continue;
                 }
-                var hop = VisibleNode(graph, mask, targets[i]) ? names.Hop(graph.TerminalId(targets[i]), kinds[i]) : TraceNames.Placeholder(kinds[i]);
-                hops.Add(new FibreEnd(hop.TerminalId, hop.Kind, hop.Edge, hop.Label));
+                var edge = TraceEndpoint.Edge(kinds[i]);
+                if (!VisibleNode(graph, mask, targets[i]))
+                {
+                    hops.Add(new FibreEnd(0, "hidden", edge, "Utanför ditt omfång"));
+                    continue;
+                }
+                var id = graph.TerminalId(targets[i]);
+                var (kind, label) = names.Terminals.GetValueOrDefault(id, ("unknown", $"terminal {id}"));
+                hops.Add(new FibreEnd(id, kind, edge, label));
             }
             return hops;
         }
@@ -263,12 +293,14 @@ public sealed class FibreDrawings(RequestDb db, GraphHolder holder, ScopeMasks m
                 return new FibreConductor(k.Number, k.Color,
                     direct.Length > 0 ? "lit" : k.Usage ?? "dark",
                     k.Reserved, Connected(k.ATerminal), Connected(k.BTerminal),
-                    [.. direct.Select(d => mask.CircuitVisible(d) ? names.Circuit(graph.CircuitId(d)) : ObjectRef.Hidden("circuit"))],
-                    servicesPerFibre[(c.Id, k.Number)].Count(mask.ServiceVisible));
+                    [.. direct.Select(d => mask.CircuitVisible(d)
+                        ? names.Circuits.GetValueOrDefault(graph.CircuitId(d)) ?? new ObjectRef("circuit", graph.CircuitId(d), $"#{graph.CircuitId(d)}")
+                        : ObjectRef.Hidden("circuit"))],
+                    servicesPerFibre[(c.Id, k.Number)]);
             })])).ToList();
         var services = shownServices
             .Select(s => graph.ServiceId(s))
-            .Select(sid => new FibreService(names.Service(sid), criticality.GetValueOrDefault(sid),
+            .Select(sid => new FibreService(names.Services.GetValueOrDefault(sid) ?? new ObjectRef("service", sid, $"#{sid}"), criticality.GetValueOrDefault(sid),
                 schema is not null && criticality.TryGetValue(sid, out var level) && level >= schema.CriticalFrom))
             .OrderByDescending(s => s.Criticality ?? 0).ThenBy(s => s.Service.Code, StringComparer.Ordinal)
             .ToList();
@@ -284,6 +316,73 @@ public sealed class FibreDrawings(RequestDb db, GraphHolder holder, ScopeMasks m
     }
 
     private static bool VisibleNode(Cmdb.Graph.Graph g, GraphMask mask, int node) => mask.NodeVisible(g, node);
+
+    /// <summary>
+    /// The services that depend on a circuit: its own and those of every circuit riding on it, upwards, as impact
+    /// analysis finds them (#10). Memoized per circuit for the drawing; the layers form a DAG, so each is worked out once.
+    /// </summary>
+    private static int[] ServicesAbove(Cmdb.Graph.Graph g, int circuit, Dictionary<int, int[]> memo)
+    {
+        if (memo.TryGetValue(circuit, out var known))
+        {
+            return known;
+        }
+        memo[circuit] = [];
+        var services = new HashSet<int>(g.ServicesOf(circuit).ToArray());
+        foreach (var dependent in g.DependentsOf(circuit))
+        {
+            services.UnionWith(ServicesAbove(g, dependent, memo));
+        }
+        return memo[circuit] = [.. services];
+    }
+
+    private sealed record Names(Dictionary<long, (string Kind, string Label)> Terminals, Dictionary<long, ObjectRef> Circuits,
+        Dictionary<long, ObjectRef> Services);
+
+    /// <summary>
+    /// Names for what the fibre ends connect to, their circuits and the services, in one round trip. Leaner than the trace's
+    /// names: only a label per terminal, and the arrays joined with unnest, which stays fast for the thousands of terminals
+    /// a busy route segment has.
+    /// </summary>
+    private async Task<Names> NamesAsync(long[] terminals, long[] circuits, long[] services, CancellationToken ct)
+    {
+        var names = new Names([], [], []);
+        await using var conn = await db.OpenConnectionAsync(ct);
+        await using var batch = new NpgsqlBatch(conn)
+        {
+            BatchCommands =
+            {
+                new("""
+                    SELECT p.terminal_id, 'port', e.name || ' · ' || p.name
+                    FROM unnest($1::bigint[]) u(t) JOIN port p ON p.terminal_id = u.t JOIN equipment e ON e.id = p.equipment_id
+                    UNION ALL
+                    SELECT ce.terminal_id, 'conductor_end', c.code || ' ledare ' || co.number || ' (' || trim(ce.side) || ')'
+                    FROM unnest($1::bigint[]) u(t) JOIN conductor_end ce ON ce.terminal_id = u.t
+                    JOIN conductor co ON co.id = ce.conductor_id JOIN cable c ON c.id = co.cable_id
+                    """) { Parameters = { new() { Value = terminals } } },
+                new("SELECT r.id, r.code, r.lifecycle::text FROM unnest($1::bigint[]) u(id) JOIN circuit r ON r.id = u.id")
+                    { Parameters = { new() { Value = circuits } } },
+                new("SELECT v.id, v.code, v.name, v.lifecycle::text FROM unnest($1::bigint[]) u(id) JOIN service v ON v.id = u.id")
+                    { Parameters = { new() { Value = services } } },
+            },
+        };
+        await using var reader = await batch.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            names.Terminals[reader.GetInt64(0)] = (reader.GetString(1), reader.GetString(2));
+        }
+        await reader.NextResultAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            names.Circuits[reader.GetInt64(0)] = new ObjectRef("circuit", reader.GetInt64(0), reader.GetString(1), null, reader.GetString(2));
+        }
+        await reader.NextResultAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            names.Services[reader.GetInt64(0)] = new ObjectRef("service", reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3));
+        }
+        return names;
+    }
 
     private sealed record LoadedFibre(int Number, string? Color, string? Usage, bool Reserved, long ATerminal, long BTerminal);
 
