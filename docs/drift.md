@@ -117,6 +117,20 @@ scripts/perf.sh --comment 13             # posta rapporten i ett issue
 - Rapporten hamnar i `artifacts/perf/<tid>-<mål>/summary.md` och `summary.json` (ignoreras av git).
 - En rad över budget, eller misslyckade anrop, markeras med ❌ och ger felkod. Kör mätningen efter varje driftsättning som rör API:t eller databasen, och kommentera rapporten i issuet.
 
+## E2e-test i webbläsaren
+
+`scripts/e2e.sh` (#288) kör de viktigaste flödena i en riktig webbläsare (Playwright, Chromium) mot en lokal stack som skriptet startar och river:
+
+- en engångs-Postgres i Docker (`postgis/postgis:17-3.5`, port 15499) laddad med det lilla syntetiska nätet (seed 1)
+- en ersättare för OpenID-leverantören (`src/web/e2e/idp.mjs`, port 8790) som loggar in en syntetisk planerare med `cmdb-full` och signerar riktiga JWT:er, som API:t litar på via `Auth__Authority`
+- API:t (port 5199) och webben på dev-servern (port 4310). `config.json` fångas upp i testet, så ingen fil ändras.
+
+Flödena är snabbsök → site, högerklicksmenyn, ny plan från raden och planens översikt, samt en kabel ritad längs kanalisationen med ångra, avslut, *Lägg till kabel*, *Rita om* och Esc (`src/web/e2e/flows.spec.ts`). En körning tar ungefär 30 s med varma byggen och 1–2 minuter kallt, varav flödena själva tar 10 s.
+
+- **När:** före merge av ändringar i webben, utöver `scripts/verify.sh`. Sviten ligger inte i `verify.sh`, eftersom parallella körningar i olika worktrees skulle krocka om portar och containernamn. Portarna kan ändras med `E2E_DB_PORT`, `E2E_API_PORT`, `E2E_IDP_PORT` och `E2E_WEB_PORT`.
+- **Felsökning:** loggar, skärmbilder och spår hamnar i `artifacts/e2e/`, och `npx playwright show-trace <trace.zip>` spelar upp ett fel. `scripts/e2e.sh --keep` låter stacken stå kvar efter körningen.
+- **Webbläsaren:** Playwright 1.64 använder Chromium-bygge 1248. Saknas det körs `npx playwright install chromium` i `src/web`.
+
 ## Händelselogg
 
 Användarna ser nyheter under *Nyheter* i verktygsfältet (#82). Posterna ligger i `changelog/entries.json` och synkas till databasen i migreringssteget.
