@@ -1,4 +1,4 @@
-import { costText, ProjectStage, stageLifecycle, stageStatusText } from './project-panel';
+import { costText, nodeCode, ProjectStage, stageLifecycle, stageStatusText } from './project-panel';
 
 const stage = (status: string, problems = 0, flag: string | null = null): ProjectStage => ({
   seq: 1,
@@ -36,5 +36,12 @@ describe('project stages', () => {
 
   it('give costs in whole units with Swedish thousands', () => {
     expect(costText(1234567.4, 'SEK').replace(/\s/g, ' ')).toBe('1 234 567 SEK');
+  });
+});
+
+describe('node suggestions', () => {
+  it('give a suggested node a site code from the project and its number', () => {
+    expect(nodeCode(12, 3)).toBe('P12-N03');
+    expect(nodeCode(4, 14)).toBe('P4-N14');
   });
 });

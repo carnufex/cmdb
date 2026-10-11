@@ -589,7 +589,10 @@ export class MapComponent {
         // Part of an open trace: stack it on the trace instead of starting over.
         this.panels.open({ type: feature.get('route'), id: String(feature.getId()) });
       } else if (feature?.get('mark')) {
-        this.panels.open({ type: 'site', id: String(feature.getId()) }, { replace: true });
+        // Marked sites open; marks that are not sites (a suggested node, #294) have no id above zero.
+        if (Number(feature.getId()) > 0) {
+          this.panels.open({ type: 'site', id: String(feature.getId()) }, { replace: true });
+        }
       } else if (feature?.get('layer') === 'service_points') {
         this.panels.open({ type: 'service-point', id: String(feature.getId()) }, { replace: true });
       } else if (feature) {
