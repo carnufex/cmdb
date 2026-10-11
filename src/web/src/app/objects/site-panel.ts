@@ -1,6 +1,7 @@
 import { PlanRemoveComponent } from '../plans/plan-remove';
 import { ClassificationComponent, DerivedClassification } from './classification';
 import { RackPreviewComponent } from './rack-preview';
+import { SiteRoomsComponent } from './room-panel';
 import { httpResource } from '@angular/common/http';
 import { DecimalPipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, effect, inject, input } from '@angular/core';
@@ -26,6 +27,7 @@ import { SourcesComponent } from './sources';
     ClassificationComponent,
     PlanRemoveComponent,
     RackPreviewComponent,
+    SiteRoomsComponent,
     ObjectLinkComponent,
     StatusComponent,
     EditHeaderComponent,
@@ -73,6 +75,8 @@ import { SourcesComponent } from './sources';
           </dl>
         </section>
       }
+
+      <cmdb-site-rooms [siteId]="s.id" />
 
       @for (location of racks(); track location.id) {
         <section>

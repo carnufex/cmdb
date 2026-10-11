@@ -14,7 +14,8 @@ export type Tool =
   | 'voice'
   | 'rack'
   | 'fibre'
-  | 'service';
+  | 'service'
+  | 'room';
 
 /**
  * How much room a tool takes (#251): a panel over the map, half the screen beside it, or the whole workspace under
@@ -40,16 +41,18 @@ export const toolSpecs: Record<Tool, ToolSpec> = {
   rack: { sizes: ['half', 'workspace'], initial: 'workspace' },
   fibre: { sizes: ['half', 'workspace'], initial: 'workspace' },
   service: { sizes: ['half', 'workspace'], initial: 'workspace' },
+  room: { sizes: ['half', 'workspace'], initial: 'workspace' },
 };
 
 /**
  * What a tool shows, in the address beside it: the rack view's rack (#255), the fibre drawing's object and break point
- * (#254), the service view's service (#257). Cleared when the tool closes.
+ * (#254), the service view's service (#257), the room view's room (#256). Cleared when the tool closes.
  */
 const toolParams: Record<string, readonly string[]> = {
   rack: ['rack'],
   fibre: ['fibre', 'at'],
   service: ['service'],
+  room: ['room'],
 };
 
 export const toolSizeNames: Record<ToolSize, string> = {

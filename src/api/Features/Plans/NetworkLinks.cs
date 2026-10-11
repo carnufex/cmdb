@@ -174,6 +174,9 @@ public static class NetworkLinks
                         kind = req.LocationKind,
                         name = req.Name!.Trim(),
                         rackUnits = req.RackUnits,
+                        roomRow = req.RoomRow,
+                        roomSlot = req.RoomSlot,
+                        facing = req.Facing,
                     }, OmitNull), null);
                 }
             case "create_service":

@@ -125,6 +125,15 @@ public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views
             }
             payload = link;
         }
+        else if (req.Kind == "set_rack_place")
+        {
+            var (place, error) = await RackPlaceAsync(scope, view, req, ct);
+            if (place is null)
+            {
+                return PlanWrite.Fail<PlanOperationView>(PlanWriteFailure.Invalid, error!);
+            }
+            payload = place;
+        }
         else if (req.Kind == "set_conductor_usage")
         {
             var (usage, error) = await ConductorUsageAsync(scope, req, ct);
@@ -451,6 +460,50 @@ public sealed class PlanWrites(RequestDb db, GraphHolder holder, PlanViews views
     /// Checks a stated conductor usage (#238, ADR-0014) and gives its payload: the cable is visible, the conductors exist, and
     /// none of them is lit (in a circuit in service), since lit is derived and never stated.
     /// </summary>
+    /// <summary>
+    /// Checks a rack's new place in its room (#256): the rack exists and is visible, and no other rack in the room stands
+    /// there, in production or as the plan's view places it.
+    /// </summary>
+    private async Task<(string? Payload, string? Error)> RackPlaceAsync(UserScope scope, PlanView view, AddOperationRequest req, CancellationToken ct)
+    {
+        var rack = req.ObjectId!.Value;
+        long room;
+        await using (var cmd = db.CreateCommand($"""
+            SELECT l.parent_id FROM location l WHERE l.id = $1 AND l.kind = 'rack' AND l.parent_id IS NOT NULL AND {ScopeSql.Site("l.site_id", 2)}
+            """))
+        {
+            cmd.Parameters.Add(new() { Value = rack });
+            cmd.Parameters.Add(scope.Parameter());
+            if (await cmd.ExecuteScalarAsync(ct) is not long parent)
+            {
+                return (null, $"Rack {rack} finns inte i något rum.");
+            }
+            room = parent;
+        }
+        // Where the room's racks stand in the plan's view: production, then the plan's own placements in order.
+        var places = new Dictionary<long, (int Row, int Slot, string Name)>();
+        await using (var cmd = db.CreateCommand("SELECT id, room_row, room_slot, name FROM location WHERE parent_id = $1 AND kind = 'rack' AND room_row IS NOT NULL"))
+        {
+            cmd.Parameters.Add(new() { Value = room });
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                places[reader.GetInt64(0)] = (reader.GetInt16(1), reader.GetInt16(2), reader.GetString(3));
+            }
+        }
+        foreach (var op in view.Chain.Operations.Where(o => o.Kind == "set_rack_place"))
+        {
+            var id = op.Payload.GetProperty("id").GetInt64();
+            var name = places.TryGetValue(id, out var was) ? was.Name : $"Rack {id}";
+            places[id] = (op.Payload.GetProperty("roomRow").GetInt32(), op.Payload.GetProperty("roomSlot").GetInt32(), name);
+        }
+        if (places.FirstOrDefault(p => p.Key != rack && p.Value.Row == req.RoomRow && p.Value.Slot == req.RoomSlot) is { Key: > 0 } taken)
+        {
+            return (null, $"Rad {req.RoomRow} plats {req.RoomSlot} är tagen av {taken.Value.Name}.");
+        }
+        return (System.Text.Json.JsonSerializer.Serialize(new { type = "location", id = rack, roomRow = req.RoomRow, roomSlot = req.RoomSlot, facing = req.Facing }), null);
+    }
+
     private async Task<(string? Payload, string? Error)> ConductorUsageAsync(UserScope scope, AddOperationRequest req, CancellationToken ct)
     {
         var cable = req.ObjectId!.Value;

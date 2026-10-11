@@ -443,7 +443,10 @@ internal sealed partial class NetworkBuilder
         }
     }
 
-    /// <summary>A building, a room and racks: six on a hub, three on an aggregation node, one elsewhere.</summary>
+    /// <summary>
+    /// A building, a room and racks: six on a hub, three on an aggregation node, one elsewhere. Racks stand in rows of three,
+    /// every other row turned round so fronts face fronts across a cold aisle (#256).
+    /// </summary>
     private void Locate(Site site, SiteState state)
     {
         var (building, room, racks) = site.Kind switch
@@ -457,7 +460,9 @@ internal sealed partial class NetworkBuilder
         var roomId = NewLocation(site, buildingId, "room", room, null);
         for (var r = 1; r <= racks; r++)
         {
-            state.Racks.Add(NewLocation(site, roomId, "rack", $"Rack {r}", 42));
+            var row = (short)(((r - 1) / RacksPerRow) + 1);
+            state.Racks.Add(NewLocation(site, roomId, "rack", $"Rack {r}", 42,
+                (row, (short)(((r - 1) % RacksPerRow) + 1), row % 2 == 1 ? "front" : "back")));
         }
         site.RackId = state.Racks[0];
     }
@@ -904,10 +909,13 @@ internal sealed partial class NetworkBuilder
         return site;
     }
 
-    private long NewLocation(Site site, long? parent, string kind, string name, short? rackUnits)
+    private const int RacksPerRow = 3;
+
+    private long NewLocation(Site site, long? parent, string kind, string name, short? rackUnits,
+        (short Row, short Slot, string Facing)? place = null)
     {
         var id = _nextLocation++;
-        _net.Locations.Add(new LocationRow(id, site.Id, parent, kind, name, rackUnits, site.Lifecycle));
+        _net.Locations.Add(new LocationRow(id, site.Id, parent, kind, name, rackUnits, site.Lifecycle, place?.Row, place?.Slot, place?.Facing));
         return id;
     }
 

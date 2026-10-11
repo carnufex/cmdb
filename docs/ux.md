@@ -89,6 +89,7 @@ Så är det byggt (#26):
 | Innehållsträd | Vad sitter i vad? |
 | Frontpanel | Vilka portar, vad är kopplat? |
 | Rackvy | Vad sitter var i racket, och vad är ledigt? |
+| Rumsvy | Var i rummet står racket, och hur fullt är det? |
 | Spårschema | Vilken väg tar tjänsten? |
 | Tjänstevy | Hur är tjänsten uppbyggd, steg för steg, och har den en annan väg? |
 | Grannskapsgraf | Vad finns runt omkring? Expandera och backa. |
@@ -96,6 +97,8 @@ Så är det byggt (#26):
 **Frontpanelen** (#18) visar utrustningens portar med status. Har katalogen en bild av modellen (#214) ritas bilden med portarna som klickbara ytor ovanpå. Annars ritas portarna som ett rutnät. Status är en färgton över porten på bilden och förklaras alltid med prick och text under panelen. En ledig port har bara en kontur. Klick markerar, Shift-klick markerar ett intervall och pilarna går till närmaste port i pilens riktning, på bilden räknat från portytornas mitt. Har modellen portar på baksidan växlar *Framsida | Baksida* över panelen mellan sidorna, och panelen vänder sig själv när en port på andra sidan markeras, till exempel från trädet.
 
 **Rackvyn** (#255) ritar ett rack med utrustningens bilder på sina enheter, med enhetsnummer på skenorna. En modell utan bild ritas som en neutral front med namn, modell och portrutnät. *Framsida | Baksida* vänder hela racket. Portarna har samma färgton som i frontpanelen och förklaras med prick och text under racket. Klick på en utrustning öppnar den, klick på en port markerar porten, och en kort hovring visar utrustningens kort. Lediga enheter är streckade, och i en aktiv plan ger ett klick på en ledig enhet *Ny utrustning* i planen med site, rack och position ifyllda. Planens ändringar syns: ny utrustning streckad i planerad färg, det planen tar bort överstruket. Siten visar en liten bild av varje rack som öppnar rackvyn som arbetsyta (#251), och racket står i adressen (`?tool=rack&rack=<id>`). Bildtiden mäts i prestandapanelen när rackvyn är öppen, med samma mål som frontpanelen (33 ms per bild).
+
+**Rumsvyn** (#256) visar ett rum uppifrån: racken som rutor i sina rader med en gång mellan raderna, och rack utan plats i en egen rad sist. Den tjocka kanten är rackets framsida, så att fronterna som möts över en gång syns. Varje rack visar namn, lediga enheter (*34 av 42 U lediga*), antal enheter och en stapel för hur fullt det är, plus den högsta kritikaliteten i racket med prick och nivå. En röd ram betyder schemats kritiska nivå eller högre (#180). Klick på ett rack öppnar rackvyn. *Visa kablar mellan rack* ritar kopplingarna mellan racken som linjer med antalet. I en plan är nya rack streckade i planerad färg och rack som placeras om inramade i samma färg. Sitepanelen listar sitens rum per byggnad med antal rack, lediga enheter och en liten bild som öppnar rumsvyn som arbetsyta (`?tool=room&room=<id>`).
 
 **Fiberritningen** (#254) är underlaget till en tekniker vid ett kabelbrott: kablarna i en kabel, en trasésträcka, en site eller ett urval, fiber för fiber. Den öppnas med *Fiberritning* i kabelns, sträckans och sitens panel och i urvalsraden, som arbetsyta (#251), och adressen (`?tool=fibre&fibre=cables:12`) öppnar samma ritning för den som får se den.
 

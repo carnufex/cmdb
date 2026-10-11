@@ -347,6 +347,15 @@ Utrustning i ett rack har en position, dess lägsta rackenhet (`equipment.rack_p
 - **Befintlig utrustning** staplas i sina rack från botten i id-ordning, av migreringen och av datageneratorn.
 - **Siten** visar varje rack som en frontvy med utrustningen på sina enheter och antalet lediga.
 
+### Rackens placering i rummet (#256)
+
+Ett rack kan ha en plats i sitt rum: rad (`location.room_row`) och plats i raden (`room_slot`), båda från 1, och åt vilket håll fronten vänder längs raden (`facing`: `front` eller `back`). Bara rack har en plats, och rad och plats anges tillsammans (check-constraints i modellen). Ett rack utan plats ritas i en egen rad sist.
+
+- **Datageneratorn** ställer racken i rader om tre, där varannan rad är vänd, så att fronterna möts över en kall gång.
+- **Importen** läser `row`, `slot` och `facing` i `locations.csv`. Ett nytt rack i avstämningen får sin plats med sig.
+- **I planer** kan `create_location` för ett rack få `roomRow`, `roomSlot` och `facing`. `set_rack_place` (rack, rad, plats, riktning) placerar ett befintligt rack. Servern vägrar en plats som ett annat rack i rummet redan står på, i produktion eller i planen.
+- **Rumsvyn** (`GET /api/rooms/{id}?plan=`) ger rummets rack med plats, enheter, lediga enheter, antal enheter, högsta kritikalitet på utrustningen i racket (#180) och kopplingarna mellan racken. I en plan syns nya rack (`plan: new`) och rack som placeras om (`plan: moved`). `GET /api/sites/{id}/rooms` ger sitens rum med antal rack och lediga enheter. Båda följer omfånget som utrustningen i racken.
+
 ### Förslag på väg för en ny förbindelse (#171)
 
 För en förbindelse mellan två siter föreslår systemet vägar över befintliga kablar som fortfarande har lediga fibrer, eller en ny kabel där det inte finns någon väg.

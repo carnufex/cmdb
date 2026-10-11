@@ -151,6 +151,13 @@ public sealed class AddOperationRequest
     /// <summary>create_location: a rack's height in units.</summary>
     public int? RackUnits { get; set; }
 
+    /// <summary>create_location of a rack, set_rack_place: its row in the room and its place in the row, from 1 (#256).</summary>
+    public int? RoomRow { get; set; }
+    public int? RoomSlot { get; set; }
+
+    /// <summary>create_location of a rack, set_rack_place: which way its front faces along the row, front or back.</summary>
+    public string? Facing { get; set; }
+
     /// <summary>create_service: the service type.</summary>
     public string? ServiceType { get; set; }
 
@@ -230,6 +237,17 @@ public sealed class AddOperationValidator : Validator<AddOperationRequest>
                 RuleFor(r => r.End).Must(e => e is not null && (e.Equals("A", StringComparison.OrdinalIgnoreCase) || e.Equals("B", StringComparison.OrdinalIgnoreCase)))
                     .WithMessage("end is A or B."));
         });
+        // A rack's place in its room (#256): row and slot together, and the way it faces.
+        RuleFor(r => r).Must(r => (r.RoomRow is null) == (r.RoomSlot is null)).WithMessage("roomRow and roomSlot go together.");
+        RuleFor(r => r.RoomRow).InclusiveBetween(1, 99).When(r => r.RoomRow is not null);
+        RuleFor(r => r.RoomSlot).InclusiveBetween(1, 99).When(r => r.RoomSlot is not null);
+        RuleFor(r => r.Facing).Must(f => f is null or "front" or "back").WithMessage("facing is front or back.");
+        When(r => r.Kind == "set_rack_place", () =>
+        {
+            RuleFor(r => r.Type).Equal("location").WithMessage("type is location.");
+            RuleFor(r => r.ObjectId).NotNull().GreaterThan(0).WithMessage("objectId is an existing rack.");
+            RuleFor(r => r.RoomRow).NotNull().WithMessage("roomRow is the rack's row in its room.");
+        });
         When(r => r.Kind == "set_conductor_usage", () =>
         {
             RuleFor(r => r.Type).Equal("cable").WithMessage("type is cable.");
@@ -274,6 +292,8 @@ public sealed class AddOperationValidator : Validator<AddOperationRequest>
         {
             RuleFor(r => r.SiteId).NotNull().NotEqual(0);
             RuleFor(r => r.LocationKind).Must(k => NetworkLinks.LocationKinds.Contains(k)).WithMessage("locationKind is building, room, rack or position.");
+            RuleFor(r => r).Must(r => r.RoomRow is null && r.RoomSlot is null && r.Facing is null || r.LocationKind == "rack")
+                .WithMessage("Only a rack has a place in its room.");
             RuleFor(r => r.Name).NotEmpty().MaximumLength(200);
             RuleFor(r => r.RackUnits).InclusiveBetween(1, 60).When(r => r.RackUnits is not null);
         });

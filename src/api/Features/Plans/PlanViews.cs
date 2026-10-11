@@ -101,7 +101,7 @@ public sealed record PlanView(PlanChain Chain, Cmdb.Graph.Graph Graph, IReadOnly
 internal static class PlanKinds
 {
     public static readonly string[] Operations =
-        ["connect", "disconnect", "set_lifecycle", "rename", "set_attributes", "create_site", "create_equipment", "create_cable", "split_cable", "remove", "set_classification", "move", "set_conductor_usage", .. NetworkLinks.Kinds];
+        ["connect", "disconnect", "set_lifecycle", "rename", "set_attributes", "create_site", "create_equipment", "create_cable", "split_cable", "remove", "set_classification", "move", "set_conductor_usage", "set_rack_place", .. NetworkLinks.Kinds];
 
     public static readonly string[] Connections = ["patch", "splice", "termination", "internal"];
 
