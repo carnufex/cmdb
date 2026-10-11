@@ -34,6 +34,14 @@
     <button
       type="button"
       class="text-button tool-button"
+      [attr.aria-pressed]="tools.open() === 'reconciliations'"
+      (click)="tools.toggle('reconciliations')"
+    >
+      Avstämningar
+    </button>
+    <button
+      type="button"
+      class="text-button tool-button"
       [attr.aria-pressed]="tools.open() === 'grid'"
       (click)="tools.toggle('grid')"
     >
@@ -178,6 +186,12 @@
       <aside class="tool" aria-label="Planer">
         @defer (on immediate) {
           <cmdb-plan-panel />
+        }
+      </aside>
+    } @else if (tools.open() === 'reconciliations') {
+      <aside class="tool" aria-label="Avstämningar">
+        @defer (on immediate) {
+          <cmdb-reconciliation-panel />
         }
       </aside>
     } @else if (tools.open() === 'grid') {

@@ -47,6 +47,8 @@ Inget verktyg ändrar produktion. Agenter föreslår ändringar som planer, och 
 | `neighbourhood` | Siter inom 1–3 kabelhopp från en site |
 | `describe_catalog` | Sitetyper, livscykler, tjänstetyper, kategorier med attribut och alla modeller |
 | `list_plans` | Planer du kan se, med status, antal ändringar, konflikter och vem som gjort dem |
+| `list_reconciliations` | Avstämningar mot källsystem (#216): dina egna, eller alla med obegränsat omfång |
+| `get_reconciliation` | En avstämnings rapport: räknare per objekttyp, avvikelser med källans och cmdb:s värde, fel och planerna |
 | `plan_materials` | Vad en plan behöver och kostar (#291): kablar per typ och meter, utrustning per modell, ny trasé per anläggningssätt och indragning i befintlig kanalisation, med pris ur katalogen |
 | `create_plan` | Skapar ett utkast. Planen märks med agentens identitet och `createdVia: mcp`. |
 | `add_to_plan` | Lägger till ändringar i ordning: koppla, koppla bort, livscykel, namnbyte, ny site, ny utrustning, ny kabel, att sätta in en site i en befintlig kabel (`split_cable`, #168), att ta bort en site, utrustning eller kabel som inte bär kretsar (`remove`, #172) att sätta en klassning (`set_classification`, #176) och, sedan #268, nya platser (`create_location`, byggnad, rum, rack eller position, med `parent` för ett rack i ett rum), kort i en ledig slot (`create_equipment` med `parent` och `slot`), tjänster (`create_service`), kretsar med sin väg av terminaler (`create_circuit`, `hops`), en ny väg för en krets (`set_circuit_path`) och länkar som läggs till eller tas bort (`remove`): en krets på en bärare (`link_circuit`, `carrier`) och en tjänst på en krets (`link_service`, `circuit`). Sedan #259 kan en ny kabel få `route`: stegen längs trasésträckor (`segment`), till siter (`site`) och över brytpunkter (`point`), med `construction` för nya delsträckor och `beside` för en full sträcka. Kabeln läggs då i tomma rör, och nya trasésträckor planeras där den inte följer någon. Sedan #256 kan ett rack få en plats i sitt rum: `roomRow`, `roomSlot` och `facing` på `create_location`, eller `set_rack_place` med `target` `location:9` för ett befintligt rack. Klassningsscheman och ett objekts klassningar läses med `describe_classifications` och `get_classification`, och `check_plan_classification` visar vad en plan gör med nivåer och krav: höjda siter, ouppfyllda krav, åtgärdsutkast och alternativa siter. Ett nytt objekt får en planerad referens (`target`, till exempel `site:-12`) som senare ändringar använder. Varje ändring kontrolleras mot planens vy, och svaret visar det som inte passar produktion och konflikter med andra planers anspråk eller reservationer. |
@@ -93,6 +95,8 @@ Kodagenter i en terminal (Claude Code, Codex) och skript använder med fördel k
 | `cmdb catalog` | `describe_catalog` |
 | `cmdb plans`, `cmdb plan plan:ID` | `list_plans`, `preview_plan` |
 | `cmdb whoami` | `/api/me` |
+| `cmdb reconciliations`, `cmdb reconciliation ID` | `list_reconciliations`, `get_reconciliation` |
+| `cmdb sync <adapter> [--dry-run]` | Läser ett källsystem och stämmer av det, se [adaptrar.md](adaptrar.md) |
 
 **Utdata och felkoder:**
 - Utdata är kompakt text, en rad per objekt med referens, kod, namn och länk till webben. `--json` ger API:ts svar oförändrat.

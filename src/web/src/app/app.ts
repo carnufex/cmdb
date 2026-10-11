@@ -13,6 +13,7 @@ import { PerfPanelComponent } from './perf/perf-panel';
 import { TreePanelComponent } from './tree/tree-panel';
 import { ActivePlan } from './plans/active-plan';
 import { PlanPanelComponent } from './plans/plan-panel';
+import { ReconciliationPanelComponent } from './reconciliations/reconciliation-panel';
 import { GridPanelComponent } from './grid/grid-panel';
 import { ChangelogPanelComponent, ChangelogStore } from './changelog/changelog';
 import { VoiceCallComponent } from './voice/voice-call';
@@ -36,6 +37,7 @@ import { TimeTravelComponent } from './map/time-travel';
     PerfPanelComponent,
     TreePanelComponent,
     PlanPanelComponent,
+    ReconciliationPanelComponent,
     GridPanelComponent,
     ChangelogPanelComponent,
     VoicePanelComponent,

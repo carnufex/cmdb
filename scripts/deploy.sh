@@ -51,12 +51,15 @@ build_push cmdb-api src/api/Dockerfile .
 build_push cmdb-web src/web/Dockerfile src/web
 # Not deployed; scripts/load-demo-data.sh runs it as a Job with the same tag as the API.
 build_push cmdb-datagen src/datagen/Dockerfile .
+# The integrations' CronJobs (#217) run `cmdb sync`; pinned in the homelab like the API when they exist there.
+build_push cmdb-cli src/cli/Dockerfile .
 
 digest() { docker inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$REGISTRY/$1:$tag" \
   | grep "^$REGISTRY/$1@" | head -n1 | cut -d@ -f2; }
 api_ref="$REGISTRY/cmdb-api:$tag@$(digest cmdb-api)"
 web_ref="$REGISTRY/cmdb-web:$tag@$(digest cmdb-web)"
-[[ "$api_ref" == *@sha256:* && "$web_ref" == *@sha256:* ]] || die "Kunde inte läsa digester efter push."
+cli_ref="$REGISTRY/cmdb-cli:$tag@$(digest cmdb-cli)"
+[[ "$api_ref" == *@sha256:* && "$web_ref" == *@sha256:* && "$cli_ref" == *@sha256:* ]] || die "Kunde inte läsa digester efter push."
 echo "$api_ref"
 echo "$web_ref"
 
@@ -79,6 +82,7 @@ previous=$(grep -oE "cmdb-api:sha-[0-9a-f]+" "$manifest" | head -1 | sed 's/.*sh
 sed -i -E \
   -e "s#image: $REGISTRY/cmdb-api[:@][^[:space:]]*#image: $api_ref#" \
   -e "s#image: $REGISTRY/cmdb-web[:@][^[:space:]]*#image: $web_ref#" \
+  -e "s#image: $REGISTRY/cmdb-cli[:@][^[:space:]]*#image: $cli_ref#" \
   "$manifest"
 if git -C "$homelab" diff --quiet -- "$manifest"; then
   echo "Homelab pekar redan på $tag."

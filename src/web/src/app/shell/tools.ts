@@ -9,6 +9,7 @@ export type Tool =
   | 'perf'
   | 'tree'
   | 'plans'
+  | 'reconciliations'
   | 'grid'
   | 'changelog'
   | 'voice'
@@ -34,6 +35,7 @@ export const toolSpecs: Record<Tool, ToolSpec> = {
   query: { sizes: ['panel', 'half'], initial: 'panel' },
   tree: { sizes: ['panel', 'half'], initial: 'panel' },
   plans: { sizes: ['panel', 'half', 'workspace'], initial: 'half' },
+  reconciliations: { sizes: ['panel', 'half', 'workspace'], initial: 'half' },
   grid: { sizes: ['half', 'workspace'], initial: 'half' },
   changelog: { sizes: ['panel', 'half'], initial: 'panel' },
   voice: { sizes: ['panel'], initial: 'panel' },

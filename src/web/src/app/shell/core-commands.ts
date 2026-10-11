@@ -85,6 +85,17 @@ export function registerCoreCommands(): void {
       },
     },
     {
+      id: 'tools.reconciliations',
+      label: 'Avstämningar',
+      hint: 'Verktyg',
+      keywords: ['källsystem', 'integration', 'sync', 'avvikelse', 'adapter'],
+      run: () => {
+        if (tools.open() !== 'reconciliations') {
+          tools.toggle('reconciliations');
+        }
+      },
+    },
+    {
       id: 'tools.grid',
       label: 'Massredigering',
       hint: 'Verktyg',

@@ -18,7 +18,7 @@ public sealed class CliTests(ApiFactory factory)
         using var output = new StringWriter();
         using var error = new StringWriter();
         var env = new Dictionary<string, string?> { ["CMDB_TOKEN"] = token };
-        var code = await CliApp.RunAsync([.. args, "--url", http.BaseAddress!.ToString()], output, error, http, env, Ct);
+        var code = await CliApp.RunAsync([.. args, "--url", http.BaseAddress!.ToString()], output, error, http, env, ct: Ct);
         return (code, output.ToString(), error.ToString());
     }
 
