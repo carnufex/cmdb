@@ -1,6 +1,6 @@
 # Utredning #260: planera ett nytt fibernät i ett område
 
-**Datum:** 2026-10-11 · **Issue:** #260 · **Leder till:** ADR-0021 (*Föreslagen*) och issues för flödet
+**Datum:** 2026-10-11 · **Issue:** #260 · **Leder till:** ADR-0021 (*Accepterad*, alternativ B i #290) och issues för flödet
 
 ## Fråga
 Hur används verktyget för att planera ett nytt fibernät i ett område där vi inte har något i dag, från första skiss till byggbar plan?
