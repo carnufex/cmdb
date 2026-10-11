@@ -322,8 +322,6 @@ internal static class Loader
             await Exec(conn, $"SELECT setval(pg_get_serial_sequence('{table}', 'id'), GREATEST((SELECT max(id) FROM {table}), 1))", ct);
         }
         await Exec(conn, "SET cmdb.bulk = 'off'", ct);
-        await Exec(conn, "RESET cmdb.history", ct);
-        await Exec(conn, "RESET cmdb.actor", ct);
         await Exec(conn, "INSERT INTO graph_change (kind, key) VALUES ('reload', 0)", ct);
         var sw = Stopwatch.StartNew();
         if (scenarios)
@@ -337,6 +335,9 @@ internal static class Loader
         sw.Restart();
         // Rack positions (#173): the generator places equipment in racks; stacking them gives each its units.
         await Exec(conn, Cmdb.Database.RackStacking.Backfill, ct);
+        // Scenarios, demo plans and rack positions are part of the load (#304): no history, and the generator as the actor.
+        await Exec(conn, "RESET cmdb.history", ct);
+        await Exec(conn, "RESET cmdb.actor", ct);
         // The bulk rows left the search indexes loosely packed (#245); the load has the database to itself.
         var indexes = await Cmdb.Database.SearchIndexes.RebuildAsync(conn, concurrently: false, ct);
         log.WriteLine($"  reindex {indexes} search indexes {sw.Elapsed.TotalSeconds,6:0.0} s");

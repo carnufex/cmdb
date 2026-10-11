@@ -30,6 +30,8 @@ public static class DemoScenarios
         var aggregations = Sql(catalog.SiteTypesWith(Cmdb.Catalog.CatalogRoles.Aggregation));
         var power = Sql(catalog.CategoriesWith(Cmdb.Catalog.CatalogRoles.Power));
         await using var tx = await conn.BeginTransactionAsync(ct);
+        // Run again on a loaded network, the scenarios' writes are the generator's in the operation log (#23, #304).
+        await ExecAsync(conn, "SET LOCAL cmdb.actor = 'datagen'", ct);
 
         // Run again: take the previous backups away first.
         await ExecAsync(conn, $"""
