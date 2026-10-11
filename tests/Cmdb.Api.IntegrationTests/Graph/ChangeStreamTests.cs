@@ -72,6 +72,7 @@ public sealed class ChangeStreamTests(ApiFactory factory)
         await using var db = await SmallNetworkAsync(5);
         var feed = new PostgresGraphChangeFeed(db);
         var before = await GraphLoader.LoadAsync(db, Ct);
+        var start = await PastLoadAsync(feed, db, before.Version);
         var (a, b) = await FreePortsAsync(db);
 
         // A little of everything: a new patch, a removed connection, a cable lifecycle, a rerouted service and new equipment.
@@ -93,7 +94,7 @@ public sealed class ChangeStreamTests(ApiFactory factory)
         // Other tests' transactions can hold the horizon back, so follow the stream the way the API does.
         var target = await Scalar(db, "SELECT pg_snapshot_xmax(pg_current_snapshot())::text::bigint");
         var patched = before;
-        var watermark = before.Version;
+        var watermark = start;
         var keys = 0;
         while ((long)PostgresGraphChangeFeed.Xid(watermark)!.Value < target)
         {
@@ -120,6 +121,7 @@ public sealed class ChangeStreamTests(ApiFactory factory)
         await using var db = await SmallNetworkAsync(8);
         var feed = new PostgresGraphChangeFeed(db);
         var before = await GraphLoader.LoadAsync(db, Ct);
+        var start = await PastLoadAsync(feed, db, before.Version);
         var (a, b) = await FreePortsAsync(db);
 
         // Patching, a removed splice, a cable lifecycle (#81) and new equipment with its ports patched together (#119):
@@ -169,7 +171,7 @@ public sealed class ChangeStreamTests(ApiFactory factory)
 
         var target = await Scalar(db, "SELECT pg_snapshot_xmax(pg_current_snapshot())::text::bigint");
         var graph = before;
-        var watermark = before.Version;
+        var watermark = start;
         var batches = new List<GraphChangeBatch>();
         while ((long)PostgresGraphChangeFeed.Xid(watermark)!.Value < target)
         {
@@ -200,6 +202,111 @@ public sealed class ChangeStreamTests(ApiFactory factory)
         Bytes(GraphChanges.Flatten(graph, batches)).ShouldBe(Bytes(fresh));
         graph.TryGetNode(a, out var node).ShouldBeTrue();
         graph.Neighbours(node).ToArray().Select(graph.TerminalId).ShouldContain(b);
+    }
+
+    /// <summary>
+    /// Where the feed cuts between batches depends on the oldest transaction running anywhere in the cluster, and a batch
+    /// reads the current rows, which may already include later transactions (#282). A cut between the writes above still
+    /// gives deltas: an open transaction holds the horizon at the cut while the rest is written. (Every cut was tried
+    /// once; two are kept, after the structure and after a circuit change.)
+    /// </summary>
+    [Theory]
+    [InlineData(3)]
+    [InlineData(5)]
+    public async Task A_cut_between_transactions_still_gives_deltas(int cut)
+    {
+        await using var db = await SmallNetworkAsync(20 + cut);
+        var feed = new PostgresGraphChangeFeed(db);
+        var before = await GraphLoader.LoadAsync(db, Ct);
+        var start = await PastLoadAsync(feed, db, before.Version);
+        var (a, b) = await FreePortsAsync(db);
+        var removed = await Scalar(db, """
+            SELECT c.id FROM circuit c
+            WHERE NOT EXISTS (SELECT 1 FROM circuit_dependency d WHERE d.carrier_id = c.id)
+            ORDER BY c.id DESC LIMIT 1
+            """);
+        string[] writes =
+        [
+            $"INSERT INTO connection (a_terminal_id, b_terminal_id, kind, lifecycle) VALUES ({a}, {b}, 'patch', 'planned')",
+            "DELETE FROM connection WHERE id = (SELECT id FROM connection WHERE kind = 'splice' ORDER BY id LIMIT 1)",
+            "UPDATE cable SET lifecycle = 'decommissioning' WHERE id = (SELECT min(id) FROM cable)",
+            """
+            WITH e AS (
+                INSERT INTO equipment (equipment_type_id, site_id, location_id, name, lifecycle)
+                SELECT t.id, l.site_id, l.id, 'Delta test', 'planned'
+                FROM equipment_type t, (SELECT id, site_id FROM location WHERE kind = 'rack' ORDER BY id LIMIT 1) l
+                WHERE t.key = 'acme-bb-6'
+                RETURNING id
+            ), t AS (INSERT INTO terminal (kind) SELECT 'port' FROM generate_series(1, 2) RETURNING id),
+            p AS (
+                INSERT INTO port (terminal_id, equipment_id, name, port_type, position)
+                SELECT t.id, e.id, 'x' || row_number() OVER (ORDER BY t.id), 'sfp', (row_number() OVER (ORDER BY t.id))::int FROM t, e
+                RETURNING terminal_id
+            )
+            INSERT INTO connection (a_terminal_id, b_terminal_id, kind, lifecycle) SELECT min(terminal_id), max(terminal_id), 'patch', 'planned' FROM p
+            """,
+            "DELETE FROM service_circuit WHERE (service_id, circuit_id) = (SELECT service_id, circuit_id FROM service_circuit ORDER BY 1, 2 LIMIT 1)",
+            $"""
+            DELETE FROM service_circuit WHERE circuit_id = {removed};
+            DELETE FROM circuit_dependency WHERE circuit_id = {removed};
+            DELETE FROM circuit_hop WHERE circuit_id = {removed};
+            DELETE FROM circuit WHERE id = {removed};
+            """,
+            """
+            WITH ends AS (SELECT min(terminal_id) AS a, max(terminal_id) AS b FROM (SELECT terminal_id FROM port ORDER BY terminal_id LIMIT 2) x),
+            c AS (INSERT INTO circuit (code, layer, a_terminal_id, b_terminal_id) SELECT 'DELTA-282', 'transmission', a, b FROM ends RETURNING id, a_terminal_id, b_terminal_id),
+            h AS (INSERT INTO circuit_hop (circuit_id, seq, terminal_id) SELECT id, 0, a_terminal_id FROM c UNION ALL SELECT id, 1, b_terminal_id FROM c),
+            d AS (INSERT INTO circuit_dependency (circuit_id, carrier_id) SELECT c.id, (SELECT min(id) FROM circuit WHERE layer = 'physical') FROM c)
+            INSERT INTO service_circuit (service_id, circuit_id) SELECT (SELECT min(id) FROM service), id FROM c
+            """,
+        ];
+
+        foreach (var sql in writes[..cut])
+        {
+            await Exec(db, sql);
+        }
+        // Holds the horizon here: the writes after it have higher transaction ids and stay out of the first batches.
+        await using var pin = await db.OpenConnectionAsync(Ct);
+        await using var pinTx = await pin.BeginTransactionAsync(Ct);
+        await using (var xid = new NpgsqlCommand("SELECT pg_current_xact_id()::text::bigint", pin, pinTx))
+        {
+            await xid.ExecuteScalarAsync(Ct);
+        }
+        foreach (var sql in writes[cut..])
+        {
+            await Exec(db, sql);
+        }
+
+        var graph = before;
+        var watermark = start;
+        var batches = new List<GraphChangeBatch>();
+        async Task ReadUntilAsync(long target)
+        {
+            for (var i = 0; i < 500 && (long)PostgresGraphChangeFeed.Xid(watermark)!.Value < target; i++)
+            {
+                var batch = await feed.ReadAsync(watermark, Ct);
+                if (batch.Keys.Count > 0)
+                {
+                    var next = GraphChanges.TryDelta(graph, batch);
+                    next.ShouldNotBeNull($"cut after write {cut}, batch {batches.Count + 1}: {batch.Keys.Equipment.Count} equipment, " +
+                        $"{batch.Keys.Cables.Count} cables, {batch.Keys.Terminals.Count} terminals, {batch.Keys.Circuits.Count} circuits");
+                    graph = next;
+                    batches.Add(batch);
+                }
+                watermark = batch.Watermark;
+                await Task.Delay(10, Ct);
+            }
+        }
+        // Up to the open transaction: only the writes before the cut.
+        await using (var held = new NpgsqlCommand("SELECT pg_current_xact_id()::text::bigint", pin, pinTx))
+        {
+            await ReadUntilAsync((long)(await held.ExecuteScalarAsync(Ct))!);
+        }
+        await pinTx.CommitAsync(Ct);
+        await ReadUntilAsync(await Scalar(db, "SELECT pg_snapshot_xmax(pg_current_snapshot())::text::bigint"));
+
+        var fresh = GraphBuilder.Build(GraphData.From(await GraphLoader.LoadAsync(db, Ct)), graph.Version);
+        Bytes(GraphChanges.Flatten(graph, batches)).ShouldBe(Bytes(fresh));
     }
 
     [Fact]
@@ -278,6 +385,69 @@ public sealed class ChangeStreamTests(ApiFactory factory)
         var api = factory.WithWebHostBuilder(b => b.UseSetting("ConnectionStrings:Cmdb", connectionString));
         api.Services.GetRequiredService<GraphHolder>().Ready.Wait(TimeSpan.FromSeconds(60), Ct);
         return api;
+    }
+
+    /// <summary>
+    /// The cause of #282: a load takes its position from the oldest transaction running anywhere in the cluster, so while
+    /// another database's transaction runs, a fresh load's position is behind its own bulk load's reload marker. The first
+    /// read then asks for a reload; a test that wrote before reading past it got a reload batch with its keys and no rows.
+    /// </summary>
+    [Fact]
+    public async Task A_load_behind_its_own_reload_marker_reads_past_it_before_any_change()
+    {
+        // A transaction in another database, started before the bulk load commits, holds the horizon below it.
+        await using var other = await factory.NewDatabaseAsync();
+        await using var pin = await other.OpenConnectionAsync(Ct);
+        await using var pinTx = await pin.BeginTransactionAsync(Ct);
+        await using (var xid = new NpgsqlCommand("SELECT pg_current_xact_id()", pin, pinTx))
+        {
+            await xid.ExecuteScalarAsync(Ct);
+        }
+        await using var db = await SmallNetworkAsync(9);
+        var feed = new PostgresGraphChangeFeed(db);
+        var before = await GraphLoader.LoadAsync(db, Ct);
+        var marker = await Scalar(db, "SELECT max(tx)::text::bigint FROM graph_change");
+        ((long)PostgresGraphChangeFeed.Xid(before.Version)!.Value).ShouldBeLessThanOrEqualTo(marker);
+        await pinTx.CommitAsync(Ct);
+
+        var start = await PastLoadAsync(feed, db, before.Version);
+        ((long)PostgresGraphChangeFeed.Xid(start)!.Value).ShouldBeGreaterThan(marker);
+        var (a, b) = await FreePortsAsync(db);
+        await Exec(db, $"INSERT INTO connection (a_terminal_id, b_terminal_id, kind, lifecycle) VALUES ({a}, {b}, 'patch', 'planned')");
+        var target = await Scalar(db, "SELECT pg_snapshot_xmax(pg_current_snapshot())::text::bigint");
+        var graph = before;
+        var watermark = start;
+        for (var i = 0; i < 500 && (long)PostgresGraphChangeFeed.Xid(watermark)!.Value < target; i++)
+        {
+            var batch = await feed.ReadAsync(watermark, Ct);
+            batch.Reload.ShouldBeFalse();
+            if (batch.Keys.Count > 0)
+            {
+                graph = GraphChanges.TryDelta(graph, batch).ShouldNotBeNull();
+            }
+            watermark = batch.Watermark;
+            await Task.Delay(10, Ct);
+        }
+        graph.TryGetNode(a, out var node).ShouldBeTrue();
+        graph.Neighbours(node).ToArray().Select(graph.TerminalId).ShouldContain(b);
+    }
+
+    /// <summary>
+    /// Reads past the load's own reload marker before anything is written (#282), as the API does with one reload: while
+    /// another test's transaction holds the cluster's horizon back, a fresh load's position is behind it.
+    /// </summary>
+    private static async Task<string> PastLoadAsync(PostgresGraphChangeFeed feed, NpgsqlDataSource db, string watermark)
+    {
+        var marker = await Scalar(db, "SELECT coalesce(max(tx)::text::bigint, 0) FROM graph_change");
+        for (var i = 0; i < 1_200 && (long)PostgresGraphChangeFeed.Xid(watermark)!.Value <= marker; i++)
+        {
+            var batch = await feed.ReadAsync(watermark, Ct);
+            batch.Keys.Count.ShouldBe(0, "nothing is written before the load has been read past");
+            watermark = batch.Watermark;
+            await Task.Delay(25, Ct);
+        }
+        ((long)PostgresGraphChangeFeed.Xid(watermark)!.Value).ShouldBeGreaterThan(marker);
+        return watermark;
     }
 
     private static async Task<TraceResult> TraceAsync(WebApplicationFactory<Program> api, long terminal)
