@@ -220,6 +220,15 @@ export class SelectionBarComponent implements OnDestroy {
         untracked(() => void this.fromLasso(lasso.ring, lasso.mode));
       }
     });
+    // Asked for elsewhere, such as "Påverkan om siten faller" in the map's context menu (#258).
+    let seen = this.selection.impactRequest();
+    effect(() => {
+      const asked = this.selection.impactRequest();
+      if (asked !== seen) {
+        seen = asked;
+        untracked(() => setTimeout(() => void this.impact()));
+      }
+    });
     // A new selection makes the last impact stale.
     effect(() => {
       this.selection.current();

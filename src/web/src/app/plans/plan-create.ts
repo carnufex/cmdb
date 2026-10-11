@@ -561,6 +561,28 @@ export class PlanCreateComponent implements OnDestroy {
   }
 
   constructor() {
+    // From the map's context menu (#258): a tab to open, and a cable from a site with the other end picked in the map.
+    effect(() => {
+      const tab = this.draft.tab();
+      if (tab) {
+        untracked(() => {
+          this.tab.set(tab);
+          this.draft.tab.set(null);
+        });
+      }
+    });
+    effect(() => {
+      const from = this.draft.cableFrom();
+      if (from) {
+        untracked(() => {
+          this.tab.set('cable');
+          this.siteA = from;
+          this.siteB = '';
+          this.mapView.picking.set(true);
+          this.draft.cableFrom.set(null);
+        });
+      }
+    });
     // A free unit picked in the rack view (#255): new equipment there, with site, rack and position filled in.
     effect(() => {
       const draft = this.draft.equipment();

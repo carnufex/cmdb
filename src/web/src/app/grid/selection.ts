@@ -72,6 +72,8 @@ export class Selection {
   });
 
   readonly siteIds = computed(() => new Set(this.current()?.siteIds ?? []));
+  /** Bumped to show the selection's impact, such as from the map's context menu (#258). */
+  readonly impactRequest = signal(0);
   readonly cableIds = computed(() => new Set(this.current()?.cableIds ?? []));
 
   pick(picked: MapSelection, mode: SelectionMode = 'replace'): void {
