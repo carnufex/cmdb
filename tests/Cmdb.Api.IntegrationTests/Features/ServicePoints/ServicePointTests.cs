@@ -149,6 +149,32 @@ public sealed class ServicePointTests(ApiFactory factory)
         Text(one).ShouldContain("AP-NORD");
     }
 
+    [Fact]
+    public async Task The_quick_search_finds_service_points_through_indexes()
+    {
+        // The quick search prices sequential scans out (#12); every column it matches must have a trigram index, or the
+        // planner falls back to a scan costly enough to be JIT compiled, some 90 ms per search (#312).
+        await using var conn = await factory.Db.OpenConnectionAsync(Ct);
+        await using var tx = await conn.BeginTransactionAsync(Ct);
+        await using (var off = new NpgsqlCommand("SET LOCAL enable_seqscan = off; SET LOCAL enable_indexscan = off", conn, tx))
+        {
+            await off.ExecuteNonQueryAsync(Ct);
+        }
+        await using var cmd = new NpgsqlCommand("""
+            EXPLAIN SELECT p.id FROM service_point p WHERE p.code ILIKE '%nord%' OR p.address ILIKE '%nord%' OR p.name ILIKE '%nord%' LIMIT 40
+            """, conn, tx);
+        var plan = new StringBuilder();
+        await using (var reader = await cmd.ExecuteReaderAsync(Ct))
+        {
+            while (await reader.ReadAsync(Ct))
+            {
+                plan.AppendLine(reader.GetString(0));
+            }
+        }
+        plan.ToString().ShouldNotContain("Seq Scan");
+        plan.ToString().ShouldContain("ix_service_point_name_trgm");
+    }
+
     private static string Text(ModelContextProtocol.Protocol.CallToolResult result) =>
         string.Concat(result.Content.OfType<ModelContextProtocol.Protocol.TextContentBlock>().Select(c => c.Text));
 
