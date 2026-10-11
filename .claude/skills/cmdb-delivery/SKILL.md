@@ -35,6 +35,8 @@ runs on the workstation.
    issues linked with "Upptäckt i #<nr>".
 2. Run `scripts/verify.sh` (add `--images` if a Dockerfile, nginx config or
    dependency changed). It must end with `==> OK`. Paste the summary in the PR.
+   For changes in the web app, also run `scripts/e2e.sh` (#288, about 30 s warm):
+   the main flows in a real browser against a throwaway local stack.
 3. Try the change in the local stack (`docker compose up -d --build`, then
    http://localhost:8480) for anything user-visible, and take screenshots.
 4. `docs/` and ADRs updated if behaviour or the model changed.
