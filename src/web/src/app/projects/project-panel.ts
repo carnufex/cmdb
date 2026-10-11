@@ -79,6 +79,32 @@ export function stageStatusText(stage: ProjectStage): string {
           : 'Utkast';
 }
 
+/** GET /api/projects/{id}/node-suggestions (#294) */
+export interface NodeSuggestions {
+  capacity: number;
+  servicePoints: number;
+  units: number;
+  nodes: NodeSuggestion[];
+  elapsedMs: number;
+}
+
+export interface NodeSuggestion {
+  number: number;
+  x: number;
+  y: number;
+  snappedTo: { type: string; id: number; code: string; name: string | null } | null;
+  servicePoints: number;
+  units: number;
+  reachM: number;
+  overCapacity: boolean;
+  servicePointIds: number[];
+}
+
+/** A suggested node's site code: the project and the node's number, e.g. P12-N03. */
+export function nodeCode(project: number, n: number): string {
+  return `P${project}-N${String(n).padStart(2, '0')}`;
+}
+
 /** An amount in whole units of the currency, with spaces between thousands, as Swedish does. */
 export function costText(amount: number, currency: string): string {
   return `${Math.round(amount).toLocaleString('sv-SE')} ${currency}`;
@@ -264,6 +290,81 @@ export function costText(amount: number, currency: string): string {
           </form>
         }
       </section>
+      <section>
+        <h3>Förslag på noder</h3>
+        <form class="suggest" (submit)="$event.preventDefault(); suggest(p.id)">
+          <label
+            >Högst per nod
+            <select [value]="capacity()" (change)="capacity.set(+$any($event.target).value)">
+              <option value="64">64 enheter</option>
+              <option value="128">128 enheter</option>
+            </select>
+          </label>
+          <button type="submit" class="action">Föreslå noder</button>
+        </form>
+        @if (suggestions.hasValue()) {
+          @let s = suggestions.value();
+          <p class="muted">
+            {{ s.nodes.length }} noder för {{ s.servicePoints }} anslutningspunkter med
+            {{ s.units }} enheter ({{ s.elapsedMs }} ms).
+            @if (!openStage()) {
+              Lägg till en etapp för att lägga förslagen i en plan.
+            }
+          </p>
+          @if (s.nodes.length) {
+            <table class="rows">
+              <thead>
+                <tr>
+                  <th>Nod</th>
+                  <th class="num">Enheter</th>
+                  <th class="num">Punkter</th>
+                  <th class="num">Längst bort</th>
+                  <th>Läge</th>
+                  <th><span class="visually-hidden">Åtgärder</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (n of s.nodes; track n.number) {
+                  <tr>
+                    <td>{{ n.number }}</td>
+                    <td class="num">{{ n.units }}{{ n.overCapacity ? ' (över taket)' : '' }}</td>
+                    <td class="num">{{ n.servicePoints }}</td>
+                    <td class="num">{{ n.reachM }} m</td>
+                    <td>{{ n.snappedTo ? 'vid ' + n.snappedTo.code : 'rutnät' }}</td>
+                    <td class="actions">
+                      <button
+                        type="button"
+                        class="text-button"
+                        (click)="map.focus({ x: n.x, y: n.y })"
+                      >
+                        Visa
+                      </button>
+                      @if (canWrite() && openStage(); as stage) {
+                        @if (placed().has(n.number)) {
+                          <span class="muted">I planen</span>
+                        } @else {
+                          <button
+                            type="button"
+                            class="text-button"
+                            [disabled]="busy()"
+                            (click)="place(p, stage, n)"
+                          >
+                            Lägg i planen
+                          </button>
+                        }
+                      }
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          }
+        } @else if (suggestions.error()) {
+          <p class="error">Förslagen kunde inte räknas fram.</p>
+        } @else if (suggestFor()) {
+          <p class="loading">Räknar…</p>
+        }
+      </section>
     } @else if (project.error()) {
       <p class="error">Projektet kunde inte hämtas.</p>
     } @else {
@@ -381,6 +482,15 @@ export function costText(amount: number, currency: string): string {
     .error {
       color: var(--status-conflict);
     }
+    .suggest {
+      display: flex;
+      gap: var(--space-2);
+      align-items: end;
+      margin-bottom: var(--space-2);
+    }
+    .actions {
+      white-space: nowrap;
+    }
     .visually-hidden {
       position: absolute;
       width: 1px;
@@ -408,6 +518,21 @@ export class ProjectPanelComponent {
     const id = this.selected();
     return id === null ? undefined : `/api/projects/${id}`;
   });
+  /** Node suggestions (#294): asked for by the button, for the open project and the chosen cap. */
+  protected readonly capacity = signal(64);
+  protected readonly suggestFor = signal<{ id: number; capacity: number } | null>(null);
+  protected readonly suggestions = httpResource<NodeSuggestions>(() => {
+    const f = this.suggestFor();
+    return f ? `/api/projects/${f.id}/node-suggestions?capacity=${f.capacity}` : undefined;
+  });
+  /** Suggestions put in the plan, by number. */
+  protected readonly placed = signal<ReadonlySet<number>>(new Set());
+  /** The first stage still a draft: where suggestions go. */
+  protected readonly openStage = computed(() =>
+    this.project.hasValue()
+      ? (this.project.value().stages.find((s) => s.plan.status === 'draft') ?? null)
+      : null,
+  );
   protected readonly newName = signal('');
   protected readonly newArea = signal<number[][] | null>(null);
   protected readonly stageName = signal('');
@@ -425,6 +550,19 @@ export class ProjectPanelComponent {
   private drawingFor: 'new' | number | null = null;
 
   constructor() {
+    // Suggested nodes marked in the map.
+    effect(() => {
+      if (!this.suggestions.hasValue()) {
+        return;
+      }
+      const nodes = this.suggestions.value().nodes;
+      untracked(() =>
+        this.map.mark(
+          nodes.map((n) => [-n.number, n.x, n.y] as const),
+          null,
+        ),
+      );
+    });
     // The open project's area in the map, while the tool is open.
     effect(() => {
       const p = this.project.hasValue() ? this.project.value() : null;
@@ -454,6 +592,31 @@ export class ProjectPanelComponent {
   protected select(id: number | null): void {
     this.selected.set(id);
     this.error.set(null);
+    this.suggestFor.set(null);
+    this.placed.set(new Set());
+    this.map.clearMarks();
+  }
+
+  protected suggest(id: number): void {
+    this.placed.set(new Set());
+    this.suggestFor.set({ id, capacity: this.capacity() });
+  }
+
+  /** A suggested node as an access cabinet from the catalog's template, in the project's first open stage. */
+  protected async place(p: ProjectDetail, stage: ProjectStage, n: NodeSuggestion): Promise<void> {
+    const code = nodeCode(p.id, n.number);
+    await this.run(async () => {
+      await firstValueFrom(
+        this.http.post(`/api/plans/${stage.plan.id}/templates`, {
+          templateKey: 'skap-access',
+          code,
+          name: `${p.name}, nod ${n.number}`,
+          x: n.x,
+          y: n.y,
+        }),
+      );
+      this.placed.update((s) => new Set([...s, n.number]));
+    });
   }
 
   protected drawArea(): void {

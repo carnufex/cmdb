@@ -284,6 +284,7 @@ Ett **projekt** håller ihop en utbyggnad av ett område: namn, beskrivning, ans
 - **Per etapp** visas planens status, antal ändringar, ändringar som inte längre passar (bara för utkast), meter ny kabel och kostnad ur materiallistan (#291). Projektet summerar dem.
 - **Nästa steg** säger vad som återstår: lägg till en etapp, rita den första etappen som saknar ändringar, lös ändringar som inte passar, granska en flaggad, eller granska och för in nästa.
 - **Omfång:** ett projekt syns för den vars omfång har ett område som skär projektets, eller inget område. Etapper i planer som anroparen inte ser räknas men visas inte. Skrivningar kräver `cmdb-full` och blir operationer (#23).
+- **Förslag på noder** (#294): `GET /api/projects/{id}/node-suggestions?capacity=64|128` klustrar projektets ej anslutna anslutningspunkter med k-means viktat på enheter (samma data ger samma förslag) och delar kluster över taket tills alla ryms; en enskild punkt över taket får en egen nod och flaggas. Noden står i klustrets tyngdpunkt, flyttad till närmaste site där en trasésträcka slutar (en brunn) inom 150 m, annars till ett rutnät på 25 m. Inget skrivs: webben lägger ett förslag i planen som ett accesskåp från mall. Budget: under 500 ms för 2 000 punkter.
 - **API och MCP:** `GET /api/projects`, `GET /api/projects/{id}`, `POST /api/projects`, `PUT /api/projects/{id}`, `POST /api/projects/{id}/stages` (ny etapp), `PUT /api/projects/{id}/stages` (ordning), och MCP `list_projects` och `get_project`.
 
 ## Livscykel
