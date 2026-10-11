@@ -366,7 +366,7 @@ export class EquipmentPanelComponent {
   /** Loaded after the equipment itself: impact analysis has its own, larger budget. */
   protected readonly impact = httpResource<Impact>(() => {
     return this.equipment.value()
-      ? this.plan.request(`${this.url()}/impact${this.plan.param(true)}`)
+      ? this.plan.request(`${this.url()}/impact${this.plan.graphParam(true)}`)
       : undefined;
   });
   protected readonly selected = signal<Port | null>(null);
@@ -380,7 +380,7 @@ export class EquipmentPanelComponent {
   protected readonly portTrace = httpResource<TraceResult>(() => {
     const p = this.selected();
     return p
-      ? this.plan.request(`/api/trace?terminal=${p.terminalId}${this.plan.param()}`)
+      ? this.plan.request(`/api/trace?terminal=${p.terminalId}${this.plan.graphParam()}`)
       : undefined;
   });
   protected readonly connectionLabels: Record<string, string> = {

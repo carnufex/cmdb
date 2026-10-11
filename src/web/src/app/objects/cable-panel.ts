@@ -516,7 +516,7 @@ export class CablePanelComponent {
   /** Loaded after the cable itself: impact analysis has its own, larger budget. */
   protected readonly impact = httpResource<Impact>(() => {
     return this.cable.value()
-      ? this.plan.request(`/api/${apiPath.cable}/${this.id()}/impact${this.plan.param(true)}`)
+      ? this.plan.request(`/api/${apiPath.cable}/${this.id()}/impact${this.plan.graphParam(true)}`)
       : undefined;
   });
   protected readonly layers: Record<string, string> = {

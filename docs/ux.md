@@ -137,7 +137,7 @@ Så är det byggt (#26):
 - Hopp utanför omfånget visas som *Dold*, som i spårningen. I en plan ritas planens vy med planerade objekt streckade violetta.
 - Data kommer från `GET /api/services/{id}/drawing`: spårningen plus modellbilder, portarnas platser och kablarnas typ och längd. Bildtiden mäts i prestandapanelen när tjänstevyn har visats (mål 33 ms per bild). En tjänst med 58 hopp ritas om på under 1 ms vid val.
 
-**Tidsresa** (#23) i verktygsfältet väljer ett datum och ett läge: *Verklighet*, det som var i drift då som vi vet i dag, eller *Vad vi visste*, det CMDB:n beskrev då. Kartan ritar nätet per datum, och en banderoll över kartan säger vilket nät som visas, med prick och text, och har *Tillbaka till nu*. Lager som kanalisationen, planer och driftläget visar fortfarande nuläget.
+**Tidsresa** (#23) i verktygsfältet väljer ett datum och ett läge: *Verklighet*, det som var i drift då som vi vet i dag, eller *Vad vi visste*, det CMDB:n beskrev då. Kartan ritar nätet per datum, och en banderoll över kartan säger vilket nät som visas, med prick och text, och har *Tillbaka till nu*. Spårning och påverkan i panelerna följer med och räknas på nätet per datum (#302). Kanalisationen, planer och driftläget visar fortfarande nuläget, och en aktiv plan räknas alltid på nuläget.
 
 **Historik** (#23) i panelen för site, utrustning, kabel, krets och tjänst fälls ut och hämtas först när någon öppnar den: versionerna nyast först, med vad som ändrades (*Namn: före → efter*), vem som ändrade, hur (ändring i panelen, införd plan, import, avstämning) och varför.
 

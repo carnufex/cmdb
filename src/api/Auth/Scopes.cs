@@ -198,12 +198,20 @@ public sealed class GraphMask
     public bool ServiceVisible(int service) => service >= Services.Length || Services[service];
 }
 
-/// <summary>Builds and caches graph masks per scope combination, graph instance and registry version (#22).</summary>
+/// <summary>
+/// Builds and caches graph masks per scope combination, graph instance and registry version (#22). Masks live as long as
+/// their graph, so the current graph and a graph at a time (#302) keep theirs side by side.
+/// </summary>
 public sealed class ScopeMasks(SystemDb system, ScopeRegistry registry)
 {
     private readonly Lock _gate = new();
-    private (Cmdb.Graph.Graph Graph, int Version) _for;
-    private Dictionary<string, Task<GraphMask>> _cache = [];
+    private readonly System.Runtime.CompilerServices.ConditionalWeakTable<Cmdb.Graph.Graph, MaskCache> _caches = [];
+
+    private sealed class MaskCache
+    {
+        public int Version = -1;
+        public Dictionary<string, Task<GraphMask>> Masks = [];
+    }
 
     public Task<GraphMask> GetAsync(Cmdb.Graph.Graph g, UserScope scope, CancellationToken ct)
     {
@@ -211,15 +219,16 @@ public sealed class ScopeMasks(SystemDb system, ScopeRegistry registry)
         g = g.Base;
         lock (_gate)
         {
-            if (!ReferenceEquals(_for.Graph, g) || _for.Version != registry.Version)
+            var cache = _caches.GetOrCreateValue(g);
+            if (cache.Version != registry.Version)
             {
-                _for = (g, registry.Version);
-                _cache = [];
+                cache.Version = registry.Version;
+                cache.Masks = [];
             }
-            if (!_cache.TryGetValue(scope.Signature, out var mask) || mask.IsFaulted)
+            if (!cache.Masks.TryGetValue(scope.Signature, out var mask) || mask.IsFaulted)
             {
                 mask = scope.Unrestricted ? Task.FromResult(Everything(g)) : BuildAsync(g, scope.Keys, ct);
-                _cache[scope.Signature] = mask;
+                cache.Masks[scope.Signature] = mask;
             }
             return mask;
         }

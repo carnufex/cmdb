@@ -1,5 +1,6 @@
 using Cmdb.Api.Auth;
 using System.Diagnostics;
+using Cmdb.Api.Features.Graph;
 using Cmdb.Api.Features.Objects;
 using Cmdb.Graph;
 using FastEndpoints;
@@ -26,6 +27,13 @@ public sealed class TraceRequest
     /// <summary>Adds the route's geometry for the map (#19): site points and simplified cable lines.</summary>
     [QueryParam]
     public bool Geometry { get; set; }
+
+    /// <summary>Asks at a time (#302) instead of now: <c>reality</c> (default) or <c>knowledge</c>, as in the map.</summary>
+    [QueryParam]
+    public DateTimeOffset? At { get; set; }
+
+    [QueryParam]
+    public string? Mode { get; set; }
 }
 
 /// <summary>One terminal on a path, named for people: "RAD-000007 BB-6 1 · bh1" or "K-001521 fiber 3 (A)".</summary>
@@ -72,7 +80,7 @@ public sealed class TraceValidator : Validator<TraceRequest>
 /// both ends, or a service or circuit down through the layers it rides on. The walk is in memory (ADR-0002); only the
 /// names of the few terminals involved come from the database.
 /// </summary>
-public sealed class TraceEndpoint(GraphHolder holder, RequestDb db, ScopeMasks masks, Cmdb.Api.Features.Plans.PlanViews plans) : Endpoint<TraceRequest, TraceResult>
+public sealed class TraceEndpoint(GraphHolder holder, GraphAtTime times, RequestDb db, ScopeMasks masks, Cmdb.Api.Features.Plans.PlanViews plans) : Endpoint<TraceRequest, TraceResult>
 {
     public override void Configure() => Get("/trace");
 
@@ -82,6 +90,15 @@ public sealed class TraceEndpoint(GraphHolder holder, RequestDb db, ScopeMasks m
         {
             await Send.ResultAsync(TypedResults.Problem("The network graph is still loading; try again shortly.", statusCode: StatusCodes.Status503ServiceUnavailable));
             return;
+        }
+        if (!GraphTimes.TryParse(req.At, req.Mode, out var time) || (time is not null && req.Plan is not null))
+        {
+            await Send.ResultAsync(TypedResults.Problem("Give a mode of reality or knowledge, and a time or a plan, not both.", statusCode: StatusCodes.Status400BadRequest));
+            return;
+        }
+        if (time is not null)
+        {
+            graph = await times.GetAsync(time).WaitAsync(ct);
         }
         IReadOnlyDictionary<long, TraceHop>? planned = null;
         if (req.Plan is { } planId)

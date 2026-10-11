@@ -72,6 +72,7 @@ En image från en branch kan byggas för att testa den (`scripts/deploy.sh --all
 |---|---|---|
 | `Operations:HashChain` | `false` | Hashkedjar operationerna från start. Kontrollera kedjan med `GET /api/operations/verify`. Kedjan serialiserar skrivningarna (omkring 1 200 per sekund i mätningen). |
 | `Operations:MaintenanceHours` | `6` | Hur ofta partitioner skapas i förväg och läsloggen rensas. |
+| `Graph:TimeTravelCacheSize` | `1` | Hur många grafer per tidpunkt (#302) som hålls i minnet. En graf i full skala är omkring 230 MB. |
 | `ReadLog:Enabled` | `true` | Läsloggen; stäng av den bara för att mäta vad den kostar. |
 | `ReadLog:RetentionDays` | `90` | Hur länge läsloggens dygn sparas. |
 | `ReadLog:ArchivePath` | – | Mapp dit ett dygn exporteras som gzippad CSV innan det tas bort. |
