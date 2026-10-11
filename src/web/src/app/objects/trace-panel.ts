@@ -284,7 +284,9 @@ export class TracePanelComponent {
   protected readonly trace = httpResource<TraceResult>(() => {
     const s = this.start();
     return s
-      ? this.plan.request(`/api/trace?${s.by}=${s.id}&geometry=true${this.plan.param()}`)
+      ? this.plan.request(
+          `/api/trace?${s.by}=${s.id}&geometry=true${s.production ? '' : this.plan.param()}`,
+        )
       : undefined;
   });
 
@@ -318,7 +320,8 @@ export class TracePanelComponent {
     effect(() => {
       const title = this.title();
       if (title) {
-        this.panels.setLabel({ type: 'trace', id: this.id() }, `Spårning ${title}`);
+        const where = this.start()?.production && this.plan.id() !== null ? ' i produktion' : '';
+        this.panels.setLabel({ type: 'trace', id: this.id() }, `Spårning ${title}${where}`);
       }
     });
     // Drawn when loaded; the panel host clears it once no trace is left in the stack.
