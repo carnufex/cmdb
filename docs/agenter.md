@@ -134,7 +134,7 @@ Driftagenten (epic #130, ADR-0015) är en ElevenLabs-agent som tar emot felanmä
   - falsk redundans, där alla vägar för en tjänst går via samma site
   - reservkraftbatterier äldre än 8 år
 
-  **Ring ansvarig** i webben öppnar ElevenLabs-widgeten med risken som dynamiska variabler (`risk_id` m.fl.). Agenten verifierar och hämtar sedan risken med `risk_details`. Widgeten laddas först när ett samtal startar och bara om `VOICE_AGENT_ID` är satt.
+  **Ring ansvarig** i webben öppnar ElevenLabs-widgeten med risken som dynamiska variabler (`risk_id` m.fl.). Agenten verifierar och hämtar sedan risken med `risk_details`. Widgeten är ett npm-beroende med exakt version och laddas från vår egen origin först när ett samtal startar, och bara om `VOICE_AGENT_ID` är satt (#321). En ny version kommer alltså bara in via en PR och behöver provas i dialogen.
 
 Demoscenarier och uppringare finns i [demo-scenarier.md](demo-scenarier.md).
 
