@@ -3,13 +3,16 @@
 // asks for the impact and has an incident created; exits non-zero unless it gets a P1 incident.
 //
 // Environment: ELEVENLABS_API_KEY, CMDB_TOKEN (a token that sees the whole network, for the SMS outbox and the
-// incident list), optional CMDB_URL. Usage: node agent/e2e.mjs [inbound|refusal|outbound]
+// incident list), optional CMDB_URL. Usage: node agent/e2e.mjs [inbound|refusal|outbound|handover]
 // With the guardrails on, this is the check that they block nothing the flows need (inbound and outbound reach their
 // incident) and still block what they should (refusal, no code repeated).
 import { readFileSync } from 'node:fs';
 
 const cmdb = process.env.CMDB_URL ?? 'https://cmdb.rosenvall.se';
-const { agent_id: agentId } = JSON.parse(readFileSync(new URL('./agent.json', import.meta.url), 'utf8'));
+const state = JSON.parse(readFileSync(new URL('./agent.json', import.meta.url), 'utf8'));
+const mode = process.argv[2] ?? 'inbound';
+// A handover starts where a real call does, at the switchboard (#323).
+const agentId = mode === 'handover' ? state.agents.servicedesk.agent_id : state.agent_id;
 
 const signed = await (
   await fetch(`https://api.elevenlabs.io/v1/convai/conversation/get-signed-url?agent_id=${agentId}`, {
@@ -17,7 +20,6 @@ const signed = await (
   })
 ).json();
 const ws = new WebSocket(signed.signed_url);
-const mode = process.argv[2] ?? 'inbound';
 
 const transcript = [];
 let conversationId = null;
@@ -182,6 +184,34 @@ if (mode === 'refusal') {
   console.log(leaked.length === 0 && !listed ? 'refused as it should' : 'LEAK');
   const whole = await notCutOff('Prompt Injection');
   process.exit(leaked.length === 0 && !listed && whole ? 0 : 1);
+}
+
+if (mode === 'handover') {
+  // The misheard words of a real call: Saga must still connect it, and Sebastian must have his tools after the handover,
+  // in Swedish (#323). The endpoint refused the agent taking over for three weeks without any check noticing.
+  await say('Jag har glömt av en kabel på AGG1191.');
+  const said = () => transcript.filter((t) => t.startsWith('agent:')).join(' ');
+  const refused = /kan jag tyvärr inte/i.test(said());
+  await say('Nej, det var allt.');
+  await say('Ja, det stämmer.');
+  await say('Mitt anställningsnummer är 1001.');
+  const tools = async () => (await cmdbGet('/api/voice/activity')).calls.filter((c) => c.conversationId === conversationId);
+  const sent = (await tools()).some((c) => c.tool === 'request_verification_code');
+  const digits = sent ? await code('1001') : '';
+  if (sent) await say(`Koden är ${digits}.`);
+  ws.close();
+  const calls = await tools();
+  const verified = calls.some((c) => c.tool === 'verify_caller' && c.outcome === 'verified');
+  const found = calls.some((c) => c.tool === 'find_station');
+  const english = /\b(your|please|employee|code)\b/i.test(said());
+  const introduced = /Sebastian/.test(said());
+  console.log(`\nconversation ${conversationId}: ${calls.map((c) => `${c.tool}=${c.outcome}`).join(', ') || 'no tool calls'}`);
+  console.log(refused ? 'NOT CONNECTED: Saga said she could not help' : 'connected without being asked twice');
+  console.log(found && verified ? 'tools work after the handover' : 'NO TOOLS after the handover');
+  console.log(english ? 'ENGLISH in a Swedish call' : 'stayed in Swedish');
+  console.log(introduced ? 'Sebastian greeted the caller' : 'NO GREETING after the handover');
+  const whole = await notCutOff();
+  process.exit(!refused && found && verified && !english && introduced && whole && !(digits && echoed(digits)) ? 0 : 1);
 }
 
 await say('Hej, det är ingen länk på Lingon åsen sedan en kvart.');

@@ -7,7 +7,7 @@ Tre agenter (ADR-0015, ADR-0016, #151). Här finns allt de består av: prompter,
   - IT (lösenord, konto, dator, utrustning) lämnas över till **IT-självhjälpen**.
   - Nätet (CMDB, fiber, stationer, larm) lämnas över till **NOC-agenten** (Driftagenten).
   - Allt annat: "Det kan jag tyvärr inte hjälpa dig med. Vill du att en människa ringer upp dig? Det är cirka X minuters kö."
-- **Överlämningen** sker med `transfer_to_agent`, bara från växeln. Transkriptet och samtals-id:t följer med, så en verifiering gäller i hela samtalet. IT-självhjälpen och NOC kan inte lämna tillbaka: med en väg tillbaka studsade ett samtal mellan växeln och NOC tills talsyntesen föll (#154). Gäller samtalet något annat erbjuder de uppringning.
+- **Överlämningen** sker med `transfer_to_agent`, bara från växeln. Transkriptet och samtals-id:t följer med, så en verifiering gäller i hela samtalet. Den som tar över hälsar med sitt första meddelande och frågar inte om det som redan sagts: utan hälsning är det tyst tills uppringaren säger något (#323). IT-självhjälpen och NOC kan inte lämna tillbaka: med en väg tillbaka studsade ett samtal mellan växeln och NOC tills talsyntesen föll (#154). Gäller samtalet något annat erbjuder de uppringning.
 - **Varje agent har sin egen MCP-ingång** med bara sina verktyg: `/voice/servicedesk/mcp`, `/voice/it/mcp` och `/voice/mcp` (NOC).
 - **Utgående risksamtal** går direkt till NOC-agenten.
 
@@ -27,11 +27,11 @@ Tre agenter (ADR-0015, ADR-0016, #151). Här finns allt de består av: prompter,
 Varje testkörning kostar ElevenLabs-credits. Kör bara det som täcker ändringen, en gång.
 
 ## Inställningar
-- **Röst:** "Sanna Hartfield" (svensk, Stockholm), TTS-modell `eleven_v4_turbo`, språk `sv` med `en` som extra språk (#147): `language_detection` byter till engelska när uppringaren talar engelska.
+- **Röst:** "Sanna Hartfield" (svensk, Stockholm), TTS-modell `eleven_v4_turbo`, språk `sv` med `en` som extra språk (#147): `language_detection` byter till engelska när uppringaren säger en hel mening på engelska i början av samtalet (`only_at_conversation_start`). Fritt under hela samtalet bytte ett svenskt samtal till engelska halvvägs (#323).
 - **LLM:** `claude-haiku-4-5`, temperatur 0,2. `deepseek-v41-flash` provades i #147 (0,89 s mot 1,09 s till svar) men valdes bort.
 - **MCP:** `https://cmdb.rosenvall.se/voice/mcp`.
   - Varje ingång har sin hemlighet i arbetsytan (`cmdb-voice-secret-noc|servicedesk|it`, värdena från Bitwarden `CMDB_VOICE_SECRET_NOC|_SERVICEDESK|_IT`, #181).
-  - Samtals-id:t skickas i `X-Conversation-Id` (`system__conversation_id`) och agentens id i `X-Agent-Id` (`system__agent_id`).
+  - Samtals-id:t skickas i `X-Conversation-Id` (`system__conversation_id`) och den aktiva agentens id i `X-Agent-Id` (`system__current_agent_id`). `system__agent_id` är alltid agenten som startade samtalet, så ingången nekar den som tagit över (#323).
   - Verktygen godkänns automatiskt. Behörigheten ligger i CMDB:n, inte i agenten.
 - **Kostnadstak:** högst 2 samtidiga samtal och 60 samtal per dygn. Den publika testlänken kräver ingen inloggning.
 - **Guardrails:**
@@ -54,13 +54,14 @@ ELEVENLABS_API_KEY=… CMDB_VOICE_SECRET_NOC=… CMDB_VOICE_SECRET_SERVICEDESK=�
 Testa samtalet på `https://elevenlabs.io/app/talk-to?agent_id=<agent_id i agent.json>`. Koden till verifieringen syns i CMDB-webbens panel **Driftagent**, under SMS-utkorg. Uppringare och scenario finns i [docs/demo-scenarier.md](../docs/demo-scenarier.md).
 
 ## Tester: guardrails får inte döda funktionen
-Kör båda efter varje ändring av prompten eller av guardrails:
+Kör båda efter varje ändring av prompten eller av guardrails. Ändras överlämningarna eller MCP-servrarnas headers, kör `handover`:
 
 ```bash
 ELEVENLABS_API_KEY=… python agent/run_tests.py                  # repliker: legitim hjälp passerar, det skyddade blockeras
 ELEVENLABS_API_KEY=… CMDB_TOKEN=… node agent/e2e.mjs inbound     # anmälan, verifiering, påverkan och P1-ärende
 ELEVENLABS_API_KEY=… CMDB_TOKEN=… node agent/e2e.mjs refusal     # overifierad uppringare och injektion: inget lämnas ut
 ELEVENLABS_API_KEY=… CMDB_TOKEN=… node agent/e2e.mjs outbound    # risksamtal: verifiering, risk_details, ärende på kabeln
+ELEVENLABS_API_KEY=… CMDB_TOKEN=… node agent/e2e.mjs handover    # från växeln: överlämning, hälsning, verktyg och verifiering på svenska
 ```
 
 - **Agenttesterna** prövar enskilda repliker. Två visar att normal hjälp går igenom (anmälan tas emot och stationen bekräftas), och tre att skyddet håller (inga detaljer före verifiering, ingen kod eller prioritet på beställning, utgående samtal verifierar först).

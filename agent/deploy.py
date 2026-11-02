@@ -34,9 +34,10 @@ TTS_MODEL = "eleven_v4_turbo"
 # "Sanna Hartfield - Direct and Natural": Swedish, Stockholm, conversational (shared library).
 VOICE = {"public_owner_id": "3d1fa6a5595e0a31fff8d7c1a2f2794b91ca87ddd200066dfbdfcef662a65a1b", "voice_id": "4xkUqaR9MYOJHoaC1Nak",
          "name": "Sanna (Driftagent)"}
-FIRST_MESSAGE = "Hej, det är Sebastian på NOC. Vilken station gäller det, och vad ser du?"
+# Calls reach the NOC agent by a handover, or with their own opening ("Ring ansvarig"), so this assumes a handover (#323).
+FIRST_MESSAGE = "Hej, det är Sebastian på NOC. Jag har hört vad du sa till Saga. Har du något att lägga till?"
 # English as an extra language (#147): language_detection switches when the caller speaks English.
-FIRST_MESSAGE_EN = "Hi, this is Sebastian at the NOC. Which station is it about, and what are you seeing?"
+FIRST_MESSAGE_EN = "Hi, this is Sebastian at the NOC. I heard what you told Saga. Anything to add?"
 # Each agent its own voice, so a handover is heard (#157): Saga (service desk), Sebastian (NOC), Elin (IT).
 VOICES = {
     "noc": {"public_owner_id": "0d9cdb52e4caa5da8982884c5118f0b3df792554ccca6bedfa79fa2167b27ad9", "voice_id": "zA8eaG1JhG82rhuCip6v",
@@ -44,8 +45,8 @@ VOICES = {
     "it": {"public_owner_id": "52bf44915e767893ee3b6b5f0ed2af1d2122cc810f8e5abee7a783af568ff191", "voice_id": "ycdKCM2Fj0Us7dTwCGoM",
            "name": "Lisa (Elin, IT-självhjälp)"},
 }
-KEYWORDS = ["Lingonåsen", "aggregering", "aggregeringsnod", "ODF", "likriktare", "patch", "skarv", "fiberbrott", "P1", "NOC",
-            "anställningsnummer", "verifieringskod"]
+KEYWORDS = ["Lingonåsen", "aggregering", "aggregeringsnod", "AGG", "ODF", "likriktare", "patch", "skarv", "fiberbrott", "kabel",
+            "grävt av", "P1", "NOC", "anställningsnummer", "verifieringskod"]
 
 
 def request(method: str, path: str, body: dict | None = None) -> dict:
@@ -99,9 +100,10 @@ def mcp_server(state: dict, secret_id: str, name: str = "cmdb-driftagent", path:
         "approval_policy": "auto_approve_all",
         "secret_token": {"secret_id": secret_id},
         # The call's id binds a verification to this call only (ADR-0015); the agent's id lets the endpoint check that the
-        # call comes from its own agent (#181).
+        # call comes from its own agent (#181). The current agent's: system__agent_id stays the agent that started the
+        # call, so after a handover the endpoint refused the agent taking over and it had no tools (#323).
         "request_headers": {"X-Conversation-Id": {"variable_name": "system__conversation_id"},
-                            "X-Agent-Id": {"variable_name": "system__agent_id"}},
+                            "X-Agent-Id": {"variable_name": "system__current_agent_id"}},
         "pre_tool_speech": "auto",
         "response_timeout_secs": 15,
     }
@@ -196,25 +198,30 @@ def system_tool(kind: str, description: str, **params) -> dict:
 
 
 def transfers(*targets: tuple[str, str]) -> dict:
-    """transfer_to_agent to (agent id, when). The next agent does not greet: it picks up from the transcript, and the
-    call keeps its id, so a verification still holds (ADR-0016). No fixed transfer message: it was spoken in Swedish in
-    English calls and on top of the agent's own words; the agent says it connects the caller, in the caller's language."""
+    """transfer_to_agent to (agent id, when). The next agent opens with its first message, since without one it waits in
+    silence for the caller (#323), and picks up from the transcript. The call keeps its id, so a verification still holds
+    (ADR-0016). No fixed transfer message: it was spoken in Swedish in English calls and on top of the agent's own words;
+    the agent says it connects the caller, in the caller's language."""
     return system_tool("transfer_to_agent", "Lämna över samtalet till rätt agent.", transfers=[
-        {"agent_id": agent_id, "condition": condition, "delay_ms": 0, "enable_transferred_agent_first_message": False}
+        {"agent_id": agent_id, "condition": condition, "delay_ms": 0, "enable_transferred_agent_first_message": True}
         for agent_id, condition in targets])
 
 
 END_CALL = system_tool("end_call", "Avsluta samtalet när uppringaren säger att hen är klar.")
-# The switch must be silent (#194): without this the agent announced "I need to switch to English".
-LANGUAGE = system_tool("language_detection", "Switch the conversation language to the one the caller speaks, silently: say nothing "
-                       "before or after, never mention the switch, and answer the caller's last message in the new language.")
+# The switch must be silent (#194): without this the agent announced "I need to switch to English". Only near the start
+# of a call and only on a whole English sentence: left open, a Swedish call went English halfway through (#323).
+LANGUAGE = system_tool("language_detection", "Switch to English only when the caller's latest message is a whole sentence in English. "
+                       "Never for Swedish, even with codes such as AGG0885, numbers or words such as 'sajt', and never for a short "
+                       "answer or silence. Switch silently: say nothing before or after, never mention the switch, and answer the "
+                       "caller's last message in the new language.", only_at_conversation_start=True)
 
 # The service desk switchboard and IT self-service (ADR-0016): short prompts, only the built-in guardrails.
 DESK_FIRST = "Hej, det här är Saga på service desk, hur kan jag hjälpa dig?"
 DESK_FIRST_EN = "Hi, this is Saga at the service desk, how can I help you?"  # only if a call starts in English
-IT_FIRST = "Hej, det är Elin på IT-självhjälpen. Vad kan jag hjälpa dig med?"
-IT_FIRST_EN = "Hi, this is Elin at IT self-service. How can I help you?"
-DESK_KEYWORDS = ["service desk", "passertagg", "passerkort", "lösenord", "NOC", "anställningsnummer", "Lingonåsen", "fiber"]
+IT_FIRST = "Hej, det är Elin på IT-självhjälpen. Jag har hört vad du sa till Saga. Har du något att lägga till?"
+IT_FIRST_EN = "Hi, this is Elin at IT self-service. I heard what you told Saga. Anything to add?"
+DESK_KEYWORDS = ["service desk", "passertagg", "passerkort", "lösenord", "NOC", "Sebastian", "Elin", "anställningsnummer", "Lingonåsen", "AGG",
+                 "fiber", "kabel", "grävt av"]
 
 
 def light_agent(name: str, tag: str, prompt_file: str, first: str, first_en: str, voice_id: str, mcp_id: str,
@@ -345,7 +352,8 @@ def main() -> None:
         "CMDB Service desk", "servicedesk", "servicedesk.md", DESK_FIRST, DESK_FIRST_EN, state["voice_id"], desk["mcp_server_id"],
         {"transfer_to_agent": transfers(
             (it_id, "IT: lösenord, konto, inloggning, dator, telefon, programvara eller beställa utrustning."),
-            (noc_id, "Nätet: CMDB, fiber, kablar, stationer, siter, länkar, larm, strömavbrott, grävning eller felanmälan på nätet."))},
+            (noc_id, "Nätet: CMDB, fiber, kablar, stationer, siter, länkar, larm, strömavbrott, grävning eller felanmälan på nätet, "
+                      "också när uppringaren bara nämner en kabel eller en stationskod eller ber om Sebastian."))},
         desk_tests))
     for doc in stale:
         request("DELETE", f"/v1/convai/knowledge-base/{doc}")
