@@ -1,0 +1,33 @@
+{
+  "name": "Växeln: en kabel och en stationskod går till NOC även vid hörfel",
+  "type": "llm",
+  "chat_history": [
+    {
+      "role": "agent",
+      "time_in_call_secs": 0,
+      "message": "Hej, det här är Saga på service desk, hur kan jag hjälpa dig?"
+    },
+    {
+      "role": "user",
+      "time_in_call_secs": 4,
+      "message": "Jag har glömt av en kabel på AGG0885."
+    }
+  ],
+  "success_condition": "The agent hands the call over to the NOC agent: it says it connects the caller to Sebastian or NOC, or calls transfer_to_agent. It does not say it cannot help, does not offer a callback and does not send the caller to IT.",
+  "success_examples": [
+    {
+      "type": "success",
+      "response": "Jag kopplar dig till Sebastian på NOC."
+    }
+  ],
+  "failure_examples": [
+    {
+      "type": "failure",
+      "response": "Det kan jag tyvärr inte hjälpa dig med. Vill du att en människa ringer upp dig?"
+    },
+    {
+      "type": "failure",
+      "response": "Vad menar du med att du glömt en kabel?"
+    }
+  ]
+}

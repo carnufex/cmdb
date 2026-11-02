@@ -40,7 +40,7 @@ flowchart LR
 ## Ett samtal
 
 1. Uppringaren startar samtalet från webben. Saga svarar och hör vad det gäller.
-2. Saga kopplar vidare med `transfer_to_agent`. Transkriptet och samtals-id:t följer med, så Sebastian eller Elin fortsätter utan att fråga igen.
+2. Saga kopplar vidare med `transfer_to_agent`. Transkriptet och samtals-id:t följer med. Sebastian eller Elin hälsar och fortsätter utan att fråga om det som redan sagts.
 3. Sebastian slår upp stationen, verifierar uppringaren med en engångskod, räknar påverkan och skapar ett ärende.
 4. Ärendenumret skickas med SMS och läses aldrig upp. SMS:en är stubbade: de hamnar i en utkorg som panelen visar.
 5. Kartan följer samtalet. Den flyger till stationen och ritar vilka förbindelser som tappar sin väg.
@@ -100,7 +100,7 @@ flowchart TB
 
 - **Kanalhemligheten** gör att bara ElevenLabs kan anropa röstingångarna. Den ger ändå inte mer än ett overifierat samtal. En persons token öppnar inte röstingångarna, och röstens hemlighet öppnar inte `/mcp`.
 - **En hemlighet per ingång** (#181): `/voice/mcp`, `/voice/servicedesk/mcp` och `/voice/it/mcp` tar var sin hemlighet (`Voice:Secrets:Noc|ServiceDesk|It`, Bitwarden `CMDB_VOICE_SECRET_NOC|_SERVICEDESK|_IT`). En läckt hemlighet öppnar bara den agentens verktyg. Den gemensamma `Voice:Secret` används bara för en ingång som saknar egen.
-- **Agentens id:** ElevenLabs skickar `system__agent_id` i `X-Agent-Id`. Med `Voice:Agents:…` satt nekar ingången anrop från en annan agent och loggar avvikelsen.
+- **Agentens id:** ElevenLabs skickar den aktiva agentens id (`system__current_agent_id`) i `X-Agent-Id`, så det stämmer även efter en överlämning (#323). Med `Voice:Agents:…` satt nekar ingången anrop från en annan agent och loggar avvikelsen.
 - **Utan verifiering** har samtalet omfånget "ingenting".
   - Då är bara stationssöket öppet, och det lämnar ut det som står på en skylt: namn, kod, typ, region och status.
   - Hos service desk och IT är det bara kö, uppringning och katalog.
