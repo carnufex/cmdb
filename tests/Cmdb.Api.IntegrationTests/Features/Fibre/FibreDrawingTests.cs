@@ -27,7 +27,7 @@ public sealed class FibreDrawingTests(ApiFactory factory)
         var (mx, my) = await Point(db, $"SELECT ST_X(p), ST_Y(p) FROM (SELECT ST_LineInterpolatePoint(geom, 0.25) AS p FROM cable WHERE id = {cable}) c");
 
         var url = FormattableString.Invariant($"/api/fibre/cables/{cable}?x={mx}&y={my}");
-        var (drawing, fastest) = await Warm(client, url);
+        var drawing = await Warm(client, url);
         var c = drawing.Cables.ShouldHaveSingleItem();
         c.Fibres.Count.ShouldBe((int)await Scalar(db, $"SELECT count(*) FROM conductor WHERE cable_id = {cable}"));
         c.Fibres.Select(f => f.Number).ShouldBe(c.Fibres.Select(f => f.Number).Order());
@@ -42,7 +42,6 @@ public sealed class FibreDrawingTests(ApiFactory factory)
         var brk = drawing.Break.ShouldNotBeNull();
         (brk.ToA + brk.ToB).ShouldBeGreaterThan(0);
         (brk.ToB / Math.Max(1, brk.ToA)).ShouldBeInRange(2.9, 3.1);
-        fastest.ShouldBeLessThan(200);
 
         (await client.GetAsync("/api/fibre/cables/999999999", Ct)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
         (await client.GetAsync("/api/fibre/toasters/1", Ct)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
@@ -61,11 +60,10 @@ public sealed class FibreDrawingTests(ApiFactory factory)
             SELECT count(DISTINCT p.cable_id) FROM cable_path p JOIN subduct s ON s.id = p.subduct_id JOIN duct_segment ds ON ds.duct_id = s.duct_id
             WHERE ds.route_segment_id = {segment}
             """);
-        var (bySegment, fastest) = await Warm(client, $"/api/fibre/route-segments/{segment}");
+        var bySegment = await Warm(client, $"/api/fibre/route-segments/{segment}");
         bySegment.Cables.Count.ShouldBe((int)Math.Min(inSegment, FibreDrawings.MaxCables));
         bySegment.Title.ShouldStartWith("Trasésträcka");
         bySegment.Cables.Select(x => x.Cable.Code).ShouldBe(bySegment.Cables.Select(x => x.Cable.Code).Order(StringComparer.Ordinal));
-        fastest.ShouldBeLessThan(200);
 
         var site = await Scalar(db, "SELECT a_site_id FROM cable GROUP BY a_site_id ORDER BY count(*) DESC, a_site_id LIMIT 1");
         var bySite = (await client.GetFromJsonAsync<FibreDrawing>($"/api/fibre/sites/{site}", Ct))!;
@@ -122,24 +120,11 @@ public sealed class FibreDrawingTests(ApiFactory factory)
     }
 
     /// <summary>
-    /// The budget is for warm calls (docs/plan.md, #273): the first pays for JIT and the conduit index (#237). Other tests
-    /// change the shared network in parallel, and a new graph version builds its index again (#280), so the fastest of
-    /// three warm calls is what is measured.
+    /// The first call pays for JIT and the conduit index (#237), and other tests change the shared network in parallel, so a
+    /// new graph version builds its index again (#280).
     /// </summary>
-    private static async Task<(FibreDrawing Drawing, double FastestMs)> Warm(HttpClient client, string url)
-    {
-        FibreDrawing? drawing = null;
-        var fastest = double.MaxValue;
-        for (var i = 0; i < 4; i++)
-        {
-            drawing = (await client.GetFromJsonAsync<FibreDrawing>(url, Ct))!;
-            if (i > 0)
-            {
-                fastest = Math.Min(fastest, drawing.ElapsedMs);
-            }
-        }
-        return (drawing!, fastest);
-    }
+    private static Task<FibreDrawing> Warm(HttpClient client, string url) =>
+        Budget.WithinAsync(200, async () => (await client.GetFromJsonAsync<FibreDrawing>(url, Ct))!, d => d.ElapsedMs);
 
     private static async Task<long> Scalar(NpgsqlDataSource db, string sql)
     {

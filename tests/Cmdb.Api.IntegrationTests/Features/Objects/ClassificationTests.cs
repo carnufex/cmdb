@@ -166,7 +166,7 @@ public sealed class ClassificationTests(ApiFactory factory)
             new { kind = "set_classification", type = "service", objectId = service, schema = "criticality", level = 5 }, Ct)).StatusCode.ShouldBe(HttpStatusCode.OK);
         (await Derived("cable", cable, plan.Id)).Level.ShouldBe(5);
         (await Derived("cable", cable)).Level.ShouldBe(4);
-        (await Derived("cable", cable, plan.Id)).ElapsedMs.ShouldBeLessThan(500);
+        await Budget.WithinAsync(500, () => Derived("cable", cable, plan.Id), d => d.ElapsedMs);
     }
 
     [Fact]

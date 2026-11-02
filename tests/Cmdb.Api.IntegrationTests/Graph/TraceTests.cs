@@ -74,9 +74,7 @@ public sealed class TraceTests(ApiFactory factory)
         trace.Physical.Hops.Skip(1).ShouldAllBe(h => h.Edge != null);
         trace.Physical.Hops.ShouldContain(h => h.Edge == "conductor");
         trace.Services.ShouldNotBeEmpty();
-        // The budget is for a warm call.
-        (await Budget.WarmAsync(async () => (await client.GetFromJsonAsync<TraceResult>($"/api/trace?terminal={circuit.A}", Ct))!, t => t.ElapsedMs))
-            .FastestMs.ShouldBeLessThan(50);
+        await Budget.WithinAsync(50, async () => (await client.GetFromJsonAsync<TraceResult>($"/api/trace?terminal={circuit.A}", Ct))!, t => t.ElapsedMs);
     }
 
     [Fact]

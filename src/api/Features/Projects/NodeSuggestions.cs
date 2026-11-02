@@ -73,38 +73,50 @@ public sealed class NodeSuggestionsEndpoint(RequestDb db, ProjectService project
             }
         }
         var clusters = NodeClustering.Cluster(points, req.Capacity);
+        var units = clusters.Select(c => c.Sum(p => p.Units)).ToList();
+        var centres = clusters.Select((c, i) => (X: c.Sum(p => p.X * p.Units) / units[i], Y: c.Sum(p => p.Y * p.Units) / units[i])).ToList();
+        var sites = await SnapAsync(centres, scope, ct);
         var nodes = new List<NodeSuggestion>();
         foreach (var (cluster, i) in clusters.Select((c, i) => (c, i)))
         {
-            var units = cluster.Sum(p => p.Units);
-            var (cx, cy) = (cluster.Sum(p => p.X * p.Units) / units, cluster.Sum(p => p.Y * p.Units) / units);
-            var snapped = await SnapAsync(cx, cy, scope, ct);
+            var (cx, cy) = centres[i];
+            var snapped = sites[i];
             var (x, y) = snapped is { } s ? (s.X, s.Y) : (Math.Round(cx / GridM) * GridM, Math.Round(cy / GridM) * GridM);
-            nodes.Add(new NodeSuggestion(i + 1, Math.Round(x, 1), Math.Round(y, 1), snapped?.Site, cluster.Count, units,
+            nodes.Add(new NodeSuggestion(i + 1, Math.Round(x, 1), Math.Round(y, 1), snapped?.Site, cluster.Count, units[i],
                 Math.Round(cluster.Max(p => Math.Sqrt(((p.X - x) * (p.X - x)) + ((p.Y - y) * (p.Y - y)))), 0),
-                cluster.Count == 1 && units > req.Capacity, [.. cluster.Select(p => p.Id)]));
+                cluster.Count == 1 && units[i] > req.Capacity, [.. cluster.Select(p => p.Id)]));
         }
         await Send.OkAsync(new NodeSuggestions(req.Capacity, points.Count, points.Sum(p => p.Units), nodes, Math.Round(sw.Elapsed.TotalMilliseconds, 1)), ct);
     }
 
-    /// <summary>The nearest site within reach where a route segment ends, in the caller's scopes.</summary>
-    private async Task<(ObjectRef Site, double X, double Y)?> SnapAsync(double x, double y, UserScope scope, CancellationToken ct)
+    /// <summary>
+    /// For each centre, the nearest site within reach where a route segment ends, in the caller's scopes. One query for
+    /// all of them: a round trip per node was a third of the time (#325).
+    /// </summary>
+    private async Task<(ObjectRef Site, double X, double Y)?[]> SnapAsync(List<(double X, double Y)> centres, UserScope scope, CancellationToken ct)
     {
         await using var cmd = db.CreateCommand($"""
-            SELECT s.id, s.code, s.name, s.lifecycle::text, ST_X(ST_PointOnSurface(s.geom)), ST_Y(ST_PointOnSurface(s.geom))
-            FROM site s
-            WHERE ST_DWithin(s.geom, ST_SetSRID(ST_MakePoint($1, $2), 3006), {SnapM.ToString(System.Globalization.CultureInfo.InvariantCulture)})
-              AND EXISTS (SELECT 1 FROM route_segment r WHERE r.a_site_id = s.id OR r.b_site_id = s.id)
-              AND {ScopeSql.Site("s.id", 3)}
-            ORDER BY s.geom <-> ST_SetSRID(ST_MakePoint($1, $2), 3006) LIMIT 1
+            SELECT c.i, n.id, n.code, n.name, n.lifecycle, n.x, n.y
+            FROM unnest($1::float8[], $2::float8[]) WITH ORDINALITY c(x, y, i)
+            CROSS JOIN LATERAL (
+                SELECT s.id, s.code, s.name, s.lifecycle::text AS lifecycle, ST_X(ST_PointOnSurface(s.geom)) AS x, ST_Y(ST_PointOnSurface(s.geom)) AS y
+                FROM site s
+                WHERE ST_DWithin(s.geom, ST_SetSRID(ST_MakePoint(c.x, c.y), 3006), {SnapM.ToString(System.Globalization.CultureInfo.InvariantCulture)})
+                  AND EXISTS (SELECT 1 FROM route_segment r WHERE r.a_site_id = s.id OR r.b_site_id = s.id)
+                  AND {ScopeSql.Site("s.id", 3)}
+                ORDER BY s.geom <-> ST_SetSRID(ST_MakePoint(c.x, c.y), 3006) LIMIT 1
+            ) n
             """);
-        cmd.Parameters.Add(new() { Value = x });
-        cmd.Parameters.Add(new() { Value = y });
+        cmd.Parameters.Add(new() { Value = centres.Select(c => c.X).ToArray() });
+        cmd.Parameters.Add(new() { Value = centres.Select(c => c.Y).ToArray() });
         cmd.Parameters.Add(scope.Parameter());
+        var sites = new (ObjectRef Site, double X, double Y)?[centres.Count];
         await using var reader = await cmd.ExecuteReaderAsync(ct);
-        return await reader.ReadAsync(ct)
-            ? (new ObjectRef("site", reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3)), reader.GetDouble(4), reader.GetDouble(5))
-            : null;
+        while (await reader.ReadAsync(ct))
+        {
+            sites[(int)reader.GetInt64(0) - 1] = (new ObjectRef("site", reader.GetInt64(1), reader.GetString(2), reader.GetString(3), reader.GetString(4)), reader.GetDouble(5), reader.GetDouble(6));
+        }
+        return sites;
     }
 }
 
@@ -145,35 +157,58 @@ public static class NodeClustering
     private static List<List<Item>> KMeans(IReadOnlyList<Item> items, int k)
     {
         var rng = new Random(294);
-        var centres = new List<(double X, double Y)> { (items[0].X, items[0].Y) };
-        // k-means++: each next centre far from those chosen, weighted by distance squared and units.
-        while (centres.Count < k)
+        var n = items.Count;
+        var (xs, ys, unitsOf) = (new double[n], new double[n], new double[n]);
+        for (var i = 0; i < n; i++)
         {
-            var weights = items.Select(p => centres.Min(c => Sq(p.X - c.X) + Sq(p.Y - c.Y)) * p.Units).ToArray();
-            var total = weights.Sum();
+            (xs[i], ys[i], unitsOf[i]) = (items[i].X, items[i].Y, items[i].Units);
+        }
+        var (cx, cy) = (new double[k], new double[k]);
+        (cx[0], cy[0]) = (xs[0], ys[0]);
+        var count = 1;
+        // k-means++: each next centre far from those chosen, weighted by distance squared and units.
+        var nearest = new double[n];
+        Array.Fill(nearest, double.MaxValue);
+        var weights = new double[n];
+        while (count < k)
+        {
+            // Only the newest centre can be nearer than before.
+            var (lastX, lastY) = (cx[count - 1], cy[count - 1]);
+            var total = 0d;
+            for (var i = 0; i < n; i++)
+            {
+                nearest[i] = Math.Min(nearest[i], Sq(xs[i] - lastX) + Sq(ys[i] - lastY));
+                weights[i] = nearest[i] * unitsOf[i];
+                total += weights[i];
+            }
             if (total <= 0)
             {
                 break;
             }
             var pick = rng.NextDouble() * total;
-            var i = 0;
-            for (; i < weights.Length - 1 && pick > weights[i]; i++)
+            var chosen = 0;
+            for (; chosen < n - 1 && pick > weights[chosen]; chosen++)
             {
-                pick -= weights[i];
+                pick -= weights[chosen];
             }
-            centres.Add((items[i].X, items[i].Y));
+            (cx[count], cy[count]) = (xs[chosen], ys[chosen]);
+            count++;
         }
-        var assignment = new int[items.Count];
+        var assignment = new int[n];
+        var (sumX, sumY, sumUnits) = (new double[count], new double[count], new double[count]);
         for (var round = 0; round < 50; round++)
         {
             var changed = false;
-            for (var i = 0; i < items.Count; i++)
+            Array.Clear(sumX);
+            Array.Clear(sumY);
+            Array.Clear(sumUnits);
+            for (var i = 0; i < n; i++)
             {
                 var best = 0;
                 var bestD = double.MaxValue;
-                for (var c = 0; c < centres.Count; c++)
+                for (var c = 0; c < count; c++)
                 {
-                    var d = Sq(items[i].X - centres[c].X) + Sq(items[i].Y - centres[c].Y);
+                    var d = Sq(xs[i] - cx[c]) + Sq(ys[i] - cy[c]);
                     if (d < bestD)
                     {
                         (best, bestD) = (c, d);
@@ -181,14 +216,15 @@ public static class NodeClustering
                 }
                 changed |= assignment[i] != best;
                 assignment[i] = best;
+                sumX[best] += xs[i] * unitsOf[i];
+                sumY[best] += ys[i] * unitsOf[i];
+                sumUnits[best] += unitsOf[i];
             }
-            for (var c = 0; c < centres.Count; c++)
+            for (var c = 0; c < count; c++)
             {
-                var members = items.Where((_, i) => assignment[i] == c).ToList();
-                if (members.Count > 0)
+                if (sumUnits[c] > 0)
                 {
-                    var units = members.Sum(p => p.Units);
-                    centres[c] = (members.Sum(p => p.X * p.Units) / units, members.Sum(p => p.Y * p.Units) / units);
+                    (cx[c], cy[c]) = (sumX[c] / sumUnits[c], sumY[c] / sumUnits[c]);
                 }
             }
             if (!changed && round > 0)
@@ -196,7 +232,16 @@ public static class NodeClustering
                 break;
             }
         }
-        return [.. Enumerable.Range(0, centres.Count).Select(c => items.Where((_, i) => assignment[i] == c).ToList()).Where(m => m.Count > 0)];
+        var members = new List<Item>[count];
+        for (var c = 0; c < count; c++)
+        {
+            members[c] = [];
+        }
+        for (var i = 0; i < n; i++)
+        {
+            members[assignment[i]].Add(items[i]);
+        }
+        return [.. members.Where(m => m.Count > 0)];
     }
 
     private static double Sq(double v) => v * v;

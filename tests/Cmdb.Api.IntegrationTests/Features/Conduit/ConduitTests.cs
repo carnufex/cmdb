@@ -33,14 +33,13 @@ public sealed class ConduitTests(ApiFactory factory)
             SELECT ds.route_segment_id FROM cable_path p JOIN subduct s ON s.id = p.subduct_id JOIN duct_segment ds ON ds.duct_id = s.duct_id
             GROUP BY ds.route_segment_id ORDER BY count(*) DESC, ds.route_segment_id LIMIT 1
             """);
-        var detail = (await client.GetFromJsonAsync<RouteSegmentDetail>($"/api/route-segments/{segment}", Ct))!;
+        var detail = await Budget.WithinAsync(500, async () => (await client.GetFromJsonAsync<RouteSegmentDetail>($"/api/route-segments/{segment}", Ct))!, d => d.ElapsedMs);
         detail.Ducts.ShouldNotBeEmpty();
         detail.Ducts.ShouldAllBe(d => d.Subducts.Count == (d.TypeKey == "acme-md-7x16" ? 7 : d.TypeKey == "acme-md-24x7" ? 24 : 1));
         var taken = detail.Ducts.SelectMany(d => d.Subducts).Where(s => s.Occupancy == "cable").ToList();
         taken.Count.ShouldBeGreaterThan(1);
         taken.ShouldAllBe(s => s.Cable != null && s.Cable.Id > 0);
         detail.FreeSubducts.ShouldBe(detail.Ducts.SelectMany(d => d.Subducts).Count(s => s.Occupancy == "empty"));
-        detail.ElapsedMs.ShouldBeLessThan(500);
 
         var cable = taken[0].Cable!.Id;
         var path = (await client.GetFromJsonAsync<List<CablePathStep>>($"/api/cables/{cable}/path", Ct))!;
@@ -102,17 +101,9 @@ public sealed class ConduitTests(ApiFactory factory)
             WHERE EXISTS (SELECT 1 FROM conductor k JOIN conductor_end e ON e.conductor_id = k.id JOIN circuit_hop h ON h.terminal_id = e.terminal_id WHERE k.cable_id = p.cable_id)
             GROUP BY ds.route_segment_id ORDER BY count(*) DESC, ds.route_segment_id LIMIT 1
             """);
-        // The budget is for warm calls (docs/plan.md): the first one pays for JIT and cold caches (#273). The rest of the
-        // suite shares the machine, so the fastest of three warm calls is measured (#282).
-        Cmdb.Api.Features.Objects.Impact impact = null!;
-        var fastest = double.MaxValue;
-        for (var i = 0; i < 4; i++)
-        {
-            impact = (await client.GetFromJsonAsync<Cmdb.Api.Features.Objects.Impact>($"/api/route-segments/{segment}/impact", Ct))!;
-            fastest = i > 0 ? Math.Min(fastest, impact.ElapsedMs) : fastest;
-        }
+        var impact = await Budget.WithinAsync(200,
+            async () => (await client.GetFromJsonAsync<Cmdb.Api.Features.Objects.Impact>($"/api/route-segments/{segment}/impact", Ct))!, i => i.ElapsedMs);
         impact.Cables!.Count.ShouldBeGreaterThan(1);
-        fastest.ShouldBeLessThan(200);
 
         // The same as cutting each of its cables, together.
         var services = new HashSet<long>();
