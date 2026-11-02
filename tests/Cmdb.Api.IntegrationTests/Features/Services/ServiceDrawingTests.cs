@@ -25,7 +25,7 @@ public sealed class ServiceDrawingTests(ApiFactory factory)
             ORDER BY s.service_id LIMIT 1
             """);
 
-        var (drawing, fastest) = await Budget.WarmAsync(
+        var drawing = await Budget.WithinAsync(50,
             async () => (await client.GetFromJsonAsync<ServiceDrawing>($"/api/services/{service}/drawing", Ct))!, d => d.ElapsedMs);
         drawing.Trace.Service!.Id.ShouldBe(service);
         drawing.Trace.Circuits.Select(c => c.Layer).ShouldContain("physical");
@@ -44,7 +44,6 @@ public sealed class ServiceDrawingTests(ApiFactory factory)
         {
             e.Image.ShouldNotBeNull();
         }
-        fastest.ShouldBeLessThan(50);
 
         (await client.GetAsync("/api/services/999999999/drawing", Ct)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
     }

@@ -39,14 +39,7 @@ public sealed class PlanImpactTests(ApiFactory factory)
             (await client.PostAsJsonAsync($"/api/plans/{plan.Id}/operations", new { kind = "disconnect", a, b }, Ct)).StatusCode.ShouldBe(HttpStatusCode.OK);
 
             var url = $"/api/plans/{plan.Id}/impact";
-            PlanImpact impact = null!;
-            var fastest = double.MaxValue;
-            // The budget is for warm calls (docs/plan.md, #280): the fastest of three after the first.
-            for (var i = 0; i < 4; i++)
-            {
-                impact = (await client.GetFromJsonAsync<PlanImpact>(url, Ct))!;
-                fastest = i > 0 ? Math.Min(fastest, impact.ElapsedMs) : fastest;
-            }
+            var impact = await Budget.WithinAsync(200, async () => (await client.GetFromJsonAsync<PlanImpact>(url, Ct))!, i => i.ElapsedMs);
             var hit = impact.Circuits.Where(c => c.Circuit.Id == circuit).ShouldHaveSingleItem();
             (hit.Before, hit.After).ShouldBe(("intact", "broken"));
             hit.Services.ShouldBeGreaterThan(0);
@@ -56,7 +49,6 @@ public sealed class PlanImpactTests(ApiFactory factory)
             impact.Services.ShouldContain(s => s.Before == "intact" && s.After != "intact");
             // Every other circuit the plan touches holds in production: the path check agrees with the model.
             impact.Circuits.ShouldAllBe(c => c.Before == "intact");
-            fastest.ShouldBeLessThan(200);
 
             (await client.GetAsync("/api/plans/999999999/impact", Ct)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
         }

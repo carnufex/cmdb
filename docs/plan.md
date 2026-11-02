@@ -96,6 +96,8 @@ Budgeten kan mätas direkt i appen: **Prestanda** i verktygsfältet kör interak
 
 Samma rader mäts automatiskt med k6: `scripts/perf.sh` (se [drift.md](drift.md#prestandamätning)) skriver en rapport och avslutas med fel om någon rad är över budget.
 
+Integrationstesterna vaktar också budgeten, men med ett svagare mått eftersom de kör parallellt och delar maskin med andra projekt (#325): en budget håller om ett varmt anrop får plats inom 30 sekunder (`Budget.WithinAsync`). Tillfälliga störningar passerar, medan ett anrop som verkligen är för långsamt aldrig får plats och fäller testet. Budgetvärdena ändras inte av detta, och p95 i full skala mäts bara av `scripts/perf.sh`.
+
 ## Demoscenarier (prioritetsordning)
 
 1. **Navigering.** Ctrl+K, hitta en switch, borra ner till en port och följ en tjänst till slututrustningen medan alla linser följer med.

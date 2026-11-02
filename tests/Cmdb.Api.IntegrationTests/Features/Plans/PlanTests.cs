@@ -46,8 +46,7 @@ public sealed class PlanTests(ApiFactory factory)
         diff.Problems.ShouldBe(0);
         diff.Sites.ShouldNotBeEmpty();
         // The budget row "switch view" (docs/plan.md) on a warm view.
-        var (_, fastest) = await Budget.WarmAsync(async () => (await client.GetFromJsonAsync<PlanDiff>($"/api/plans/{plan.Id}/view", Ct))!, d => d.ElapsedMs);
-        fastest.ShouldBeLessThan(100);
+        await Budget.WithinAsync(100, async () => (await client.GetFromJsonAsync<PlanDiff>($"/api/plans/{plan.Id}/view", Ct))!, d => d.ElapsedMs);
         (await Count(db, $"SELECT count(*) FROM connection WHERE valid_to IS NULL AND {a} IN (a_terminal_id, b_terminal_id)")).ShouldBe(0);
     }
 
