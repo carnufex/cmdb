@@ -35,9 +35,10 @@ public sealed class IncidentNumberRequest
 
 /// <summary>
 /// Resolves an incident from the agent panel (#161): closed, with when and by whom. People with write access only, and
-/// only within their scopes; resolving one that is already closed changes nothing.
+/// only within their scopes; resolving one that is already closed changes nothing. The map stops following the call that
+/// reported it (#328).
 /// </summary>
-public sealed class ResolveIncidentEndpoint(RequestDb db) : Endpoint<IncidentNumberRequest>
+public sealed class ResolveIncidentEndpoint(RequestDb db, SystemDb system) : Endpoint<IncidentNumberRequest>
 {
     public override void Configure()
     {
@@ -55,16 +56,28 @@ public sealed class ResolveIncidentEndpoint(RequestDb db) : Endpoint<IncidentNum
         await using var cmd = db.Source.CreateCommand($"""
             WITH target AS (SELECT i.id, i.status FROM incident i WHERE i.id = $2 AND {ScopeSql.Site("i.site_id", 1)}),
                  resolved AS (UPDATE incident SET status = 'closed', resolved_at = now(), resolved_by = $3
-                              WHERE id IN (SELECT id FROM target WHERE status = 'open') RETURNING id)
-            SELECT count(*) FROM target
+                              WHERE id IN (SELECT id FROM target WHERE status = 'open') RETURNING conversation_id)
+            SELECT (SELECT count(*) FROM target), (SELECT conversation_id FROM resolved)
             """);
+        var by = User.FindFirstValue(CmdbClaims.Username) ?? User.Identity?.Name ?? "?";
         cmd.Parameters.Add(HttpContext.Scope().Parameter());
         cmd.Parameters.Add(new() { Value = id });
-        cmd.Parameters.Add(new() { Value = User.FindFirstValue(CmdbClaims.Username) ?? User.Identity?.Name ?? "?" });
-        if ((long)(await cmd.ExecuteScalarAsync(ct))! == 0)
+        cmd.Parameters.Add(new() { Value = by });
+        long found;
+        string? conversation;
+        await using (var reader = await cmd.ExecuteReaderAsync(ct))
+        {
+            await reader.ReadAsync(ct);
+            (found, conversation) = (reader.GetInt64(0), reader.IsDBNull(1) ? null : reader.GetString(1));
+        }
+        if (found == 0)
         {
             await Send.NotFoundAsync(ct);
             return;
+        }
+        if (conversation is not null)
+        {
+            await LiveCalls.EndAsync(system.Source, conversation, by, ct);
         }
         await Send.NoContentAsync(ct);
     }

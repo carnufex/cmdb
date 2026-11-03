@@ -250,6 +250,48 @@ describe('operations agent panel', () => {
     fixture.destroy();
   });
 
+  it('lets the call be marked as over, so the map stops following it', async () => {
+    const http = TestBed.inject(HttpTestingController);
+    const fixture = TestBed.createComponent(VoicePanelComponent);
+    await settle(fixture);
+    http.expectOne((r) => r.url === '/api/incidents').flush([]);
+    http.expectOne((r) => r.url === '/api/risks').flush([]);
+    http.expectOne((r) => r.url === '/api/voice/activity').flush(activity);
+    await settle(fixture);
+
+    const site = { id: 12, code: 'AGG-0012', name: 'Lingonåsen', x: 1, y: 2 };
+    http
+      .expectOne((r) => r.url === '/api/operations/live')
+      .flush({
+        incidents: [],
+        live: {
+          tool: 'find_station',
+          reference: 'site:12',
+          conversationId: 'conv_1',
+          at: incident.createdAt,
+          site,
+          impact: null,
+        },
+      });
+    http.expectOne((r) => r.url === '/api/operations/works').flush({ works: [], risks: [] });
+    await settle(fixture);
+    expect(TestBed.inject(MapView).operations()!.live).not.toBeNull();
+    const element = fixture.nativeElement as HTMLElement;
+    expect(element.querySelector('.live')?.textContent).toContain('Lingonåsen (AGG-0012)');
+
+    element.querySelector<HTMLButtonElement>('.live button')!.click();
+    const end = http.expectOne('/api/operations/live/conv_1/end');
+    expect(end.request.method).toBe('POST');
+    end.flush(null, { status: 204, statusText: 'No Content' });
+    await settle(fixture);
+
+    expect(element.querySelector('.live')).toBeNull();
+    expect(TestBed.inject(MapView).operations()!.live).toBeNull();
+    http.expectOne((r) => r.url === '/api/operations/live').flush({ incidents: [], live: null });
+    await settle(fixture);
+    expect(element.querySelector('.live')).toBeNull();
+  });
+
   it('switches on the eye for the incident the live call created, so it can be hidden', async () => {
     const http = TestBed.inject(HttpTestingController);
     const fixture = TestBed.createComponent(VoicePanelComponent);

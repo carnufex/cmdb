@@ -66,6 +66,14 @@ public class VoiceToolCall
     public DateTimeOffset CreatedAt { get; set; }
 }
 
+/// <summary>Someone marked a call as over, so the map stops following it (#328). A later tool call in the call brings it back.</summary>
+public class VoiceCallEnd
+{
+    public required string ConversationId { get; set; }
+    public required string EndedBy { get; set; }
+    public DateTimeOffset EndedAt { get; set; }
+}
+
 /// <summary>
 /// A fault report (#135), enriched when it is created with what the network knows: affected services, redundancy,
 /// equipment status. The priority is set by rules, not by the agent.
@@ -179,6 +187,16 @@ internal sealed class VoiceToolCallConfiguration : IEntityTypeConfiguration<Voic
         e.ToTable("voice_tool_call");
         e.Property(x => x.CreatedAt).HasDefaultValueSql("now()");
         e.HasIndex(x => x.ConversationId);
+    }
+}
+
+internal sealed class VoiceCallEndConfiguration : IEntityTypeConfiguration<VoiceCallEnd>
+{
+    public void Configure(EntityTypeBuilder<VoiceCallEnd> e)
+    {
+        e.ToTable("voice_call_end");
+        e.HasKey(x => x.ConversationId);
+        e.Property(x => x.EndedAt).HasDefaultValueSql("now()");
     }
 }
 

@@ -2757,6 +2757,29 @@ namespace Cmdb.Database.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Cmdb.Database.Model.VoiceCallEnd", b =>
+                {
+                    b.Property<string>("ConversationId")
+                        .HasColumnType("text")
+                        .HasColumnName("conversation_id");
+
+                    b.Property<DateTimeOffset>("EndedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ended_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("EndedBy")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("ended_by");
+
+                    b.HasKey("ConversationId")
+                        .HasName("pk_voice_call_end");
+
+                    b.ToTable("voice_call_end", (string)null);
+                });
+
             modelBuilder.Entity("Cmdb.Database.Model.VoiceCaller", b =>
                 {
                     b.Property<string>("EmployeeId")
