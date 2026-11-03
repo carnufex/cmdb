@@ -145,6 +145,17 @@ const FRESH_SMS_MS = 5 * 60_000;
         }
       </div>
     </div>
+    @if (liveCall(); as c) {
+      <p class="live latest">
+        <span class="grow">Kartan följer samtalet om {{ c.site.name }} ({{ c.site.code }})</span>
+        <button type="button" class="secondary small" (click)="endCall(c.conversationId)">
+          Klar
+        </button>
+      </p>
+      @if (endCallError(); as e) {
+        <p class="error latest" role="alert">{{ e }}</p>
+      }
+    }
     @if (latestSms(); as s) {
       <p class="sms latest" aria-live="polite">
         <span class="muted">Senaste SMS {{ time(s.createdAt) }} till anst. {{ s.employeeId }}</span
@@ -432,6 +443,11 @@ const FRESH_SMS_MS = 5 * 60_000;
     }
     .latest {
       margin: var(--space-2) var(--space-4) 0;
+    }
+    .live {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
     }
     .count {
       color: var(--text-muted);
@@ -747,6 +763,11 @@ export class VoicePanelComponent {
     this.actionError.set(null);
     this.http.post(`/api/incidents/${number}/resolve`, null).subscribe({
       next: () => {
+        // The server stops following the incident's call too: without this its impact would flash back until the next poll.
+        const call = this.lastLive?.incidents.find((i) => i.number === number)?.conversationId;
+        if (call && call === this.lastLive?.live?.conversationId) {
+          this.forgetLive();
+        }
         const shown = new Set(this.onMap());
         shown.delete(number);
         this.onMap.set(shown);
@@ -774,6 +795,32 @@ export class VoicePanelComponent {
       next: () => this.tick.update((t) => t + 1),
       error: () => this.actionError.set(`${number} kunde inte markeras som klar.`),
     });
+  }
+
+  /** The call is over: the map stops following it, here and for everyone else (#328). */
+  protected endCall(conversationId: string): void {
+    this.endCallError.set(null);
+    this.http
+      .post(`/api/operations/live/${encodeURIComponent(conversationId)}/end`, null)
+      .subscribe({
+        next: () => {
+          this.forgetLive();
+          this.tick.update((t) => t + 1);
+        },
+        error: (e: { status?: number }) =>
+          this.endCallError.set(
+            e.status === 403
+              ? 'Du behöver skrivbehörighet för att avsluta samtalet på kartan.'
+              : 'Samtalet kunde inte avslutas på kartan.',
+          ),
+      });
+  }
+
+  private forgetLive(): void {
+    this.liveCall.set(null);
+    if (this.lastLive) {
+      this.lastLive = { ...this.lastLive, live: null };
+    }
   }
 
   /** The newest SMS while it is fresh: the code to read out during a call, whichever tab is open. */
@@ -817,6 +864,8 @@ export class VoicePanelComponent {
     params: { t: Math.floor(this.tick() / 10) },
   }));
   private lastLive: Pick<Operations, 'incidents' | 'live'> | undefined;
+  protected readonly liveCall = signal<Operations['live']>(null);
+  protected readonly endCallError = signal<string | null>(null);
   /** Incidents whose eye was switched on because the live call created them (#163); each only once. */
   private readonly autoShown = new Set<string>();
   private lastWorks: Pick<Operations, 'works' | 'risks'> | undefined;
@@ -832,6 +881,7 @@ export class VoicePanelComponent {
         this.lastLive = this.liveResource.value();
         // The call's own incident takes over its impact, eye on, so it shows at once and can be hidden (#163).
         const live = this.lastLive.live;
+        this.liveCall.set(live);
         for (const i of this.lastLive.incidents) {
           if (
             live &&

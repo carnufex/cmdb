@@ -44,6 +44,7 @@ flowchart LR
 3. Sebastian slår upp stationen, verifierar uppringaren med en engångskod, räknar påverkan och skapar ett ärende.
 4. Ärendenumret skickas med SMS och läses aldrig upp. SMS:en är stubbade: de hamnar i en utkorg som panelen visar.
 5. Kartan följer samtalet. Den flyger till stationen och ritar vilka förbindelser som tappar sin väg.
+6. Samtalet avslutas på kartan med **Klar** i panelen, när samtalsdialogen stängs eller när samtalets ärende löses (#328). Servern får inte veta när ett samtal tar slut, så annars ligger det kvar i upp till 10 minuter efter sista verktygsanropet. Ett nytt verktygsanrop i samma samtal tar tillbaka det.
 
 ```mermaid
 sequenceDiagram

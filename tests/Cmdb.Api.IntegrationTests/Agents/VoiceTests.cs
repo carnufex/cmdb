@@ -127,8 +127,14 @@ public sealed partial class VoiceTests(ApiFactory factory)
         var resolved = (await web.GetFromJsonAsync<JsonElement>("/api/incidents", Ct)).EnumerateArray().Single(i => i.GetProperty("number").GetString() == number);
         resolved.GetProperty("status").GetString().ShouldBe("closed");
         resolved.GetProperty("resolvedBy").GetString().ShouldNotBeNullOrEmpty();
-        (await web.GetFromJsonAsync<JsonElement>("/api/operations/live", Ct)).GetProperty("incidents").EnumerateArray()
-            .ShouldNotContain(i => i.GetProperty("number").GetString() == number);
+        var operations = await web.GetFromJsonAsync<JsonElement>("/api/operations/live", Ct);
+        operations.GetProperty("incidents").EnumerateArray().ShouldNotContain(i => i.GetProperty("number").GetString() == number);
+        // The map stops following the call that reported it (#328).
+        var live = operations.GetProperty("live");
+        if (live.ValueKind != JsonValueKind.Null)
+        {
+            live.GetProperty("conversationId").GetString().ShouldNotBe(resolved.GetProperty("conversationId").GetString());
+        }
     }
 
     [Fact]
@@ -160,6 +166,37 @@ public sealed partial class VoiceTests(ApiFactory factory)
         works.GetProperty("works").EnumerateArray().ShouldContain(w => w.GetProperty("contractor").GetString() == DemoScenarios.Contractor);
         works.GetProperty("works")[0].GetProperty("ring").GetArrayLength().ShouldBeGreaterThan(3);
         works.GetProperty("risks").EnumerateArray().Select(r => r.GetProperty("kind").GetString()).ShouldContain("digging");
+    }
+
+    [Fact]
+    public async Task A_call_marked_as_over_leaves_the_map_until_its_next_tool_call()
+    {
+        var (_, api) = await NetworkFixture.WithScenariosAsync(factory);
+        var call = NewCall();
+        await using var voice = await ConnectAsync(api, call);
+        await CallAsync(voice, "find_station", new() { ["query"] = "Lingonåsen" });
+        using var web = NetworkFixture.Client(api);
+        async Task<string?> Following()
+        {
+            var live = (await web.GetFromJsonAsync<JsonElement>("/api/operations/live", Ct)).GetProperty("live");
+            return live.ValueKind == JsonValueKind.Null ? null : live.GetProperty("conversationId").GetString();
+        }
+        (await Following()).ShouldBe(call);
+
+        // Writing needs cmdb-full, and a call nobody knows of cannot be ended.
+        using var reader = NetworkFixture.Client(api, "cmdb-demo-nord", ["cmdb-region-nord"]);
+        (await reader.PostAsync($"/api/operations/live/{call}/end", null, Ct)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        (await web.PostAsync("/api/operations/live/no-such-call/end", null, Ct)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await Following()).ShouldBe(call);
+
+        // Over for everyone, also after a reload, and ending it twice changes nothing (#328).
+        (await web.PostAsync($"/api/operations/live/{call}/end", null, Ct)).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        (await web.PostAsync($"/api/operations/live/{call}/end", null, Ct)).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        (await Following()).ShouldNotBe(call);
+
+        // The call was still going after all.
+        await CallAsync(voice, "find_station", new() { ["query"] = "Lingonåsen" });
+        (await Following()).ShouldBe(call);
     }
 
     [Fact]

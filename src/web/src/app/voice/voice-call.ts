@@ -1,3 +1,4 @@
+import { HttpClient } from '@angular/common/http';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -53,7 +54,9 @@ export interface VoiceCallRequest {
 export class VoiceCall {
   private readonly config = inject(RUNTIME_CONFIG, { optional: true });
   private readonly loader = inject(WIDGET_LOADER);
+  private readonly http = inject(HttpClient);
   private seq = 0;
+  private startedAt = 0;
 
   readonly agentId = this.config?.voiceAgentId ?? '';
   readonly nocAgentId = this.config?.voiceNocAgentId || this.agentId;
@@ -68,6 +71,7 @@ export class VoiceCall {
     // A new key recreates the widget, so each call starts fresh with its own variables.
     const agentId = request.agent === 'noc' ? this.nocAgentId : this.agentId;
     const key = ++this.seq;
+    this.startedAt = Date.now();
     this.widget.set('loading');
     this.current.set({ ...request, agentId, key });
     const settled = (state: 'ready' | 'failed') => {
@@ -82,7 +86,26 @@ export class VoiceCall {
   }
 
   close(): void {
+    if (!this.current()) {
+      return;
+    }
     this.current.set(null);
+    // Closing the dialog ends the call, so the map should stop following it (#328). The widget does not say which
+    // conversation it had: a live call newer than the dialog is taken to be this one. Should it be someone else's, their
+    // next tool call brings it back. Readers cannot end a call, which leaves it to whoever can.
+    const startedAt = this.startedAt;
+    this.http
+      .get<{ live: { conversationId: string; at: string } | null }>('/api/operations/live')
+      .subscribe({
+        next: ({ live }) => {
+          if (live && new Date(live.at).getTime() >= startedAt) {
+            this.http
+              .post(`/api/operations/live/${encodeURIComponent(live.conversationId)}/end`, null)
+              .subscribe({ error: () => undefined });
+          }
+        },
+        error: () => undefined,
+      });
   }
 }
 

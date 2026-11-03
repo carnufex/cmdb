@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Cmdb.Api.Auth;
 using Cmdb.Api.Features.Objects;
 using Cmdb.Api.Features.Trace;
@@ -36,9 +37,6 @@ public sealed record OperationsWorks(IReadOnlyList<MapWork> Works, IReadOnlyList
 /// </summary>
 public sealed class OperationsLiveEndpoint(GraphHolder holder, RequestDb db, SystemDb system, ScopeMasks masks) : EndpointWithoutRequest<OperationsLive>
 {
-    /// <summary>A call older than this is no longer live.</summary>
-    private static readonly TimeSpan LiveWindow = TimeSpan.FromMinutes(15);
-
     /// <summary>The impact of the latest focus, per graph: recomputed only when the call moves on or the network changes.</summary>
     private static volatile ImpactCache? cache;
 
@@ -79,37 +77,21 @@ public sealed class OperationsLiveEndpoint(GraphHolder holder, RequestDb db, Sys
 
     private async Task<LiveFocus?> LiveAsync(UserScope scope, CancellationToken ct)
     {
-        string tool, reference, conversation;
-        DateTimeOffset at;
-        await using (var cmd = system.Source.CreateCommand("""
-            SELECT tool, reference, conversation_id, created_at FROM voice_tool_call
-            WHERE reference IS NOT NULL AND outcome NOT IN ('refused', 'error') AND created_at > now() - $1
-            ORDER BY id DESC LIMIT 1
-            """))
-        {
-            cmd.Parameters.Add(new() { Value = LiveWindow });
-            await using var reader = await cmd.ExecuteReaderAsync(ct);
-            if (!await reader.ReadAsync(ct))
-            {
-                return null;
-            }
-            (tool, reference, conversation, at) = (reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetFieldValue<DateTimeOffset>(3));
-        }
-        if (holder.Current is not { } graph || OperationsImpact.Parse(reference) is not { } target)
+        if (await LiveCalls.LatestAsync(system.Source, null, ct) is not { } call || holder.Current is not { } graph)
         {
             return null;
         }
         var mask = await masks.GetAsync(graph, scope, ct);
-        var fault = await FaultAnalysis.RunAsync(graph, mask, db.Source, target.Type, target.Id, ct);
-        if (fault is null || await SiteAsync(fault.SiteId, scope, ct) is not { } site)
+        if (await LiveCalls.InScopeAsync(graph, mask, db.Source, call, scope, ct) is not { } focus)
         {
             // Outside the caller's scope: the call is not theirs to follow.
             return null;
         }
+        var (fault, site) = focus;
         LiveImpact? impact = null;
-        if (ImpactTools.Contains(tool))
+        if (ImpactTools.Contains(call.Tool))
         {
-            var key = $"{reference}|{scope.Signature}|{scope.Unrestricted}|{scope.Clips}|{System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(graph)}";
+            var key = $"{call.Reference}|{scope.Signature}|{scope.Unrestricted}|{scope.Clips}|{System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(graph)}";
             if (cache is { } hit && hit.Key == key)
             {
                 impact = hit.Impact;
@@ -120,21 +102,113 @@ public sealed class OperationsLiveEndpoint(GraphHolder holder, RequestDb db, Sys
                 cache = new ImpactCache(key, impact);
             }
         }
-        return new LiveFocus(tool, reference, conversation, at, site, impact);
+        return new LiveFocus(call.Tool, call.Reference, call.ConversationId, call.At, site, impact);
+    }
+}
+
+public sealed class LiveCallRequest
+{
+    public string Conversation { get; set; } = "";
+}
+
+/// <summary>
+/// Marks a call as over, so the map stops following it for everyone (#328): nothing else tells the server that a call
+/// has ended. People with write access only, and only a call they can see. Ending one that is already over changes nothing.
+/// </summary>
+public sealed class EndLiveCallEndpoint(GraphHolder holder, RequestDb db, SystemDb system, ScopeMasks masks) : Endpoint<LiveCallRequest>
+{
+    public override void Configure()
+    {
+        Post("/operations/live/{conversation}/end");
+        Roles("cmdb-full");
     }
 
-    private async Task<MapPoint?> SiteAsync(long id, UserScope scope, CancellationToken ct)
+    public override async Task HandleAsync(LiveCallRequest req, CancellationToken ct)
     {
-        await using var cmd = db.Source.CreateCommand($"""
+        var scope = HttpContext.Scope();
+        if (await LiveCalls.LatestAsync(system.Source, req.Conversation, ct) is { } call)
+        {
+            if (holder.Current is not { } graph
+                || await LiveCalls.InScopeAsync(graph, await masks.GetAsync(graph, scope, ct), db.Source, call, scope, ct) is null)
+            {
+                await Send.NotFoundAsync(ct);
+                return;
+            }
+            await LiveCalls.EndAsync(system.Source, call.ConversationId, User.FindFirstValue(CmdbClaims.Username) ?? User.Identity?.Name ?? "?", ct);
+        }
+        else if (!await LiveCalls.EndedAsync(system.Source, req.Conversation, ct))
+        {
+            await Send.NotFoundAsync(ct);
+            return;
+        }
+        await Send.NoContentAsync(ct);
+    }
+}
+
+/// <summary>The latest tool call of a call the map may follow, shared by the live focus and ending a call (#328).</summary>
+internal sealed record LiveCall(string Tool, string Reference, string ConversationId, DateTimeOffset At);
+
+internal static class LiveCalls
+{
+    /// <summary>A call lasts at most ten minutes (agent/deploy.py), so a tool call older than that belongs to a call that is over.</summary>
+    private static readonly TimeSpan Window = TimeSpan.FromMinutes(10);
+
+    /// <summary>The latest tool call that named an object, in calls nobody has ended since, optionally of one conversation.</summary>
+    public static async Task<LiveCall?> LatestAsync(NpgsqlDataSource system, string? conversation, CancellationToken ct)
+    {
+        await using var cmd = system.CreateCommand("""
+            SELECT c.tool, c.reference, c.conversation_id, c.created_at
+            FROM voice_tool_call c LEFT JOIN voice_call_end e ON e.conversation_id = c.conversation_id
+            WHERE c.reference IS NOT NULL AND c.outcome NOT IN ('refused', 'error') AND c.created_at > now() - $1
+              AND (e.ended_at IS NULL OR c.created_at > e.ended_at)
+              AND ($2::text IS NULL OR c.conversation_id = $2)
+            ORDER BY c.id DESC LIMIT 1
+            """);
+        cmd.Parameters.Add(new() { Value = Window });
+        cmd.Parameters.Add(new() { Value = (object?)conversation ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text });
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        return await reader.ReadAsync(ct)
+            ? new LiveCall(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetFieldValue<DateTimeOffset>(3))
+            : null;
+    }
+
+    /// <summary>What the call is about and where, or null when that is outside the caller's scope.</summary>
+    public static async Task<(Fault Fault, MapPoint Site)?> InScopeAsync(Cmdb.Graph.Graph graph, GraphMask mask, NpgsqlDataSource db, LiveCall call, UserScope scope,
+        CancellationToken ct)
+    {
+        if (OperationsImpact.Parse(call.Reference) is not { } target
+            || await FaultAnalysis.RunAsync(graph, mask, db, target.Type, target.Id, ct) is not { } fault)
+        {
+            return null;
+        }
+        await using var cmd = db.CreateCommand($"""
             SELECT id, code, name, ST_X(ST_PointOnSurface(geom)), ST_Y(ST_PointOnSurface(geom)) FROM site
             WHERE id = $2 AND {ScopeSql.Site("id", 1)}
             """);
         cmd.Parameters.Add(scope.Parameter());
-        cmd.Parameters.Add(new() { Value = id });
+        cmd.Parameters.Add(new() { Value = fault.SiteId });
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         return await reader.ReadAsync(ct)
-            ? new MapPoint(reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetDouble(3), reader.GetDouble(4))
+            ? (fault, new MapPoint(reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetDouble(3), reader.GetDouble(4)))
             : null;
+    }
+
+    public static async Task EndAsync(NpgsqlDataSource system, string conversation, string by, CancellationToken ct)
+    {
+        await using var cmd = system.CreateCommand("""
+            INSERT INTO voice_call_end (conversation_id, ended_by) VALUES ($1, $2)
+            ON CONFLICT (conversation_id) DO UPDATE SET ended_by = excluded.ended_by, ended_at = now()
+            """);
+        cmd.Parameters.Add(new() { Value = conversation });
+        cmd.Parameters.Add(new() { Value = by });
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    public static async Task<bool> EndedAsync(NpgsqlDataSource system, string conversation, CancellationToken ct)
+    {
+        await using var cmd = system.CreateCommand("SELECT EXISTS (SELECT 1 FROM voice_call_end WHERE conversation_id = $1)");
+        cmd.Parameters.Add(new() { Value = conversation });
+        return (bool)(await cmd.ExecuteScalarAsync(ct))!;
     }
 }
 

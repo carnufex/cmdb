@@ -1,3 +1,5 @@
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { RUNTIME_CONFIG } from '../config';
 import { VoiceCall, VoiceCallComponent, WIDGET_LOADER } from './voice-call';
@@ -11,6 +13,8 @@ describe('VoiceCallComponent', () => {
     loads = [];
     TestBed.configureTestingModule({
       providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
         {
           provide: RUNTIME_CONFIG,
           useValue: {
@@ -87,6 +91,29 @@ describe('VoiceCallComponent', () => {
     loads[1].resolve();
     await settle();
     expect(widget()?.getAttribute('agent-id')).toBe('agent_noc');
+  });
+
+  it('ends the call on the map when the dialog closes, but not an older call', () => {
+    const http = TestBed.inject(HttpTestingController);
+    call.start({ variables: {}, label: 'Samtal med service desk' });
+    call.close();
+    http.expectOne('/api/operations/live').flush({
+      live: { conversationId: 'conv/1', at: new Date(Date.now() + 1000).toISOString() },
+    });
+    const end = http.expectOne('/api/operations/live/conv%2F1/end');
+    expect(end.request.method).toBe('POST');
+    end.flush(null, { status: 204, statusText: 'No Content' });
+
+    call.start({ variables: {}, label: 'Samtal med service desk' });
+    call.close();
+    http.expectOne('/api/operations/live').flush({
+      live: { conversationId: 'conv_old', at: new Date(Date.now() - 60_000).toISOString() },
+    });
+    http.expectNone('/api/operations/live/conv_old/end');
+
+    call.close();
+    http.expectNone('/api/operations/live');
+    http.verify();
   });
 
   it('says so when the widget cannot be loaded, and tries again on the next call', async () => {
