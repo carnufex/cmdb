@@ -1,6 +1,6 @@
 # ADR-0023: Chatten går via Lots, som personen hela vägen
 
-**Status:** Föreslagen · **Datum:** 2026-11-04 · **Beslut:** #331 · **Genomförs i:** #330
+**Status:** Accepterad (alternativ A i #331) · **Datum:** 2026-11-04 · **Beslut:** #331 · **Genomförs i:** #330
 
 ## Kontext
 Den inloggade i cmdb ska kunna chatta med sin kontext i Lots och se svaren på kartan. Kravet är att personen pratar som sig själv: chatten får inte kunna visa mer än personens omfång, och både Lots audit och cmdb:s läslogg ska visa personen.
