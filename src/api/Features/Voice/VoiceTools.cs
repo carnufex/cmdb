@@ -51,6 +51,9 @@ public sealed class VoiceTools(SystemDb system, RequestDb db, GraphHolder holder
     private string? Employee => User.FindFirstValue(VoiceClaims.Employee);
     private UserScope Scope => http.HttpContext!.Scope();
 
+    /// <summary>On a voice endpoint the caller is a phone call; elsewhere a signed-in person, who needs no verification and gets no public view.</summary>
+    private bool OnVoiceEndpoint => VoiceChannels.For(http.HttpContext!.Request.Path) is not null;
+
     [McpServerTool(Name = "find_station", Title = "Hitta station", ReadOnly = true, Idempotent = true, OpenWorld = false)]
     [Description("Finds a station (site) by what the caller said: name, code, alias or abbreviation, also misheard. Open to " +
         "unverified callers: returns only name, code, type, region and status, never equipment or topology. Confirm the " +
@@ -66,15 +69,19 @@ public sealed class VoiceTools(SystemDb system, RequestDb db, GraphHolder holder
             {
                 return [];
             }
-            // Deliberately public (ADR-0015): what a sign at the station says. Not scoped, and nothing more than this.
-            await using var cmd = system.Source.CreateCommand("""
+            // Deliberately public on a voice endpoint (ADR-0015): what a sign at the station says. Not scoped, and nothing more than this.
+            // A signed-in person asking gets what their scopes give, like any other search (#334).
+            var voice = OnVoiceEndpoint;
+            var source = voice ? system.Source : db.Source;
+            var scoped = voice ? "" : $"AND {ScopeSql.Site("s.id", 3)}";
+            await using var cmd = source.CreateCommand($"""
                 WITH scored AS (
                     SELECT s.id, s.code, s.name, s.site_type, s.lifecycle::text AS lifecycle, ST_Y(s.geom) AS y,
                            greatest(similarity(lower(s.name), lower($1)), similarity(lower(s.code), lower($1)),
                                     CASE WHEN lower(s.code) LIKE '%' || lower($2) THEN 0.9 ELSE 0 END,
                                     coalesce((SELECT max(similarity(lower(a), lower($1))) FROM jsonb_array_elements_text(s.attributes->'aliases') a), 0)) AS score
                     FROM site s
-                    WHERE s.lifecycle <> 'removed'
+                    WHERE s.lifecycle <> 'removed' {scoped}
                       AND (s.name % $1 OR s.code % $1 OR ($2 <> '' AND s.code LIKE '%' || $2)
                            OR (s.attributes ? 'aliases' AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(s.attributes->'aliases') a WHERE a % $1 OR lower(a) = lower($1))))
                 )
@@ -84,12 +91,17 @@ public sealed class VoiceTools(SystemDb system, RequestDb db, GraphHolder holder
             // "agg 1191" or "tolv nitton" spoken as digits: match the number at the end of a code.
             var digits = new string(q.Where(char.IsAsciiDigit).ToArray());
             cmd.Parameters.Add(new() { Value = digits.Length >= 3 ? digits : "" });
+            if (!voice)
+            {
+                cmd.Parameters.Add(Scope.Parameter());
+            }
+            var hideRegion = !voice && Scope.HidesCoordinates;
             var matches = new List<StationMatch>();
             await using var reader = await cmd.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct))
             {
                 matches.Add(new StationMatch($"site:{reader.GetInt64(0)}", reader.GetString(1), reader.GetString(2), SiteType(reader.GetString(3)),
-                    Region(reader.IsDBNull(5) ? null : reader.GetDouble(5)), Status(reader.GetString(4)), Math.Round(reader.GetDouble(6), 2)));
+                    Region(hideRegion || reader.IsDBNull(5) ? null : reader.GetDouble(5)), Status(reader.GetString(4)), Math.Round(reader.GetDouble(6), 2)));
             }
             return (IReadOnlyList<StationMatch>)matches;
         }, r => r.Count == 0 ? "no-match" : "ok", reference: r => r.Count > 0 ? r[0].Station : null);
@@ -263,7 +275,7 @@ public sealed class VoiceTools(SystemDb system, RequestDb db, GraphHolder holder
 
     private void RequireVerified()
     {
-        if (Employee is null)
+        if (Employee is null && OnVoiceEndpoint)
         {
             throw new McpException("Uppringaren är inte verifierad. Be om anställningsnummer och använd request_verification_code och verify_caller först.");
         }
@@ -345,7 +357,8 @@ public sealed class VoiceTools(SystemDb system, RequestDb db, GraphHolder holder
     /// <summary>Runs a tool and logs the call (ADR-0015).</summary>
     private Task<T> AuditAsync<T>(string tool, Func<Task<T>> run, Func<T, string>? outcome = null, string? employeeId = null,
         Func<T, string?>? reference = null) =>
-        VoiceAudit.RunAsync(system, User, tool, run, outcome, employeeId, reference);
+        // A person's calls are in the agent log of /mcp; this log is the phone calls'.
+        OnVoiceEndpoint ? VoiceAudit.RunAsync(system, User, tool, run, outcome, employeeId, reference) : run();
 }
 
 internal static partial class VoiceLog

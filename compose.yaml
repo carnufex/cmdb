@@ -50,6 +50,11 @@ services:
       # The operations agent in ElevenLabs (ADR-0015); empty hides the call buttons.
       VOICE_AGENT_ID: ${VOICE_AGENT_ID:-}
       VOICE_NOC_AGENT_ID: ${VOICE_NOC_AGENT_ID:-}
+      # The chat with Lots over AG-UI (ADR-0023); an empty address hides it.
+      LOTS_URL: ${LOTS_URL:-}
+      LOTS_OIDC_AUTHORITY: ${LOTS_OIDC_AUTHORITY:-}
+      LOTS_OIDC_CLIENT_ID: ${LOTS_OIDC_CLIENT_ID:-}
+      LOTS_CONTEXT: ${LOTS_CONTEXT:-cmdb}
     ports:
       - "${CMDB_WEB_PORT:-8480}:8080"
     depends_on:

@@ -13,7 +13,11 @@ ENV API_UPSTREAM=http://api:8080 \
     MAP_BASEMAP=esri \
     VOICE_AGENT_ID= \
     VOICE_NOC_AGENT_ID= \
-    NGINX_ENVSUBST_FILTER=^(API_|OIDC_|MAP_|VOICE_)
+    LOTS_URL= \
+    LOTS_OIDC_AUTHORITY= \
+    LOTS_OIDC_CLIENT_ID= \
+    LOTS_CONTEXT=cmdb \
+    NGINX_ENVSUBST_FILTER=^(API_|OIDC_|MAP_|VOICE_|LOTS_)
 COPY nginx/default.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=build /app/dist/web/browser /usr/share/nginx/html
 EXPOSE 8080

@@ -8,9 +8,38 @@ internal static class Attributes
 {
     private static readonly int[] Bands = [700, 800, 900, 1800, 2100, 2600, 3500];
 
+    /// <summary>What a model draws, in watts. Passive equipment is not here. scripts/backfill-power.sql holds the same numbers.</summary>
+    private static readonly Dictionary<string, int> PowerDraw = new(StringComparer.Ordinal)
+    {
+        ["acme-ar-10"] = 180,
+        ["acme-cr-8"] = 1200,
+        ["acme-ax-24"] = 30,
+        ["acme-ax-48"] = 55,
+        ["acme-ax-48p"] = 90,
+        ["acme-cx-32"] = 320,
+        ["acme-ix-8"] = 25,
+        ["acme-bb-6"] = 140,
+        ["acme-mw-1"] = 35,
+        ["acme-rr-2"] = 280,
+        ["acme-rr-4"] = 520,
+        ["acme-lc-16e1"] = 18,
+        ["acme-lc-24x"] = 60,
+        ["acme-lc-4c"] = 110,
+        ["acme-ot-40"] = 400,
+        ["acme-ot-8"] = 150,
+        ["acme-sdh-63"] = 120,
+        ["acme-pdu-12"] = 10,
+        ["acme-rect-48"] = 45,
+    };
+
     public static string For(string typeKey, string category, long id, Site site, Random rng, int sector = 0, string? label = null)
     {
         var a = new Dictionary<string, object>(StringComparer.Ordinal);
+        if (PowerDraw.TryGetValue(typeKey, out var draw))
+        {
+            // Varies a little per unit, without the random stream: the rest of the network must stay as it was.
+            a["powerDrawW"] = draw + (id % 7) - 3;
+        }
         switch (category)
         {
             case "switch":

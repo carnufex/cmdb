@@ -34,7 +34,7 @@ public static class McpSetup
                     {
                         var kept = new McpServerPrimitiveCollection<McpServerTool>();
                         foreach (var tool in tools.Where(t => voice is null
-                            ? !VoiceChannels.AllTools.Contains(t.ProtocolTool.Name)
+                            ? !VoiceChannels.AllTools.Contains(t.ProtocolTool.Name) || VoiceChannels.AlsoForPeople.Contains(t.ProtocolTool.Name)
                             : VoiceChannels.Tools[voice].Contains(t.ProtocolTool.Name)))
                         {
                             kept.Add(tool);
@@ -106,7 +106,7 @@ public static class McpSetup
         Every object has a stable reference "type:id" (e.g. "site:1268") and a code (e.g. "RAD-000007"). Every answer has a
         `url` that opens the same object in the web UI; give it to the human when you refer to an object.
 
-        Start with `search` for names and codes, `find_sites` for structured questions (sites with equipment of a model,
+        Start with `search` for names and codes, `find_sites` for structured questions (sites in a municipality, sites with equipment of a model,
         attribute values, services passing through), `get_object` for details, `impact` for what a cable or site cut
         affects, `trace` to follow a service down its layers or a port along the fibre, and `neighbourhood` for nearby
         sites. `describe_catalog` lists equipment models, categories and attributes.

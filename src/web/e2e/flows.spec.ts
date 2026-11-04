@@ -184,3 +184,193 @@ test('a new cable is drawn along the conduit, taken back step by step, and added
   await page.keyboard.press('Escape');
   await expect(bar).toBeHidden();
 });
+
+test('the chat asks Lots as the signed-in person and marks what it shows on the map', async ({
+  page,
+}) => {
+  const lots = 'http://127.0.0.1:8791';
+  const asked: { authorization: string | undefined; body: Record<string, unknown> }[] = [];
+  await page.route(`${lots}/ag-ui`, async (route) => {
+    const cors = { 'Access-Control-Allow-Origin': new URL(page.url()).origin };
+    if (route.request().method() === 'OPTIONS') {
+      await route.fulfill({
+        status: 204,
+        headers: {
+          ...cors,
+          'Access-Control-Allow-Methods': 'POST',
+          'Access-Control-Allow-Headers': 'Authorization, Content-Type, Accept',
+        },
+      });
+      return;
+    }
+    asked.push({
+      authorization: route.request().headers()['authorization'],
+      body: route.request().postDataJSON(),
+    });
+    const thread = {
+      threadId: '00000000-0000-4000-8000-000000000001',
+      runId: '00000000-0000-4000-8000-000000000002',
+    };
+    const events = [
+      { type: 'RUN_STARTED', ...thread },
+      { type: 'TOOL_CALL_START', toolCallId: 'c1', toolCallName: 'show_on_map' },
+      { type: 'TOOL_CALL_ARGS', toolCallId: 'c1', delta: JSON.stringify({ place: 'Stockholm' }) },
+      { type: 'TOOL_CALL_END', toolCallId: 'c1' },
+      {
+        type: 'TOOL_CALL_RESULT',
+        messageId: 'r1',
+        toolCallId: 'c1',
+        role: 'tool',
+        content: '{"total":1,"sites":[]}',
+      },
+      { type: 'TEXT_MESSAGE_START', messageId: 'm1', role: 'assistant' },
+      { type: 'TEXT_MESSAGE_CONTENT', messageId: 'm1', delta: 'Här är siterna i Stockholm.' },
+      { type: 'TEXT_MESSAGE_END', messageId: 'm1' },
+      { type: 'RUN_FINISHED', ...thread },
+    ];
+    await route.fulfill({
+      status: 200,
+      headers: { ...cors, 'Content-Type': 'text/event-stream' },
+      body: events.map((e) => `data: ${JSON.stringify(e)}\n\n`).join(''),
+    });
+  });
+  await page.route('**/config.json', (route) =>
+    route.fulfill({
+      json: {
+        oidcAuthority: idp,
+        oidcClientId: 'cmdb-web',
+        basemap: 'none',
+        lotsUrl: lots,
+        lotsAuthority: idp.replace('/cmdb/', '/lots/'),
+        lotsClientId: 'lots',
+        lotsContext: 'cmdb',
+      },
+    }),
+  );
+  await page.goto('/');
+  await expect(page.locator('cmdb-map .ol-viewport')).toBeVisible();
+
+  // The sign-in popup closes by itself in the provider's session.
+  await page.getByRole('button', { name: 'Chatt', exact: true }).click();
+  const chat = page.getByRole('region', { name: 'Chatt med Lots' });
+  await expect(chat.getByText('Du frågar som E2E Planerare')).toBeVisible();
+
+  await chat.getByRole('textbox', { name: 'Din fråga' }).fill('Visa mig alla siter i Stockholm');
+  await chat.getByRole('textbox', { name: 'Din fråga' }).press('Enter');
+  await expect(chat.getByText('Här är siterna i Stockholm.')).toBeVisible();
+  await expect(
+    chat.getByText(/\d+ siter? markerade på kartan\.|Inga siter att markera/),
+  ).toBeVisible();
+
+  // A token issued for Lots, not cmdb's own (ADR-0023), and the context and thread the protocol carries.
+  const token = asked[0].authorization!.replace('Bearer ', '');
+  const claims = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString());
+  expect(claims.aud).toBe('lots');
+  expect(claims.sub).toBe('e2e-planerare');
+  expect(asked[0].body['forwardedProps']).toEqual({ context: 'cmdb' });
+});
+
+test('a change asked for in the chat waits for a yes, and the yes writes it as the person', async ({
+  page,
+}) => {
+  const lots = 'http://127.0.0.1:8791';
+  let cmdbToken = '';
+  page.on('request', (r) => {
+    const authorization = r.headers()['authorization'];
+    if (r.url().includes('/api/') && authorization) {
+      cmdbToken = authorization;
+    }
+  });
+  const name = `Omdöpt ${Date.now()}`;
+  let plan = 0;
+  let site = 0;
+  await page.route(`${lots}/ag-ui`, async (route) => {
+    const cors = { 'Access-Control-Allow-Origin': new URL(page.url()).origin };
+    if (route.request().method() === 'OPTIONS') {
+      await route.fulfill({
+        status: 204,
+        headers: {
+          ...cors,
+          'Access-Control-Allow-Methods': 'POST',
+          'Access-Control-Allow-Headers': 'Authorization, Content-Type, Accept',
+        },
+      });
+      return;
+    }
+    // What request_change leaves behind: a draft of the person's own.
+    const headers = { Authorization: cmdbToken };
+    const found = await page.request.post('/api/query/sites', { headers, data: { limit: 1 } });
+    site = (await found.json()).sites[0].id;
+    const made = await page.request.post('/api/plans', { headers, data: { name: 'Byt namn' } });
+    plan = (await made.json()).id;
+    const added = await page.request.post(`/api/plans/${plan}/operations`, {
+      headers,
+      data: { kind: 'rename', type: 'site', objectId: site, name },
+    });
+    expect(added.ok()).toBeTruthy();
+    const thread = {
+      threadId: '00000000-0000-4000-8000-000000000001',
+      runId: '00000000-0000-4000-8000-000000000003',
+    };
+    const events = [
+      { type: 'RUN_STARTED', ...thread },
+      { type: 'TOOL_CALL_START', toolCallId: 'c1', toolCallName: 'request_change' },
+      // What the model claims is not what the person is shown.
+      {
+        type: 'TOOL_CALL_ARGS',
+        toolCallId: 'c1',
+        delta: JSON.stringify({ title: 'Helt ofarligt', operations: [] }),
+      },
+      { type: 'TOOL_CALL_END', toolCallId: 'c1' },
+      {
+        type: 'TOOL_CALL_RESULT',
+        messageId: 'r1',
+        toolCallId: 'c1',
+        role: 'tool',
+        content: JSON.stringify({ plan: { ref: `plan:${plan}`, status: 'draft' }, changes: [] }),
+      },
+      { type: 'RUN_FINISHED', ...thread },
+    ];
+    await route.fulfill({
+      status: 200,
+      headers: { ...cors, 'Content-Type': 'text/event-stream' },
+      body: events.map((e) => `data: ${JSON.stringify(e)}\n\n`).join(''),
+    });
+  });
+  await page.route('**/config.json', (route) =>
+    route.fulfill({
+      json: {
+        oidcAuthority: idp,
+        oidcClientId: 'cmdb-web',
+        basemap: 'none',
+        lotsUrl: lots,
+        lotsAuthority: idp.replace('/cmdb/', '/lots/'),
+        lotsClientId: 'lots',
+        lotsContext: 'cmdb',
+      },
+    }),
+  );
+  await page.goto('/');
+  await expect(page.locator('cmdb-map .ol-viewport')).toBeVisible();
+  await page.getByRole('button', { name: 'Chatt', exact: true }).click();
+  const chat = page.getByRole('region', { name: 'Chatt med Lots' });
+  await expect(chat.getByText('Du frågar som E2E Planerare')).toBeVisible();
+
+  await chat.getByRole('textbox', { name: 'Din fråga' }).fill('Byt namn på siten');
+  await chat.getByRole('textbox', { name: 'Din fråga' }).press('Enter');
+
+  const dialog = chat.getByRole('group', { name: 'Ändringsbegäran' });
+  await expect(dialog.getByText('Ändringsbegäran - skriv:')).toBeVisible();
+  await expect(dialog.getByText(name)).toBeVisible();
+  await expect(dialog.getByText('Helt ofarligt')).toHaveCount(0);
+  await expect(dialog.getByText('Ska vi skriva det här?')).toBeVisible();
+
+  const headers = { Authorization: cmdbToken };
+  const nameNow = async () =>
+    (await (await page.request.get(`/api/sites/${site}`, { headers })).json()).name;
+  expect(await nameNow()).not.toBe(name);
+
+  await dialog.getByRole('button', { name: 'Ja' }).click();
+  await expect(dialog.getByText('Ändringen är skriven')).toBeVisible();
+  expect(await nameNow()).toBe(name);
+});

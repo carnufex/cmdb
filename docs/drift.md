@@ -233,3 +233,13 @@ kubectl -n cmdb logs deploy/cmdb-api                         # API:t
 | `REGISTRY_PASSWORD` | Push lokalt och pull i klustret |
 
 Hemligheter checkas aldrig in, varken här eller i homelab-repot.
+
+## Effekt på befintlig demodata
+
+`powerDrawW` (#334) kom efter att demonätet laddades. I stället för att ladda om allt, vilket tömmer planerna, körs detta en gång efter utrullning:
+
+```bash
+kubectl -n cmdb exec -i <postgres-pod> -- psql -U postgres -d cmdb < scripts/backfill-power.sql
+```
+
+Skriptet går att köra om, och siffrorna är desamma som datagen använder.

@@ -281,6 +281,22 @@ public sealed class PlanTools(RequestDb db, PlanWrites writes, PlanViews views, 
         return await AddAllAsync(planId, requests, ct);
     }
 
+    [McpServerTool(Name = "request_change", Title = "Ändringsbegäran", Destructive = false, OpenWorld = false)]
+    [Description("A change the person in the web app's chat has just asked for, e.g. renaming a site. Creates a draft with the changes; the web app then shows the " +
+        "person what will be written and asks yes or no, and writes it on yes. Nothing is written by this call or by you. Do not ask for confirmation yourself and do " +
+        "not call anything to apply it: say that the question is on the screen, and report any problem in the answer. Outside that chat use create_plan and add_to_plan.")]
+    public async Task<AgentPlanPreview> RequestChange(
+        [Description("What is changing, in the person's words, e.g. \"Byt namn på AGG-000315\".")] string title,
+        [Description("The changes, in the same form as add_to_plan, e.g. [{ \"kind\": \"rename\", \"target\": \"site:315\", \"name\": \"Nytt namn\" }].")]
+        AgentPlanOperation[] operations,
+        CancellationToken ct = default)
+    {
+        RequireWriter();
+        var plan = await CreatePlan(title, "Ändringsbegäran från chatten", null, ct);
+        await AddToPlan(plan.Ref, operations, ct);
+        return await PreviewPlan(plan.Ref, ct);
+    }
+
     [McpServerTool(Name = "connect_ports", Title = "Koppla portintervall", Destructive = false, OpenWorld = false)]
     [Description("Adds connections for a range of ports to a draft plan, e.g. \"patch port 1–24 on SW-1 to ODF-3\": the n-th port " +
         "from the first start port connects to the n-th port from the second, in front-panel order. Ports are named as in " +

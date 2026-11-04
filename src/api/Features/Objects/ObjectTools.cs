@@ -17,6 +17,8 @@ namespace Cmdb.Api.Features.Objects;
 
 public sealed record AgentObject(string Ref, string Url, object Detail);
 
+public sealed record AgentOpened(string Ref, string Url);
+
 /// <param name="Via">Circuits from the service's own down to the one passing the object, as "code (layer)".</param>
 public sealed record AgentImpactedService(string Ref, string Code, string? Name, string Lifecycle, string Url, IReadOnlyList<string> Via);
 
@@ -56,6 +58,17 @@ public sealed class ObjectTools(RequestDb db, GraphHolder holder, Graph.GraphAtT
         return detail is null
             ? throw new McpException($"No {type} with id {id}.")
             : new AgentObject(AgentLinks.Ref(type, id), links.For(type, id), detail);
+    }
+
+    [McpServerTool(Name = "open_object", Title = "Öppna objekt", ReadOnly = true, Idempotent = true, OpenWorld = false)]
+    [Description("Opens an object for the person in the web app: its panel, and the map on it. Use it in the web app's chat when someone asks to open, or be taken to, " +
+        "one object. Takes the same references as get_object. Outside that chat nobody sees it: give the url instead.")]
+    public async Task<AgentOpened> OpenObject(
+        [Description("The object, e.g. \"site:12\".")] string reference,
+        CancellationToken ct = default)
+    {
+        var found = await GetObject(reference, ct);
+        return new AgentOpened(found.Ref, found.Url);
     }
 
     [McpServerTool(Name = "impact", Title = "Påverkansanalys", ReadOnly = true, Idempotent = true, OpenWorld = false)]

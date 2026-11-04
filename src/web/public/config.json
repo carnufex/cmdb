@@ -3,5 +3,9 @@
   "oidcClientId": "cmdb-web",
   "basemap": "esri",
   "voiceAgentId": "",
-  "voiceNocAgentId": ""
+  "voiceNocAgentId": "",
+  "lotsUrl": "",
+  "lotsAuthority": "",
+  "lotsClientId": "",
+  "lotsContext": "cmdb"
 }

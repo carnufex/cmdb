@@ -10,6 +10,7 @@
   },
   "private": true,
   "dependencies": {
+    "@ag-ui/client": "1.0.3",
     "@angular/cdk": "^22.2.0",
     "@angular/common": "^22.2.0",
     "@angular/compiler": "^22.2.0",

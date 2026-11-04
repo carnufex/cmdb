@@ -41,7 +41,8 @@ Inget verktyg ändrar produktion. Agenter föreslår ändringar som planer, och 
 |---|---|
 | `search` | Objekt på kod, namn, id eller attributtext (samma som snabbsöket) |
 | `get_object` | Allt UI:t visar för ett objekt. Tar `"site:1268"` eller en exakt kod, till exempel `RAD-000007`. |
-| `find_sites` | Strukturerade frågor: sitetyp, livscykel, utrustning (kategori, modell, attribut, antal) och tjänster (samma som avancerad sökning) |
+| `find_sites` | Strukturerade frågor: sitetyp, livscykel, kommun (`place`), utrustning (kategori, modell, attribut, antal) och tjänster (samma som avancerad sökning) |
+| `show_on_map` | Samma villkor som `find_sites`, för den som chattar i webben: webben markerar alla träffar på kartan med personens eget omfång och flyttar vyn dit (#330). Svarar med antalet och de första siterna. |
 | `list_projects`, `get_project` | Projekt (#293): områden som byggs ut i etapper, med etappernas status, ändringar, kabel, kostnad och nästa steg |
 | `find_service_points` | Anslutningspunkter (#292): adresser och kunder i ett område, nära en punkt eller betjänade av en site, med status, enheter och antal per status |
 | `impact` | Vad ett avbrott på en kabel, utrustning eller site påverkar: kretsar och tjänster, med kedjan av kretsar som når varje tjänst |
@@ -114,6 +115,20 @@ Kodagenter i en terminal (Claude Code, Codex) och skript använder med fördel k
 | Spåra tjänst TJ-0000001 | 11 140 (alla hopp) | 171 (kretsar per lager; hoppen med `--json`) |
 
 Varje uppgift tog ett anrop med båda. CLI:t löser koder direkt (`cmdb trace TJ-0000001`), medan MCP-verktyget `trace` kräver en referens. Siffrorna är svarsstorlekar, inte uppmätta tokens i en Claude Code-session. För agenter i en terminal ger CLI:t ändå tydligt mindre kontext per uppgift. MCP är fortfarande rätt för chattklienter utan skal.
+
+## Chatten i webben: Lots via AG-UI
+
+Knappen **Chatt** öppnar en chatt med personens kontext i Lots (#330, ADR-0023). Den syns bara när `LOTS_URL`, `LOTS_OIDC_AUTHORITY` och `LOTS_OIDC_CLIENT_ID` är satta. `LOTS_CONTEXT` väljer kontext, standard `cmdb`.
+
+- **Som personen hela vägen.** Webben loggar in i Lots i en popup, i den Authentik-session personen redan har, och pratar AG-UI direkt med Lots `POST /ag-ui` med en token utfärdad för Lots. Cmdb:s token lämnar aldrig cmdb. Körningen syns i personens historik i Lots.
+- **Eget konto mot cmdb.** Kontexten använder `user-connected`, så att cmdb ser personen och inte ett tjänstekonto. Första gången ber chatten personen koppla sitt konto i Lots. I läsloggen syns klienten `cmdb-lots`.
+- **Kartan.** När agenten anropar `show_on_map` kör webben samma fråga mot `/api/query/sites` med personens cmdb-token, markerar träffarna och flyttar vyn. Bara kända fält ur anropet skickas vidare, och svaren från Lots visas som vanlig text.
+- **Vad personen ser.** Med frågan följer det som är öppet och syns på kartan (`context` i AG-UI), så att "den här siten" och "här omkring" betyder något. `find_sites` och `show_on_map` tar kartvyn som `extent`.
+- **Kort.** Verktygens svar ritas som korta kort i chatten, bara som text, och en rad med ett objekt öppnar det med `open_object`-beteendet. Kort finns för `find_sites`, `show_on_map`, `summarize_sites`, `find_station`, `impact`, `fault_impact`, `list_incidents`, `list_risks` och `get_history`.
+- **Ändringsbegäran (ADR-0024).** `request_change` skapar ett utkast, och webben frågar ja eller nej med serverns beskrivning. Svaret går direkt till cmdb med personens token och aldrig genom modellen.
+- **Röstverktygen som läser** (`find_station`, `station_overview`, `fault_impact`, `risk_details`) finns också på `/mcp`. Där är anroparen en inloggad person, så omfånget är personens, ingen telefonverifiering behövs, och `find_station` svarar bara inom omfånget. Verktyg som skriver eller utgår från ett telefonnummer finns bara på röstkanalerna.
+- **Effekt.** `powerDrawW` på utrustningen är vad den drar, i watt. "Drar mer än 35" är ett utrustningsvillkor med `gt` på det attributet.
+- **Orter.** `place` är en svensk kommun, till exempel `Gävle`, med eller utan "kommun" och svenska tecken. Med `withinKm` tas också siter så många kilometer utanför kommunen med ("med omnejd", 25 km om inget annat sägs). Gränserna kommer från SCB (CC0) och är förenklade. Den som har dolda positioner kan inte söka på plats eller i ett utsnitt.
 
 ## Driftagenten: röstkanalen
 

@@ -365,7 +365,7 @@ public sealed partial class VoiceTests(ApiFactory factory)
             desk.CallToolAsync("fault_impact", new Dictionary<string, object?> { ["reference"] = "site:1" }, cancellationToken: Ct).AsTask()))
             .Message.ShouldContain("Unknown tool");
 
-        // /mcp serves none of the voice tools.
+        // /mcp serves the voice tools that read, as the person, and none that write or act on a phone number (#334).
         var person = NetworkFixture.Client(api);
         await using var mcp = await McpClient.CreateAsync(new HttpClientTransport(
             new HttpClientTransportOptions { Endpoint = new Uri(person.BaseAddress!, "/mcp"), TransportMode = HttpTransportMode.StreamableHttp },
@@ -374,6 +374,10 @@ public sealed partial class VoiceTests(ApiFactory factory)
         names.ShouldNotContain("report_tag_fault");
         names.ShouldNotContain("reset_password");
         names.ShouldNotContain("verify_caller");
+        names.ShouldNotContain("request_verification_code");
+        names.ShouldNotContain("create_incident");
+        names.ShouldNotContain("order_equipment");
+        names.ShouldContain("station_overview");
     }
 
     [Fact]

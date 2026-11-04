@@ -26,7 +26,10 @@ public sealed record SiteQuery(
     IReadOnlyList<EquipmentCondition>? Equipment,
     IReadOnlyList<string>? ServiceTypes,
     int Limit = 200,
-    IReadOnlyList<AttributeCondition>? SiteAttributes = null);
+    IReadOnlyList<AttributeCondition>? SiteAttributes = null,
+    string? Place = null,
+    double? WithinKm = null,
+    IReadOnlyList<double>? Extent = null);
 
 /// <param name="Matching">Equipment on the site matching the first equipment condition, if there is one.</param>
 public sealed record SiteQueryHit(long Id, string Code, string Name, string SiteType, string Lifecycle, double? X, double? Y, int? Matching);
@@ -47,6 +50,12 @@ public sealed class SiteQueryValidator : Validator<SiteQuery>
     public SiteQueryValidator()
     {
         RuleFor(q => q.Limit).InclusiveBetween(1, 1000);
+        RuleFor(q => q.Place).MaximumLength(100);
+        RuleFor(q => q.WithinKm).InclusiveBetween(0.1, 200).When(q => q.WithinKm is not null);
+        RuleFor(q => q.WithinKm).Must(_ => false).When(q => q.WithinKm is not null && string.IsNullOrEmpty(q.Place))
+            .WithMessage("withinKm needs a place.");
+        RuleFor(q => q.Extent).Must(e => e is { Count: 4 } && e[0] < e[2] && e[1] < e[3] && e.All(double.IsFinite))
+            .When(q => q.Extent is not null).WithMessage("extent is [minX, minY, maxX, maxY] in EPSG:3006.");
         RuleForEach(q => q.SiteTypes).Matches("^[a-z_]{1,40}$");
         RuleForEach(q => q.Lifecycles).Must(l => QueryFieldsEndpoint.Lifecycles.Contains(l)).WithMessage("Unknown lifecycle.");
         RuleForEach(q => q.ServiceTypes).Matches("^[a-z0-9_-]{1,40}$");
@@ -146,6 +155,22 @@ public sealed class QuerySitesEndpoint(RequestDb db, TypeCatalog catalog) : Endp
     /// </summary>
     internal static IEnumerable<string> CatalogErrors(SiteQuery req, TypeCatalog catalog, UserScope scope)
     {
+        if (req.Extent is not null && scope.HidesCoordinates)
+        {
+            yield return "Sites cannot be searched by area, since your access hides their positions.";
+        }
+        if (req.Place is { Length: > 0 } place)
+        {
+            // Asking place by place would tell where a site is, which the scope hides.
+            if (scope.HidesCoordinates)
+            {
+                yield return "Sites cannot be searched by place, since your access hides their positions.";
+            }
+            else if (PlaceCatalog.Find(place) is null)
+            {
+                yield return $"Unknown place '{place}'. A place is a Swedish municipality, for example Gävle.";
+            }
+        }
         var keys = QueryFieldsEndpoint.AttributeKeys(catalog);
         foreach (var condition in req.Equipment ?? [])
         {
@@ -171,6 +196,33 @@ public sealed class QuerySitesEndpoint(RequestDb db, TypeCatalog catalog) : Endp
     internal static string Build(SiteQuery req, UserScope scope, out List<NpgsqlParameter> parameters)
     {
         var ps = new List<NpgsqlParameter>();
+        var where = Conditions(req, scope, ps, out var firstEquipment);
+        var matching = firstEquipment is null
+            ? "NULL::int"
+            : $"(SELECT count(*) FROM equipment e JOIN equipment_type et ON et.id = e.equipment_type_id WHERE e.site_id = m.id AND {firstEquipment})::int";
+
+        var sql = new StringBuilder();
+        sql.Append(CultureInfo.InvariantCulture, $"""
+            WITH m AS (
+                SELECT s.id, s.code, s.name, s.site_type, s.lifecycle::text AS lifecycle,
+                       ST_X(ST_PointOnSurface(s.geom)) AS x, ST_Y(ST_PointOnSurface(s.geom)) AS y
+                FROM site s
+                {(where.Count > 0 ? "WHERE " + string.Join("\n  AND ", where) : "")}
+            ), counted AS (SELECT count(*) AS total FROM m)
+            SELECT m.id, m.code, m.name, m.site_type, m.lifecycle, m.x, m.y,
+                   CASE WHEN row_number() OVER (ORDER BY m.code) <= {req.Limit} THEN {matching} END,
+                   counted.total
+            FROM m, counted
+            ORDER BY m.code
+            LIMIT {MaxIds}
+            """);
+        parameters = ps;
+        return sql.ToString();
+    }
+
+    /// <summary>The conditions on <c>site s</c>, with the caller's scope first. Shared with the summary, so the two cannot disagree on what matches.</summary>
+    internal static List<string> Conditions(SiteQuery req, UserScope scope, List<NpgsqlParameter> ps, out string? firstEquipment)
+    {
         string P(object value, NpgsqlDbType? type = null)
         {
             var p = new NpgsqlParameter { Value = value };
@@ -193,13 +245,26 @@ public sealed class QuerySitesEndpoint(RequestDb db, TypeCatalog catalog) : Endp
         {
             where.Add($"s.lifecycle::text = ANY({P(req.Lifecycles.ToArray())}::text[])");
         }
+        // A named place (#330).
+        if (PlaceCatalog.Find(req.Place) is { } area)
+        {
+            var shape = $"ST_GeomFromText({P(area.Wkt, NpgsqlDbType.Text)}, 3006)";
+            where.Add(req.WithinKm is { } km
+                ? $"ST_DWithin(s.geom, {shape}, {P(km * 1000, NpgsqlDbType.Double)})"
+                : $"ST_Intersects(s.geom, {shape})");
+        }
+        // The part of the map the person is looking at.
+        if (req.Extent is { Count: 4 } e)
+        {
+            where.Add($"s.geom && ST_MakeEnvelope({P(e[0], NpgsqlDbType.Double)}, {P(e[1], NpgsqlDbType.Double)}, {P(e[2], NpgsqlDbType.Double)}, {P(e[3], NpgsqlDbType.Double)}, 3006)");
+        }
         // The site's own attributes (#211): a plain filter on the site row.
         foreach (var a in req.SiteAttributes ?? [])
         {
             where.Add(Attribute(a, P, "s"));
         }
 
-        string? firstEquipment = null;
+        firstEquipment = null;
         foreach (var condition in req.Equipment ?? [])
         {
             var parts = new List<string>();
@@ -237,27 +302,7 @@ public sealed class QuerySitesEndpoint(RequestDb db, TypeCatalog catalog) : Endp
                 """);
         }
 
-        var matching = firstEquipment is null
-            ? "NULL::int"
-            : $"(SELECT count(*) FROM equipment e JOIN equipment_type et ON et.id = e.equipment_type_id WHERE e.site_id = m.id AND {firstEquipment})::int";
-
-        var sql = new StringBuilder();
-        sql.Append(CultureInfo.InvariantCulture, $"""
-            WITH m AS (
-                SELECT s.id, s.code, s.name, s.site_type, s.lifecycle::text AS lifecycle,
-                       ST_X(ST_PointOnSurface(s.geom)) AS x, ST_Y(ST_PointOnSurface(s.geom)) AS y
-                FROM site s
-                {(where.Count > 0 ? "WHERE " + string.Join("\n  AND ", where) : "")}
-            ), counted AS (SELECT count(*) AS total FROM m)
-            SELECT m.id, m.code, m.name, m.site_type, m.lifecycle, m.x, m.y,
-                   CASE WHEN row_number() OVER (ORDER BY m.code) <= {req.Limit} THEN {matching} END,
-                   counted.total
-            FROM m, counted
-            ORDER BY m.code
-            LIMIT {MaxIds}
-            """);
-        parameters = ps;
-        return sql.ToString();
+        return where;
     }
 
     private static string Attribute(AttributeCondition a, Func<object, NpgsqlDbType?, string> p, string alias)

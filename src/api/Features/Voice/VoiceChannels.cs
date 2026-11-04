@@ -25,8 +25,14 @@ public static class VoiceChannels
         [It] = Set([.. Verification, .. Callback, "reset_password", "equipment_catalog", "order_equipment"]),
     };
 
-    /// <summary>Every tool served on a voice endpoint; none of them is served on /mcp.</summary>
+    /// <summary>Every tool served on a voice endpoint.</summary>
     public static readonly IReadOnlySet<string> AllTools = Set([.. Tools.Values.SelectMany(t => t)]);
+
+    /// <summary>
+    /// The voice tools that only read, also on /mcp (#334): there the caller is a signed-in person, so they run with that
+    /// person's scopes and need no phone verification. Nothing that writes or acts on a phone number is here.
+    /// </summary>
+    public static readonly IReadOnlySet<string> AlsoForPeople = Set(["find_station", "station_overview", "fault_impact", "risk_details"]);
 
     /// <summary>The voice endpoint a request is for, or null for any other path.</summary>
     public static string? For(PathString path) =>

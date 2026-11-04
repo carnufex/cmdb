@@ -66,6 +66,31 @@ public sealed class ScopeEdgeTests(ApiFactory factory)
     }
 
     [Fact]
+    public async Task A_person_finds_only_stations_in_their_own_scope_and_a_summary_counts_only_those()
+    {
+        var (db, api) = await WithTestScopesAsync();
+        var outside = await Text(db, $"SELECT s.code FROM site s WHERE NOT ({North}) ORDER BY s.id LIMIT 1");
+        var inside = await Text(db, $"SELECT s.code FROM site s WHERE {North} AND s.site_type = 'aggregation' ORDER BY s.id LIMIT 1");
+        var http = NetworkFixture.Client(api, "cmdb-test-pos", ["cmdb-test-dolda-positioner"]);
+        await using var mcp = await McpClient.CreateAsync(new HttpClientTransport(
+            new HttpClientTransportOptions { Endpoint = new Uri(http.BaseAddress!, "/mcp"), TransportMode = HttpTransportMode.StreamableHttp },
+            http, ownsHttpClient: true), cancellationToken: Ct);
+
+        async Task<JsonElement> Find(string query) => JsonDocument.Parse(string.Concat(
+            (await mcp.CallToolAsync("find_station", new Dictionary<string, object?> { ["query"] = query }, cancellationToken: Ct)).Content
+                .OfType<TextContentBlock>().Select(b => b.Text))).RootElement;
+
+        (await Find(inside))[0].GetProperty("code").GetString().ShouldBe(inside);
+        (await Find(inside))[0].GetProperty("region").GetString().ShouldBe("okänd"); // the region would say where it lies
+        (await Find(outside)).EnumerateArray().Select(m => m.GetProperty("code").GetString()).ShouldNotContain(outside);
+
+        var seen = await Scalar(db, "SELECT count(*) FROM scope_site WHERE scope_key = 'test-dolda-positioner'");
+        var summary = await (await http.PostAsJsonAsync("/api/query/sites/summary", new { query = new { limit = 1 } }, Ct)).Content
+            .ReadFromJsonAsync<Cmdb.Api.Features.Query.SiteSummary>(Ct);
+        summary!.Total.ShouldBe(seen);
+    }
+
+    [Fact]
     public async Task Hidden_coordinates_leave_no_position_anywhere()
     {
         var (db, api) = await WithTestScopesAsync();
@@ -82,6 +107,11 @@ public sealed class ScopeEdgeTests(ApiFactory factory)
         hits.ShouldAllBe(h => h.X == null && h.Y == null);
         var query = (await (await client.PostAsJsonAsync("/api/query/sites", new { limit = 10 }, Ct)).Content.ReadFromJsonAsync<SiteQueryResult>(Ct))!;
         query.Total.ShouldBeGreaterThan(0);
+        // Asking place by place would tell where a site is (#330).
+        (await client.PostAsJsonAsync("/api/query/sites", new { place = "Gävle" }, Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await client.PostAsJsonAsync("/api/query/sites", new { place = "Gävle", withinKm = 25 }, Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await client.PostAsJsonAsync("/api/query/sites", new { extent = new[] { 1.0, 2, 3, 4 } }, Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await client.PostAsJsonAsync("/api/query/sites/summary", new { query = new { limit = 1 }, groupBy = "region" }, Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
         query.Points.ShouldBeEmpty();
         query.Extent.ShouldBeNull();
         query.Sites.ShouldAllBe(s => s.X == null && s.Y == null);

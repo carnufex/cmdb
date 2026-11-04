@@ -10,6 +10,12 @@ export interface RuntimeConfig {
   voiceAgentId?: string;
   /** The NOC agent, called directly for a proactive call about a risk (#137); falls back to voiceAgentId. */
   voiceNocAgentId?: string;
+  /** Lots, for the chat (ADR-0023); empty hides it. Its address, and its OIDC application at the identity provider. */
+  lotsUrl?: string;
+  lotsAuthority?: string;
+  lotsClientId?: string;
+  /** The Lots context the chat talks to. */
+  lotsContext?: string;
 }
 
 export const RUNTIME_CONFIG = new InjectionToken<RuntimeConfig>('RUNTIME_CONFIG');
