@@ -112,7 +112,11 @@ describe('PlanPanelComponent', () => {
     expect(text).toContain('Från Etapp 1');
     expect(text).toContain('Koppla C till D (patch)');
     expect(text).toContain('Terminalerna är redan kopplade.');
-    expect(TestBed.inject(MapView).highlight()?.points).toEqual([[3, 500000, 6600000]]);
+    expect(
+      TestBed.inject(MapView)
+        .layers()
+        .find((l) => l.id === 'marks')?.points,
+    ).toEqual([[3, 500000, 6600000]]);
     // Only the plan's own operations can be removed.
     expect((fixture.nativeElement as HTMLElement).querySelectorAll('button.remove').length).toBe(1);
   });

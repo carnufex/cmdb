@@ -171,7 +171,6 @@ describe('Assistant', () => {
   it('marks the map from our own API under the person, not from what the model wrote', async () => {
     const assistant = await signedIn();
     const map = TestBed.inject(MapView);
-    const mark = vi.spyOn(map, 'mark');
     answer = () =>
       stream(
         started,
@@ -208,15 +207,18 @@ describe('Assistant', () => {
     });
     await settle();
 
-    expect(mark).toHaveBeenCalledWith(
-      [
-        [7, 100, 200],
-        [8, 110, 210],
-      ],
-      [100, 200, 110, 210],
-    );
+    expect(map.layers()[0].points).toEqual([
+      [7, 100, 200],
+      [8, 110, 210],
+    ]);
+    expect(map.layers()[0].extent).toEqual([100, 200, 110, 210]);
+    expect(map.layers()[0].label).toBe('Visa mig alla siter i Gävle');
     const step = assistant.lines().find((l) => l.role === 'steps')!.steps![0];
-    expect(step.sites!.marked).toBe(2);
+    expect(
+      TestBed.inject(MapView)
+        .layers()
+        .map((l) => l.id),
+    ).toEqual([step.id]);
     expect(step.open).toBe(true);
   });
 
@@ -488,7 +490,7 @@ describe('Assistant', () => {
     const step = assistant.lines().find((l) => l.role === 'steps')!.steps![0];
     expect(step.open).toBe(true);
     expect(step.sites!.rows.length).toBe(2);
-    expect(step.sites!.marked).toBe(2);
+    expect(TestBed.inject(MapView).layers()[0].total).toBe(2);
   });
 
   it('stops the run in Lots too, with the Lots token and not through cmdb', async () => {
@@ -555,7 +557,6 @@ describe('Assistant', () => {
   it('opens an earlier chat with its sources, and goes on in that thread', async () => {
     const assistant = await signedIn();
     const fetched = lotsAnswers({ [`/ag-ui/threads/${earlier.id}`]: earlier });
-    const mark = vi.spyOn(TestBed.inject(MapView), 'mark');
     await assistant.openThread(earlier.id);
 
     expect(assistant.lines().map((l) => l.role)).toEqual(['user', 'steps', 'assistant']);
@@ -566,7 +567,7 @@ describe('Assistant', () => {
     ]);
     expect(assistant.source(assistant.lines()[2].run, 1)!.tool).toBe('show_on_map');
     // An earlier chat acts on nothing by being opened.
-    expect(mark).not.toHaveBeenCalled();
+    expect(TestBed.inject(MapView).layers()).toEqual([]);
     TestBed.inject(HttpTestingController).expectNone('/api/query/sites');
     fetched.mockRestore();
 
@@ -586,10 +587,11 @@ describe('Assistant', () => {
       .expectOne('/api/query/sites')
       .flush({ total: 1, sites: [], points: [[1, 2, 3]], extent: [2, 3, 2, 3] });
     await settle();
-    const mark = vi.spyOn(TestBed.inject(MapView), 'mark');
-    expect(assistant.source(assistant.lines()[2].run, 1)!.sites!.marked).toBeNull();
+    expect(TestBed.inject(MapView).layers()).toEqual([]);
     assistant.markOnMap(step.id);
-    expect(mark).toHaveBeenCalledWith([[1, 2, 3]], [2, 3, 2, 3]);
+    const layer = TestBed.inject(MapView).layers()[0];
+    expect(layer.label).toBe('Visa siterna');
+    expect(layer.points).toEqual([[1, 2, 3]]);
   });
 
   it('shows how an earlier change request ended, and asks only if it never was answered', async () => {

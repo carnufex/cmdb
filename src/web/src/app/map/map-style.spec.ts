@@ -12,6 +12,7 @@ const palette: Palette = {
   inService: '#00aa55',
   decommissioning: '#ffaa00',
   conflict: '#ff3300',
+  layers: [],
 };
 
 describe('map style', () => {

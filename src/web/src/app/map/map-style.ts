@@ -12,6 +12,8 @@ export interface Palette {
   inService: string;
   decommissioning: string;
   conflict: string;
+  /** The colours of the app's layers on the map (#346). */
+  layers: readonly string[];
 }
 
 export function readPalette(root: HTMLElement): Palette {
@@ -26,6 +28,7 @@ export function readPalette(root: HTMLElement): Palette {
     inService: v('--status-in-service'),
     decommissioning: v('--status-decommissioning'),
     conflict: v('--status-conflict'),
+    layers: [1, 2, 3, 4, 5, 6].map((n) => v(`--layer-${n}`)),
   };
 }
 

@@ -21,8 +21,7 @@ public sealed class SummarizeSitesEndpoint(RequestDb db, TypeCatalog catalog) : 
     {
         ["siteType"] = "s.site_type",
         ["lifecycle"] = "s.lifecycle::text",
-        // The same split as the voice agents' regions.
-        ["region"] = "CASE WHEN ST_Y(ST_PointOnSurface(s.geom)) > 6950000 THEN 'norr' WHEN ST_Y(ST_PointOnSurface(s.geom)) > 6450000 THEN 'mellersta' ELSE 'söder' END",
+        ["region"] = QuerySitesEndpoint.RegionSql,
     };
 
     public override void Configure() => Post("/query/sites/summary");

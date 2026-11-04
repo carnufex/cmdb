@@ -111,6 +111,7 @@ public sealed class ScopeEdgeTests(ApiFactory factory)
         (await client.PostAsJsonAsync("/api/query/sites", new { place = "Gävle" }, Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
         (await client.PostAsJsonAsync("/api/query/sites", new { place = "Gävle", withinKm = 25 }, Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
         (await client.PostAsJsonAsync("/api/query/sites", new { extent = new[] { 1.0, 2, 3, 4 } }, Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await client.PostAsJsonAsync("/api/query/sites", new { region = "norr" }, Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
         (await client.PostAsJsonAsync("/api/query/sites/summary", new { query = new { limit = 1 }, groupBy = "region" }, Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
         query.Points.ShouldBeEmpty();
         query.Extent.ShouldBeNull();

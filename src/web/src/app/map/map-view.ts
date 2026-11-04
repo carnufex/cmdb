@@ -1,4 +1,4 @@
-import { Injectable, signal } from '@angular/core';
+import { Injectable, signal, untracked } from '@angular/core';
 
 /** A point in SWEREF 99 TM. */
 export interface Point {
@@ -7,11 +7,25 @@ export interface Point {
 }
 
 /** A set of sites to mark in the map, e.g. advanced search results: [id, x, y] per site. */
-export interface Highlight {
+/** A set of sites on the map with a colour of its own (#346), such as the answer to a search. */
+export interface MapLayer {
+  id: string;
+  label: string;
+  /** Which of the --layer-N tokens, from 0. */
+  color: number;
   points: readonly (readonly [number, number, number])[];
   extent: readonly number[] | null;
+  /** How many there are; more than the points when the map cannot show them all. */
+  total: number;
+  visible: boolean;
   seq: number;
 }
+
+/** How many --layer-N tokens there are. */
+export const LAYER_COLORS = 6;
+
+/** The layer that what marks a set of its own, such as advanced search or a plan's changes, uses. */
+const MARKS = 'marks';
 
 /** A traced route to draw (#19): site points and cable lines, with the extent to frame. */
 export interface Route {
@@ -120,7 +134,10 @@ export class MapView {
   /** What the map shows, [minX, minY, maxX, maxY] in EPSG:3006. */
   readonly extent = signal<readonly number[] | null>(null);
   readonly focusRequest = signal<(Point & { seq: number }) | null>(null);
-  readonly highlight = signal<Highlight | null>(null);
+  /** What is on the map, the last drawn on top. */
+  readonly layers = signal<readonly MapLayer[]>([]);
+  /** A part of the map to bring into view. */
+  readonly fitRequest = signal<{ extent: readonly number[]; seq: number } | null>(null);
   readonly route = signal<Route | null>(null);
   readonly planned = signal<PlannedObjects | null>(null);
   readonly operations = signal<Operations | null>(null);
@@ -177,12 +194,80 @@ export class MapView {
     this.focusRequest.set({ ...point, seq: ++this.seq });
   }
 
-  mark(points: Highlight['points'], extent: readonly number[] | null): void {
-    this.highlight.set({ points, extent, seq: ++this.seq });
+  /** Marks a set in the app's own layer, in place of what it held. Without points it only brings the extent into view. */
+  mark(points: MapLayer['points'], extent: readonly number[] | null): void {
+    if (points.length > 0) {
+      this.addLayer(MARKS, 'Markering', points, extent);
+    } else {
+      this.removeLayer(MARKS);
+      if (extent) {
+        this.fitRequest.set({ extent, seq: ++this.seq });
+      }
+    }
   }
 
   clearMarks(): void {
-    this.highlight.set(null);
+    this.removeLayer(MARKS);
+  }
+
+  /** Adds a layer on top in a colour no other layer has, and brings it into view. The same id takes the place of what it was. */
+  addLayer(
+    id: string,
+    label: string,
+    points: MapLayer['points'],
+    extent: readonly number[] | null,
+    total = points.length,
+  ): void {
+    // Called from effects too: reading the layers here must not make them depend on what they change.
+    const all = untracked(this.layers);
+    const others = all.filter((l) => l.id !== id);
+    const color = all.find((l) => l.id === id)?.color ?? this.freeColor(others);
+    const seq = ++this.seq;
+    this.layers.set([...others, { id, label, color, points, extent, total, visible: true, seq }]);
+    if (extent) {
+      this.fitRequest.set({ extent, seq });
+    }
+  }
+
+  setLayerVisible(id: string, visible: boolean): void {
+    this.layers.update((all) => all.map((l) => (l.id === id ? { ...l, visible } : l)));
+  }
+
+  /** Moves a layer one step towards the top (1) or the bottom (-1). */
+  moveLayer(id: string, by: 1 | -1): void {
+    const all = [...untracked(this.layers)];
+    const from = all.findIndex((l) => l.id === id);
+    const to = from + by;
+    if (from >= 0 && to >= 0 && to < all.length) {
+      [all[from], all[to]] = [all[to], all[from]];
+      this.layers.set(all);
+    }
+  }
+
+  removeLayer(id: string): void {
+    if (untracked(this.layers).some((l) => l.id === id)) {
+      this.layers.update((all) => all.filter((l) => l.id !== id));
+    }
+  }
+
+  clearLayers(): void {
+    this.layers.set([]);
+  }
+
+  fitLayer(id: string): void {
+    const extent = untracked(this.layers).find((l) => l.id === id)?.extent;
+    if (extent) {
+      this.fitRequest.set({ extent, seq: ++this.seq });
+    }
+  }
+
+  /** The first colour not in use, or the least used when all are. */
+  private freeColor(layers: readonly MapLayer[]): number {
+    const uses = Array.from(
+      { length: LAYER_COLORS },
+      (_, c) => layers.filter((l) => l.color === c).length,
+    );
+    return uses.indexOf(Math.min(...uses));
   }
 
   showRoute(route: Omit<Route, 'seq'>): void {

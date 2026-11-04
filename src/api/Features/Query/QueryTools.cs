@@ -22,6 +22,8 @@ public sealed class QueryTools(RequestDb db, TypeCatalog catalog, AgentLinks lin
     private const int ShownSites = 10;
     private const string PlaceHelp = "A Swedish municipality the sites lie in, for example \"Gävle\". The network has no other place names.";
     private const string WithinHelp = "With place: also sites this many kilometres outside the municipality, 0.1–200. \"Med omnejd\" or \"around\" without a distance: use 25 and say so.";
+    private const string CodeHelp = "Only sites whose code starts with this, for example \"AGG-105\".";
+    private const string RegionHelp = "Only sites in this part of the country: norr, mellersta or söder.";
     private const string ExtentHelp = "Only sites in this area, [minX, minY, maxX, maxY] in EPSG:3006. For \"here\" or \"around here\" use the map view the app reports.";
 
     [McpServerTool(Name = "find_sites", Title = "Avancerad sökning", ReadOnly = true, Idempotent = true, OpenWorld = false)]
@@ -43,13 +45,15 @@ public sealed class QueryTools(RequestDb db, TypeCatalog catalog, AgentLinks lin
         [Description(PlaceHelp)] string? place = null,
         [Description(WithinHelp)] double? withinKm = null,
         [Description(ExtentHelp)] double[]? extent = null,
+        [Description(CodeHelp)] string? codePrefix = null,
+        [Description(RegionHelp)] string? region = null,
         CancellationToken ct = default)
     {
         if (limit is < 1 or > MaxLimit)
         {
             throw new McpException($"limit must be between 1 and {MaxLimit}.");
         }
-        var result = await RunAsync(new SiteQuery(siteTypes, lifecycles, equipment, serviceTypes, limit, siteAttributes, place, withinKm, extent), ct);
+        var result = await RunAsync(new SiteQuery(siteTypes, lifecycles, equipment, serviceTypes, limit, siteAttributes, place, withinKm, extent, codePrefix, region), ct);
         return new FindSitesResult(result.Total, Agent(result), result.Total > result.Sites.Count, result.ElapsedMs);
     }
 
@@ -67,9 +71,11 @@ public sealed class QueryTools(RequestDb db, TypeCatalog catalog, AgentLinks lin
         [Description(PlaceHelp)] string? place = null,
         [Description(WithinHelp)] double? withinKm = null,
         [Description(ExtentHelp)] double[]? extent = null,
+        [Description(CodeHelp)] string? codePrefix = null,
+        [Description(RegionHelp)] string? region = null,
         CancellationToken ct = default)
     {
-        var result = await RunAsync(new SiteQuery(siteTypes, lifecycles, equipment, serviceTypes, ShownSites, siteAttributes, place, withinKm, extent), ct);
+        var result = await RunAsync(new SiteQuery(siteTypes, lifecycles, equipment, serviceTypes, ShownSites, siteAttributes, place, withinKm, extent, codePrefix, region), ct);
         return new ShowOnMapResult(result.Total, Agent(result), result.Total > result.Sites.Count);
     }
 
@@ -85,11 +91,13 @@ public sealed class QueryTools(RequestDb db, TypeCatalog catalog, AgentLinks lin
         [Description(PlaceHelp)] string? place = null,
         [Description(WithinHelp)] double? withinKm = null,
         [Description(ExtentHelp)] double[]? extent = null,
+        [Description(CodeHelp)] string? codePrefix = null,
+        [Description(RegionHelp)] string? region = null,
         [Description("Group by: siteType, lifecycle or region (norr, mellersta, söder). Left out, one total.")] string? groupBy = null,
         [Description("A numeric equipment attribute to sum per group, e.g. powerDrawW.")] string? sumAttribute = null,
         CancellationToken ct = default)
     {
-        var request = new SiteSummaryRequest(new SiteQuery(siteTypes, lifecycles, equipment, serviceTypes, 1, siteAttributes, place, withinKm, extent), groupBy, sumAttribute);
+        var request = new SiteSummaryRequest(new SiteQuery(siteTypes, lifecycles, equipment, serviceTypes, 1, siteAttributes, place, withinKm, extent, codePrefix, region), groupBy, sumAttribute);
         var scope = http.HttpContext!.Scope();
         var errors = new SiteQueryValidator().Validate(request.Query).Errors.Select(e => e.ErrorMessage)
             .Concat(QuerySitesEndpoint.CatalogErrors(request.Query, catalog, scope))

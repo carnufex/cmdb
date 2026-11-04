@@ -1,5 +1,6 @@
 import { ScrollingModule } from '@angular/cdk/scrolling';
 import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
+import { MapView } from '../map/map-view';
 import { SiteQueryHit } from '../query/query-model';
 import { Lifecycle, StatusComponent } from '../shell/status';
 import { Assistant, SiteList } from './assistant';
@@ -14,6 +15,13 @@ const VISIBLE_ROWS = 9;
   imports: [ScrollingModule, StatusComponent],
   template: `
     <p class="sum">
+      @if (layer(); as onMap) {
+        <span
+          class="swatch"
+          aria-hidden="true"
+          [style.background]="'var(--layer-' + (onMap.color + 1) + ')'"
+        ></span>
+      }
       {{ headline() }}
     </p>
     @if (list().rows.length > 8) {
@@ -46,7 +54,7 @@ const VISIBLE_ROWS = 9;
     } @else if (query()) {
       <p class="sum">Inget matchar filtret.</p>
     }
-    @if (list().marked === null && list().points.length > 0) {
+    @if (!layer() && list().points.length > 0) {
       <button type="button" class="text-button" (click)="assistant.markOnMap(stepId())">
         Visa på kartan
       </button>
@@ -64,6 +72,13 @@ const VISIBLE_ROWS = 9;
     }
     .text-button {
       align-self: flex-start;
+    }
+    .swatch {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      margin-right: var(--space-1);
+      border-radius: 50%;
     }
     .sum {
       margin: 0;
@@ -117,6 +132,9 @@ export class AssistantSitesComponent {
   protected readonly assistant = inject(Assistant);
   readonly list = input.required<SiteList>();
   readonly stepId = input.required<string>();
+  private readonly map = inject(MapView);
+  /** Its layer on the map, while it has one. */
+  protected readonly layer = computed(() => this.map.layers().find((l) => l.id === this.stepId()));
   protected readonly rowHeight = ROW;
   protected readonly query = signal('');
 
@@ -131,16 +149,17 @@ export class AssistantSitesComponent {
   protected readonly height = computed(() => Math.min(this.rows().length, VISIBLE_ROWS) * ROW + 2);
 
   protected readonly headline = computed(() => {
-    const { total, marked, positionsHidden } = this.list();
+    const { total, positionsHidden } = this.list();
+    const marked = this.layer()?.points.length;
     const sites = total === 1 ? '1 site' : `${this.count(total)} siter`;
     if (positionsHidden) {
       return `${sites}. Din behörighet döljer var de ligger.`;
     }
-    if (marked === null) {
-      return sites;
-    }
     if (total === 0) {
       return 'Inga siter att markera på kartan.';
+    }
+    if (marked === undefined) {
+      return sites;
     }
     return total > marked
       ? `${this.count(marked)} av ${sites} markerade på kartan.`
