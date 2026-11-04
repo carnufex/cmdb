@@ -1,5 +1,8 @@
 -- Gives existing equipment the power draw (powerDrawW) that datagen now generates, so a demo database need not be reloaded.
 -- Same numbers and formula as src/datagen/Attributes.cs. Safe to run again.
+-- Without triggers: this fills in generated data, so it is no change in any object's history. Needs a superuser.
+BEGIN;
+SET LOCAL session_replication_role = replica;
 UPDATE equipment e
 SET attributes = e.attributes || jsonb_build_object('powerDrawW', d.watts + (e.id % 7) - 3)
 FROM equipment_type t
@@ -26,3 +29,4 @@ JOIN (VALUES
 ) AS d(key, watts) ON d.key = t.key
 WHERE t.id = e.equipment_type_id
   AND NOT e.attributes ? 'powerDrawW';
+COMMIT;
