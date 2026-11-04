@@ -250,7 +250,7 @@ test('the chat asks Lots as the signed-in person and marks what it shows on the 
   await page.goto('/');
   await expect(page.locator('cmdb-map .ol-viewport')).toBeVisible();
 
-  // The sign-in popup closes by itself in the provider's session.
+  // Signing in to Lots asks nothing in the provider's session (ADR-0025).
   await page.getByRole('button', { name: 'Chatt', exact: true }).click();
   const chat = page.getByRole('region', { name: 'Chatt med Lots' });
   await expect(chat.getByText('Du frågar som E2E Planerare')).toBeVisible();

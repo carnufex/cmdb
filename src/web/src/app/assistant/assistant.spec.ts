@@ -279,9 +279,10 @@ describe('Assistant', () => {
 
     await assistant.ask('Visa');
 
-    const [, connect, approval] = assistant.lines();
-    expect(connect.link?.href).toBe('https://lots.example.org/#/account/connections');
-    expect(approval.link).toBeUndefined();
+    const connect = assistant.lines().find((l) => l.text.includes('Koppla kontot'));
+    const approval = assistant.lines().find((l) => l.text.includes('godkännande'));
+    expect(connect!.link?.href).toBe('https://lots.example.org/#/account/connections');
+    expect(approval!.link).toBeUndefined();
   });
 
   it('shows a run that fails, and says what a refusal means', async () => {
@@ -525,6 +526,214 @@ describe('Assistant', () => {
     expect(assistant.lines().some((l) => l.role === 'error')).toBe(false);
     expect(assistant.lines().at(-1)!.text).toBe('Stoppad.');
     fetched.mockRestore();
+  });
+
+  function lotsAnswers(routes: Record<string, unknown>) {
+    return vi.spyOn(globalThis, 'fetch').mockImplementation(async (target) => {
+      const path = String(target).replace('https://lots.example.org', '');
+      return path in routes
+        ? new Response(JSON.stringify(routes[path]), { status: 200 })
+        : new Response('', { status: 404 });
+    });
+  }
+
+  const earlier = {
+    id: 'b0b0b0b0-0000-4000-8000-000000000001',
+    turns: [
+      {
+        question: 'Visa siterna',
+        status: 'Completed',
+        answer: 'Två siter [t1].',
+        steps: [
+          { name: 'find_sites', arguments: '{"place":"Nope"}', result: 'Refused' },
+          { name: 'show_on_map', arguments: '{"place":"Gävle"}', result: '{"total":2,"sites":[]}' },
+        ],
+      },
+    ],
+  };
+
+  it('opens an earlier chat with its sources, and goes on in that thread', async () => {
+    const assistant = await signedIn();
+    const fetched = lotsAnswers({ [`/ag-ui/threads/${earlier.id}`]: earlier });
+    const mark = vi.spyOn(TestBed.inject(MapView), 'mark');
+    await assistant.openThread(earlier.id);
+
+    expect(assistant.lines().map((l) => l.role)).toEqual(['user', 'steps', 'assistant']);
+    const steps = assistant.lines()[1].steps!;
+    expect(steps.map((s) => [s.state, s.source])).toEqual([
+      ['failed', undefined],
+      ['done', 1],
+    ]);
+    expect(assistant.source(assistant.lines()[2].run, 1)!.tool).toBe('show_on_map');
+    // An earlier chat acts on nothing by being opened.
+    expect(mark).not.toHaveBeenCalled();
+    TestBed.inject(HttpTestingController).expectNone('/api/query/sites');
+    fetched.mockRestore();
+
+    answer = () => stream(started, finished);
+    await assistant.ask('Och sedan?');
+    expect(JSON.parse(String(requests.at(-1)!.init.body)).threadId).toBe(earlier.id);
+  });
+
+  it('lists an earlier search when opened, and marks it only when asked', async () => {
+    const assistant = await signedIn();
+    const fetched = lotsAnswers({ [`/ag-ui/threads/${earlier.id}`]: earlier });
+    await assistant.openThread(earlier.id);
+    fetched.mockRestore();
+    const step = assistant.lines()[1].steps![1];
+    assistant.toggleStep(step.id);
+    TestBed.inject(HttpTestingController)
+      .expectOne('/api/query/sites')
+      .flush({ total: 1, sites: [], points: [[1, 2, 3]], extent: [2, 3, 2, 3] });
+    await settle();
+    const mark = vi.spyOn(TestBed.inject(MapView), 'mark');
+    expect(assistant.source(assistant.lines()[2].run, 1)!.sites!.marked).toBeNull();
+    assistant.markOnMap(step.id);
+    expect(mark).toHaveBeenCalledWith([[1, 2, 3]], [2, 3, 2, 3]);
+  });
+
+  it('shows how an earlier change request ended, and asks only if it never was answered', async () => {
+    const assistant = await signedIn();
+    const thread = {
+      id: earlier.id,
+      turns: [
+        {
+          question: 'Byt namn',
+          status: 'Completed',
+          answer: 'Frågan ligger på skärmen.',
+          steps: [{ name: 'request_change', arguments: '{}', result: '{"plan":{"ref":"plan:7"}}' }],
+        },
+      ],
+    };
+    const fetched = lotsAnswers({ [`/ag-ui/threads/${earlier.id}`]: thread });
+    const opened = assistant.openThread(earlier.id);
+    await settle();
+    const http = TestBed.inject(HttpTestingController);
+    http.expectOne('/api/plans/7').flush({
+      plan: { id: 7, status: 'applied', createdBy: 'demo-full' },
+      dependencies: [],
+      operations: [{ summary: 'Byt namn', problem: null }],
+    });
+    http.expectOne('/api/me').flush({ username: 'demo-full' });
+    await opened;
+    fetched.mockRestore();
+    expect(assistant.lines().find((l) => l.change)!.change!.state).toBe('written');
+  });
+
+  it('goes back to the chat the person was in after a reload', async () => {
+    const assistant = await signedIn();
+    localStorage.setItem('cmdb.chat.thread.alice', earlier.id);
+    const fetched = lotsAnswers({ [`/ag-ui/threads/${earlier.id}`]: earlier });
+    await assistant.restore();
+    expect(assistant.lines()[0].text).toBe('Visa siterna');
+    fetched.mockRestore();
+    localStorage.removeItem('cmdb.chat.thread.alice');
+  });
+
+  it('forgets a remembered chat that is no longer there', async () => {
+    const assistant = await signedIn();
+    localStorage.setItem('cmdb.chat.thread.alice', earlier.id);
+    const fetched = lotsAnswers({});
+    await assistant.restore();
+    expect(assistant.lines()).toEqual([]);
+    expect(localStorage.getItem('cmdb.chat.thread.alice')).toBeNull();
+    fetched.mockRestore();
+  });
+
+  it('lists the earlier chats of this context, and says when it cannot', async () => {
+    const assistant = await signedIn();
+    const threads = [{ id: earlier.id, title: 'Visa siterna', updatedAt: '2026-11-04T10:00:00Z' }];
+    let fetched = lotsAnswers({ '/ag-ui/threads?context=cmdb': threads });
+    await assistant.toggleHistory();
+    expect(assistant.history()).toEqual({ threads, failed: false });
+    await assistant.toggleHistory();
+    expect(assistant.history()).toBeNull();
+    fetched.mockRestore();
+    fetched = lotsAnswers({});
+    await assistant.toggleHistory();
+    expect(assistant.history()!.failed).toBe(true);
+    fetched.mockRestore();
+  });
+
+  it('connects the account in a hidden frame in the session, then answers without a word', async () => {
+    const assistant = await signedIn();
+    const frames: string[] = [];
+    const closed = vi.fn();
+    (assistant as unknown as { hiddenFrame: (url: string) => () => void }).hiddenFrame = (url) => {
+      frames.push(url);
+      return closed;
+    };
+    const fetched = vi.spyOn(globalThis, 'fetch').mockImplementation(
+      async () =>
+        new Response(
+          JSON.stringify({
+            authorizeUrl: 'https://idp.example.org/application/o/authorize/?client_id=cmdb-lots',
+          }),
+        ),
+    );
+    const connect = {
+      type: 'CUSTOM',
+      name: 'lots.connect',
+      value: { servers: ['cmdb'], url: 'https://lots.example.org/#/x' },
+    };
+    let calls = 0;
+    answer = () =>
+      ++calls === 1
+        ? stream(started, connect, finished)
+        : stream(
+            started,
+            { type: 'TEXT_MESSAGE_START', messageId: 'm1', role: 'assistant' },
+            { type: 'TEXT_MESSAGE_CONTENT', messageId: 'm1', delta: 'Klart.' },
+            { type: 'TEXT_MESSAGE_END', messageId: 'm1' },
+            finished,
+          );
+    await assistant.ask('Vad får jag se?');
+    fetched.mockRestore();
+
+    expect(frames[0]).toContain('prompt=none');
+    expect(closed).toHaveBeenCalled();
+    expect(assistant.lines().map((l) => l.role)).toEqual(['user', 'assistant']);
+  });
+
+  it('offers the link when the connection cannot be made without the person', async () => {
+    const assistant = await signedIn();
+    const fetched = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(
+        async () =>
+          new Response(JSON.stringify({ authorizeUrl: 'https://evil.example/authorize' })),
+      );
+    answer = () =>
+      stream(
+        started,
+        {
+          type: 'CUSTOM',
+          name: 'lots.connect',
+          value: { servers: ['cmdb'], url: 'https://lots.example.org/#/x' },
+        },
+        finished,
+      );
+    await assistant.ask('Vad får jag se?');
+    fetched.mockRestore();
+    expect(assistant.lines().at(-1)!.link!.label).toBe('Koppla kontot i Lots');
+  });
+
+  it('signs in without asking when the person has a session, and offers the popup when not', async () => {
+    setup();
+    const lots = TestBed.inject(LotsAuth);
+    await lots.connect();
+    expect(signinSilent).toHaveBeenCalled();
+    expect(signinPopup).not.toHaveBeenCalled();
+    expect(lots.access()).toBe('signed-in');
+
+    signinSilent.mockRejectedValueOnce(new Error('login_required'));
+    (lots as unknown as { access: { set(v: string): void } }).access.set('signed-out');
+    await lots.connect();
+    expect(lots.access()).toBe('signed-out');
+
+    signinSilent.mockRejectedValueOnce(new Error('access_denied'));
+    await lots.connect();
+    expect(lots.access()).toBe('denied');
   });
 
   it('starts over with a new thread', async () => {

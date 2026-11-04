@@ -46,6 +46,11 @@ const VISIBLE_ROWS = 9;
     } @else if (query()) {
       <p class="sum">Inget matchar filtret.</p>
     }
+    @if (list().marked === null && list().points.length > 0) {
+      <button type="button" class="text-button" (click)="assistant.markOnMap(stepId())">
+        Visa på kartan
+      </button>
+    }
     @if (list().total > list().rows.length) {
       <p class="sum">Listan visar de {{ count(list().rows.length) }} första.</p>
     }
@@ -55,6 +60,10 @@ const VISIBLE_ROWS = 9;
       display: flex;
       flex-direction: column;
       gap: var(--space-2);
+      align-items: stretch;
+    }
+    .text-button {
+      align-self: flex-start;
     }
     .sum {
       margin: 0;
@@ -105,8 +114,9 @@ const VISIBLE_ROWS = 9;
   `,
 })
 export class AssistantSitesComponent {
-  private readonly assistant = inject(Assistant);
+  protected readonly assistant = inject(Assistant);
   readonly list = input.required<SiteList>();
+  readonly stepId = input.required<string>();
   protected readonly rowHeight = ROW;
   protected readonly query = signal('');
 

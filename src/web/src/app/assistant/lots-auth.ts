@@ -14,6 +14,8 @@ function settings(config: Pick<RuntimeConfig, 'lotsAuthority' | 'lotsClientId'>)
     client_id: config.lotsClientId ?? '',
     redirect_uri: `${location.origin}${LOTS_CALLBACK_PATH}`,
     popup_redirect_uri: `${location.origin}${LOTS_CALLBACK_PATH}`,
+    silent_redirect_uri: `${location.origin}${LOTS_CALLBACK_PATH}`,
+    silentRequestTimeoutInSeconds: 8,
     response_type: 'code',
     scope: 'openid profile email offline_access',
     userStore: new WebStorageStateStore({ store: new InMemoryWebStorage() }),
@@ -28,22 +30,24 @@ export const LOTS_SIGN_IN = new InjectionToken<LotsSignIn>('Lots sign-in', {
 });
 
 /**
- * Runs in the sign-in popup when the identity provider sends it back. Handled before the app starts, since the whole app
- * would start a sign-in of its own in the popup. The opener finishes the code exchange.
+ * Runs in the hidden frame or the sign-in popup when the identity provider sends it back. Handled before the app starts, since
+ * the whole app would start a sign-in of its own there. The window that opened it finishes the code exchange.
  */
 export async function finishLotsSignIn(): Promise<void> {
-  await new UserManager(
+  const manager = new UserManager(
     settings({ lotsAuthority: location.origin, lotsClientId: 'lots' }),
-  ).signinPopupCallback();
+  );
+  await (window.parent !== window ? manager.signinSilentCallback() : manager.signinPopupCallback());
 }
 
-export type LotsAccess = 'signed-out' | 'signed-in' | 'denied' | 'other-person' | 'failed';
+export type LotsAccess =
+  'signed-out' | 'signing-in' | 'signed-in' | 'denied' | 'other-person' | 'failed';
 
 /**
- * The person's own sign-in to Lots (ADR-0023). Lots accepts only a token issued for Lots, so cmdb's token never leaves
- * cmdb: this is a sign-in of its own, in the identity provider's session the person already has, which normally closes the
- * popup without asking anything. A popup and not a hidden frame, since the provider's pages refuse to be framed. It must
- * open from a click, or the browser blocks it. Like cmdb's own, the token lives in memory only.
+ * The person's own sign-in to Lots (ADR-0023, ADR-0025). Lots accepts only a token issued for Lots, so cmdb's token never
+ * leaves cmdb: this is a sign-in of its own, in the identity provider's session the person already has. It happens in a hidden
+ * frame, with nothing to click. Without such a session the provider says so, and the person signs in with the popup, which must
+ * open from a click or the browser blocks it. Like cmdb's own, the token lives in memory only.
  */
 @Injectable({ providedIn: 'root' })
 export class LotsAuth {
@@ -57,9 +61,31 @@ export class LotsAuth {
 
   readonly access = signal<LotsAccess>('signed-out');
   readonly signedIn = computed(() => this.access() === 'signed-in');
+  /** Who it is at the identity provider, for what is remembered per person. */
+  readonly subject = computed(() => this.current()?.profile.sub ?? null);
   readonly displayName = computed(
     () => this.current()?.profile.name ?? this.current()?.profile.preferred_username ?? '',
   );
+
+  /** Signs in without asking anything when the person has a session at the provider. Safe to call again. */
+  async connect(): Promise<void> {
+    if (this.access() === 'signed-in' || this.access() === 'signing-in') {
+      return;
+    }
+    this.access.set('signing-in');
+    try {
+      const user = await this.manager.signinSilent();
+      if (user) {
+        this.accept(user);
+      } else {
+        this.access.set('signed-out');
+      }
+    } catch (e: unknown) {
+      // No session, or a frame that never answered: the popup is there for that. A refusal is an answer.
+      const message = (e as { message?: string }).message ?? '';
+      this.access.set(/access_denied|permission|denied/i.test(message) ? 'denied' : 'signed-out');
+    }
+  }
 
   /** Opens the popup. Call it directly from a click. */
   async signIn(): Promise<void> {
