@@ -26,7 +26,8 @@ public sealed record SiteQuery(
     IReadOnlyList<EquipmentCondition>? Equipment,
     IReadOnlyList<string>? ServiceTypes,
     int Limit = 200,
-    IReadOnlyList<AttributeCondition>? SiteAttributes = null);
+    IReadOnlyList<AttributeCondition>? SiteAttributes = null,
+    string? Place = null);
 
 /// <param name="Matching">Equipment on the site matching the first equipment condition, if there is one.</param>
 public sealed record SiteQueryHit(long Id, string Code, string Name, string SiteType, string Lifecycle, double? X, double? Y, int? Matching);
@@ -47,6 +48,7 @@ public sealed class SiteQueryValidator : Validator<SiteQuery>
     public SiteQueryValidator()
     {
         RuleFor(q => q.Limit).InclusiveBetween(1, 1000);
+        RuleFor(q => q.Place).MaximumLength(100);
         RuleForEach(q => q.SiteTypes).Matches("^[a-z_]{1,40}$");
         RuleForEach(q => q.Lifecycles).Must(l => QueryFieldsEndpoint.Lifecycles.Contains(l)).WithMessage("Unknown lifecycle.");
         RuleForEach(q => q.ServiceTypes).Matches("^[a-z0-9_-]{1,40}$");
@@ -146,6 +148,18 @@ public sealed class QuerySitesEndpoint(RequestDb db, TypeCatalog catalog) : Endp
     /// </summary>
     internal static IEnumerable<string> CatalogErrors(SiteQuery req, TypeCatalog catalog, UserScope scope)
     {
+        if (req.Place is { Length: > 0 } place)
+        {
+            // Asking place by place would tell where a site is, which the scope hides.
+            if (scope.HidesCoordinates)
+            {
+                yield return "Sites cannot be searched by place, since your access hides their positions.";
+            }
+            else if (PlaceCatalog.Find(place) is null)
+            {
+                yield return $"Unknown place '{place}'. A place is a Swedish municipality, for example Gävle.";
+            }
+        }
         var keys = QueryFieldsEndpoint.AttributeKeys(catalog);
         foreach (var condition in req.Equipment ?? [])
         {
@@ -192,6 +206,11 @@ public sealed class QuerySitesEndpoint(RequestDb db, TypeCatalog catalog) : Endp
         if (req.Lifecycles is { Count: > 0 })
         {
             where.Add($"s.lifecycle::text = ANY({P(req.Lifecycles.ToArray())}::text[])");
+        }
+        // A named place (#330).
+        if (PlaceCatalog.Find(req.Place) is { } area)
+        {
+            where.Add($"ST_Intersects(s.geom, ST_GeomFromText({P(area.Wkt, NpgsqlDbType.Text)}, 3006))");
         }
         // The site's own attributes (#211): a plain filter on the site row.
         foreach (var a in req.SiteAttributes ?? [])

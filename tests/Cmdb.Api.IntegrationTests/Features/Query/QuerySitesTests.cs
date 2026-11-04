@@ -32,6 +32,31 @@ public sealed class QuerySitesTests(ApiFactory factory)
         (await Ids("bandMHz", "exists", null)).ShouldContain(high);
     }
 
+    [Theory]
+    [InlineData("Gävle")]
+    [InlineData("gavle")]
+    [InlineData("Gävle kommun")]
+    public async Task Finds_the_sites_in_a_place_and_nowhere_else(string place)
+    {
+        var inside = await SiteAtAsync(617000, 6727000);
+        var outside = await SiteAtAsync(600000, 6600000);
+
+        var result = await QueryAsync(new { place, limit = 1000 });
+
+        result.Ids.ShouldContain(inside);
+        result.Ids.ShouldNotContain(outside);
+    }
+
+    [Fact]
+    public async Task An_unknown_place_is_an_error_and_not_an_empty_answer()
+    {
+        await factory.RefreshScopesAsync();
+        using var client = factory.CreateAuthenticatedClient();
+        var response = await client.PostAsJsonAsync("/api/query/sites", new { place = "Ankeborg" }, Ct);
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync(Ct)).ShouldContain("Ankeborg");
+    }
+
     [Fact]
     public async Task Combines_conditions_with_and_and_counts_equipment()
     {
@@ -174,6 +199,11 @@ public sealed class QuerySitesTests(ApiFactory factory)
         response.StatusCode.ShouldBe(HttpStatusCode.OK, await response.Content.ReadAsStringAsync(Ct));
         return (await response.Content.ReadFromJsonAsync<SiteQueryResult>(Ct))!;
     }
+
+    private Task<long> SiteAtAsync(int x, int y) => Scalar<long>($"""
+        INSERT INTO site (code, name, site_type, geom, lifecycle)
+        VALUES ('Q-{Guid.NewGuid():N}', 'Query test', 'cabinet', 'SRID=3006;POINT({x} {y})', 'in_service') RETURNING id
+        """);
 
     private async Task<long> SiteWithAsync(string siteType, params (string Type, string Attributes)[] equipment)
     {

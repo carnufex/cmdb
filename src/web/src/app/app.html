@@ -117,6 +117,21 @@
     >
       Driftagent
     </button>
+    @if (assistant.enabled) {
+      <button
+        type="button"
+        class="text-button tool-button perf-tool"
+        aria-label="Chatt"
+        title="Chatt med Lots"
+        [attr.aria-pressed]="assistant.open()"
+        (click)="assistant.toggle()"
+      >
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M2.5 3.5h11v7.5h-6.5l-3 2.5v-2.5h-1.5z" />
+        </svg>
+        <span class="label">Chatt</span>
+      </button>
+    }
     <button
       type="button"
       class="icon-button"
@@ -249,3 +264,4 @@
   }
 </main>
 <cmdb-voice-call />
+<cmdb-assistant-chat />

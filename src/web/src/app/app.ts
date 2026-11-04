@@ -17,6 +17,8 @@ import { ReconciliationPanelComponent } from './reconciliations/reconciliation-p
 import { ProjectPanelComponent } from './projects/project-panel';
 import { GridPanelComponent } from './grid/grid-panel';
 import { ChangelogPanelComponent, ChangelogStore } from './changelog/changelog';
+import { Assistant } from './assistant/assistant';
+import { AssistantChatComponent } from './assistant/assistant-chat';
 import { VoiceCallComponent } from './voice/voice-call';
 import { VoicePanelComponent } from './voice/voice-panel';
 import { RackPanelComponent } from './objects/rack-panel';
@@ -44,6 +46,7 @@ import { TimeTravelComponent } from './map/time-travel';
     ChangelogPanelComponent,
     VoicePanelComponent,
     VoiceCallComponent,
+    AssistantChatComponent,
     RackPanelComponent,
     FibrePanelComponent,
     ServiceViewComponent,
@@ -62,6 +65,7 @@ export class App {
   protected readonly plan = inject(ActivePlan);
   protected readonly changelog = inject(ChangelogStore);
   protected readonly me = inject(CurrentUser).me;
+  protected readonly assistant = inject(Assistant);
 
   constructor() {
     registerCoreCommands();

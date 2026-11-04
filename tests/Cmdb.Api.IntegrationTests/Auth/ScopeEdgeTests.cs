@@ -82,6 +82,8 @@ public sealed class ScopeEdgeTests(ApiFactory factory)
         hits.ShouldAllBe(h => h.X == null && h.Y == null);
         var query = (await (await client.PostAsJsonAsync("/api/query/sites", new { limit = 10 }, Ct)).Content.ReadFromJsonAsync<SiteQueryResult>(Ct))!;
         query.Total.ShouldBeGreaterThan(0);
+        // Asking place by place would tell where a site is (#330).
+        (await client.PostAsJsonAsync("/api/query/sites", new { place = "Gävle" }, Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
         query.Points.ShouldBeEmpty();
         query.Extent.ShouldBeNull();
         query.Sites.ShouldAllBe(s => s.X == null && s.Y == null);

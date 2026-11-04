@@ -7,6 +7,8 @@ import { createSign, generateKeyPairSync, randomUUID } from 'node:crypto';
 const port = Number(process.env.E2E_IDP_PORT ?? 8790);
 const base = `http://127.0.0.1:${port}`;
 const issuer = `${base}/application/o/cmdb/`;
+// Lots is an application of its own at the same provider (ADR-0023): same person, its own issuer and audience.
+const issuerOf = (client) => (client === 'lots' ? `${base}/application/o/lots/` : issuer);
 const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const kid = randomUUID();
 const jwk = { ...publicKey.export({ format: 'jwk' }), kid, alg: 'RS256', use: 'sig' };
@@ -59,9 +61,12 @@ createServer((req, res) => {
   if (req.method === 'OPTIONS') {
     return send(res, 204);
   }
-  if (url.pathname === '/application/o/cmdb/.well-known/openid-configuration') {
+  const application = url.pathname.match(
+    /^\/application\/o\/(cmdb|lots)\/\.well-known\/openid-configuration$/,
+  );
+  if (application) {
     return send(res, 200, {
-      issuer,
+      issuer: issuerOf(application[1]),
       authorization_endpoint: `${base}/authorize`,
       token_endpoint: `${base}/token`,
       userinfo_endpoint: `${base}/userinfo`,
@@ -98,9 +103,11 @@ createServer((req, res) => {
     req.on('end', () => {
       const form = new URLSearchParams(raw);
       const nonce = nonces.get(form.get('code')) ?? undefined;
+      const client = form.get('client_id') ?? 'cmdb-web';
+      const own = { iss: issuerOf(client), azp: client };
       send(res, 200, {
-        access_token: jwt(claims('cmdb-web')),
-        id_token: jwt(claims('cmdb-web', { nonce })),
+        access_token: jwt(claims(client, own)),
+        id_token: jwt(claims(client, { ...own, nonce })),
         refresh_token: randomUUID(),
         token_type: 'Bearer',
         expires_in: 3600,
