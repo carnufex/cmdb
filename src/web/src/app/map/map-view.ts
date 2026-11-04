@@ -108,6 +108,8 @@ export interface Operations {
 @Injectable({ providedIn: 'root' })
 export class MapView {
   readonly center = signal<Point | null>(null);
+  /** What the map shows, [minX, minY, maxX, maxY] in EPSG:3006. */
+  readonly extent = signal<readonly number[] | null>(null);
   readonly focusRequest = signal<(Point & { seq: number }) | null>(null);
   readonly highlight = signal<Highlight | null>(null);
   readonly route = signal<Route | null>(null);

@@ -48,6 +48,69 @@ public sealed class QuerySitesTests(ApiFactory factory)
     }
 
     [Fact]
+    public async Task Around_a_place_reaches_outside_it_and_no_further()
+    {
+        // In Gävle, about 15 km outside it, and far away.
+        var inside = await SiteAtAsync(617000, 6727000);
+        var beside = await SiteAtAsync(650000, 6700000);
+        var far = await SiteAtAsync(600000, 6300000);
+
+        var within = (await QueryAsync(new { place = "Gävle", withinKm = 60, limit = 1000 })).Ids.ToList();
+        var only = (await QueryAsync(new { place = "Gävle", limit = 1000 })).Ids.ToList();
+
+        within.ShouldContain(inside);
+        within.ShouldContain(beside);
+        within.ShouldNotContain(far);
+        only.ShouldNotContain(beside);
+    }
+
+    [Theory]
+    [InlineData("""{ "withinKm": 5 }""")]
+    [InlineData("""{ "place": "Gävle", "withinKm": 500 }""")]
+    [InlineData("""{ "extent": [1, 2, 3] }""")]
+    [InlineData("""{ "extent": [5, 5, 1, 1] }""")]
+    public async Task A_distance_without_a_place_or_a_bad_area_is_an_error(string body)
+    {
+        await factory.RefreshScopesAsync();
+        using var client = factory.CreateAuthenticatedClient();
+        var response = await client.PostAsync("/api/query/sites", new StringContent(body, System.Text.Encoding.UTF8, "application/json"), Ct);
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task An_area_finds_the_sites_in_it()
+    {
+        var inside = await SiteAtAsync(450000, 6500000);
+        var outside = await SiteAtAsync(470000, 6500000);
+
+        var ids = (await QueryAsync(new { extent = new[] { 449000.0, 6499000, 451000, 6501000 }, limit = 1000 })).Ids.ToList();
+
+        ids.ShouldContain(inside);
+        ids.ShouldNotContain(outside);
+    }
+
+    [Fact]
+    public async Task Finds_sites_by_what_their_equipment_draws_and_adds_it_up()
+    {
+        var hungry = await SiteWithAsync("aggregation", ("acme-sdh-63", """{"powerDrawW":120}"""), ("acme-sdh-63", """{"powerDrawW":30}"""));
+        var modest = await SiteWithAsync("aggregation", ("acme-sdh-63", """{"powerDrawW":30}"""));
+
+        var equipment = new[] { new { attribute = new { key = "powerDrawW", op = "gt", value = 35 } } };
+        var ids = (await QueryAsync(new { equipment, limit = 1000 })).Ids.ToList();
+
+        ids.ShouldContain(hungry);
+        ids.ShouldNotContain(modest);
+
+        await factory.RefreshScopesAsync();
+        using var client = factory.CreateAuthenticatedClient();
+        var response = await client.PostAsJsonAsync("/api/query/sites/summary", new { query = new { equipment, limit = 1 }, sumAttribute = "powerDrawW" }, Ct);
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var summary = (await response.Content.ReadFromJsonAsync<Cmdb.Api.Features.Query.SiteSummary>(Ct))!;
+        summary.Total.ShouldBeGreaterThanOrEqualTo(1);
+        summary.Sum.ShouldNotBeNull().ShouldBeGreaterThanOrEqualTo(150);
+    }
+
+    [Fact]
     public async Task An_unknown_place_is_an_error_and_not_an_empty_answer()
     {
         await factory.RefreshScopesAsync();

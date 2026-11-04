@@ -123,7 +123,12 @@ Knappen **Chatt** öppnar en chatt med personens kontext i Lots (#330, ADR-0023)
 - **Som personen hela vägen.** Webben loggar in i Lots i en popup, i den Authentik-session personen redan har, och pratar AG-UI direkt med Lots `POST /ag-ui` med en token utfärdad för Lots. Cmdb:s token lämnar aldrig cmdb. Körningen syns i personens historik i Lots.
 - **Eget konto mot cmdb.** Kontexten använder `user-connected`, så att cmdb ser personen och inte ett tjänstekonto. Första gången ber chatten personen koppla sitt konto i Lots. I läsloggen syns klienten `cmdb-lots`.
 - **Kartan.** När agenten anropar `show_on_map` kör webben samma fråga mot `/api/query/sites` med personens cmdb-token, markerar träffarna och flyttar vyn. Bara kända fält ur anropet skickas vidare, och svaren från Lots visas som vanlig text.
-- **Orter.** `place` är en svensk kommun, till exempel `Gävle`, med eller utan "kommun" och svenska tecken. Gränserna kommer från SCB (CC0) och är förenklade. Den som har dolda positioner kan inte söka på plats.
+- **Vad personen ser.** Med frågan följer det som är öppet och syns på kartan (`context` i AG-UI), så att "den här siten" och "här omkring" betyder något. `find_sites` och `show_on_map` tar kartvyn som `extent`.
+- **Kort.** Verktygens svar ritas som korta kort i chatten, bara som text, och en rad med ett objekt öppnar det med `open_object`-beteendet. Kort finns för `find_sites`, `show_on_map`, `summarize_sites`, `find_station`, `impact`, `fault_impact`, `list_incidents`, `list_risks` och `get_history`.
+- **Ändringsbegäran (ADR-0024).** `request_change` skapar ett utkast, och webben frågar ja eller nej med serverns beskrivning. Svaret går direkt till cmdb med personens token och aldrig genom modellen.
+- **Röstverktygen som läser** (`find_station`, `station_overview`, `fault_impact`, `risk_details`) finns också på `/mcp`. Där är anroparen en inloggad person, så omfånget är personens, ingen telefonverifiering behövs, och `find_station` svarar bara inom omfånget. Verktyg som skriver eller utgår från ett telefonnummer finns bara på röstkanalerna.
+- **Effekt.** `powerDrawW` på utrustningen är vad den drar, i watt. "Drar mer än 35" är ett utrustningsvillkor med `gt` på det attributet.
+- **Orter.** `place` är en svensk kommun, till exempel `Gävle`, med eller utan "kommun" och svenska tecken. Med `withinKm` tas också siter så många kilometer utanför kommunen med ("med omnejd", 25 km om inget annat sägs). Gränserna kommer från SCB (CC0) och är förenklade. Den som har dolda positioner kan inte söka på plats eller i ett utsnitt.
 
 ## Driftagenten: röstkanalen
 

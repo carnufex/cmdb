@@ -33,10 +33,97 @@ import { LotsAuth } from './lots-auth';
           @case ('signed-in') {
             <div #log class="log" role="log" aria-live="polite" tabindex="0">
               @if (assistant.lines().length === 0) {
-                <p class="hint">Fråga om nätet, till exempel "visa mig alla siter i Gävle".</p>
+                <p class="hint">Fråga om nätet, till exempel:</p>
+                <div class="suggestions">
+                  @for (question of suggestions; track question) {
+                    <button type="button" class="suggestion" (click)="assistant.ask(question)">
+                      {{ question }}
+                    </button>
+                  }
+                </div>
               }
               @for (line of assistant.lines(); track line.id) {
                 <div class="line" [class]="line.role">
+                  @if (line.card; as card) {
+                    <div class="tool">
+                      <strong>{{ card.title }}</strong>
+                      @for (row of card.rows; track $index) {
+                        @if (row.ref; as ref) {
+                          <button type="button" class="row" (click)="assistant.openObject(ref)">
+                            <span>{{ row.label }}</span>
+                            @if (row.detail) {
+                              <small>{{ row.detail }}</small>
+                            }
+                          </button>
+                        } @else {
+                          <div class="row">
+                            <span>{{ row.label }}</span>
+                            @if (row.detail) {
+                              <small>{{ row.detail }}</small>
+                            }
+                          </div>
+                        }
+                      }
+                      @if (card.more) {
+                        <small>{{ card.more }}</small>
+                      }
+                    </div>
+                  }
+                  @if (line.change; as change) {
+                    <div class="tool change" role="group" aria-label="Ändringsbegäran">
+                      <strong>Ändringsbegäran - skriv:</strong>
+                      <ul>
+                        @for (summary of change.changes; track $index) {
+                          <li>{{ summary }}</li>
+                        }
+                      </ul>
+                      @for (problem of change.problems; track $index) {
+                        <p class="problem" role="alert">{{ problem }}</p>
+                      }
+                      @switch (change.state) {
+                        @case ('asking') {
+                          @if (change.problems.length === 0) {
+                            <p>Ska vi skriva det här?</p>
+                          } @else {
+                            <p>Det här går inte att skriva som det är.</p>
+                          }
+                          <div class="answers">
+                            <button
+                              type="button"
+                              class="text-button"
+                              [disabled]="change.problems.length > 0"
+                              (click)="assistant.answer(line.id, true)"
+                            >
+                              Ja
+                            </button>
+                            <button
+                              type="button"
+                              class="text-button"
+                              (click)="assistant.answer(line.id, false)"
+                            >
+                              Nej
+                            </button>
+                          </div>
+                        }
+                        @case ('writing') {
+                          <p class="status"><span class="dot" aria-hidden="true"></span>Skriver</p>
+                        }
+                        @case ('written') {
+                          <p class="status">
+                            <span class="dot done" aria-hidden="true"></span>Ändringen är skriven
+                          </p>
+                        }
+                        @case ('declined') {
+                          <p class="status">
+                            <span class="dot off" aria-hidden="true"></span>Inget skrevs
+                          </p>
+                        }
+                        @case ('failed') {
+                          <p class="problem" role="alert">{{ change.message }}</p>
+                        }
+                      }
+                    </div>
+                  }
                   <span [attr.role]="line.role === 'error' ? 'alert' : null">{{ line.text }}</span>
                   @if (line.link; as link) {
                     <a [href]="link.href" target="_blank" rel="noopener noreferrer">{{
@@ -176,6 +263,76 @@ import { LotsAuth } from './lots-auth';
       font-size: var(--text-sm);
       color: var(--text-muted);
     }
+    .dot.done {
+      background: var(--status-in-service);
+    }
+    .dot.off {
+      background: var(--text-muted);
+    }
+    .suggestions {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-1);
+      margin-top: var(--space-2);
+    }
+    .suggestion {
+      padding: var(--space-1) var(--space-2);
+      border: var(--line);
+      border-radius: var(--radius-sm);
+      background: none;
+      color: inherit;
+      font: inherit;
+      font-size: var(--text-sm);
+      text-align: left;
+      cursor: pointer;
+    }
+    .tool {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-1);
+      padding: var(--space-2);
+      border: var(--line);
+      border-radius: var(--radius-sm);
+      font-size: var(--text-sm);
+      white-space: normal;
+    }
+    .tool small {
+      color: var(--text-muted);
+      font-size: var(--text-xs);
+    }
+    .row {
+      display: flex;
+      justify-content: space-between;
+      gap: var(--space-2);
+      padding: 2px 0;
+      border: 0;
+      background: none;
+      color: inherit;
+      font: inherit;
+      text-align: left;
+    }
+    button.row {
+      cursor: pointer;
+      text-decoration: underline;
+      text-decoration-color: var(--text-muted);
+    }
+    .change {
+      border-color: var(--focus);
+    }
+    .change ul {
+      margin: 0;
+      padding-left: var(--space-3);
+    }
+    .change p {
+      margin: 0;
+    }
+    .problem {
+      color: var(--status-conflict);
+    }
+    .answers {
+      display: flex;
+      gap: var(--space-2);
+    }
     .dot {
       width: 8px;
       height: 8px;
@@ -209,6 +366,12 @@ export class AssistantChatComponent {
   protected readonly assistant = inject(Assistant);
   protected readonly lots = inject(LotsAuth);
   protected readonly call = inject(VoiceCall);
+  protected readonly suggestions = [
+    'Visa alla siter i Gävle med omnejd',
+    'Vilka ärenden är öppna just nu?',
+    'Hur många siter finns per region?',
+    'Vad får jag se?',
+  ];
   protected readonly draft = signal('');
   protected readonly canSend = computed(
     () => this.draft().trim().length > 0 && !this.assistant.busy(),
