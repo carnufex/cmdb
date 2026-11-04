@@ -56,7 +56,7 @@ import { ContextMenuComponent } from './context-menu';
 import { CableDrawingBarComponent } from './cable-drawing-bar';
 import { CableDrawing, CableRouteStep } from '../plans/cable-drawing';
 import { distanceText, MapActions } from './map-actions';
-import { MapTarget, MapView, Operations, PlannedObjects, Route } from './map-view';
+import { MapTarget, MapView, Operations, PlannedObjects, Route, coveredFromLeft } from './map-view';
 import { timeBannerText, timeQuery, TimeTravel } from './time-travel';
 
 /** GET /api/classifications/map (#180) */
@@ -1458,11 +1458,18 @@ export class MapComponent {
       const [minX, minY, maxX, maxY] = extent;
       const pad = Math.max(maxX - minX, maxY - minY) < 2_000 ? 2_000 : 0;
       this.map!.getView().fit([minX - pad, minY - pad, maxX + pad, maxY + pad], {
-        padding: [48, 48, 48, 48],
+        padding: [48, 48, 48, 48 + this.coveredFromLeft()],
         duration: 400,
         maxZoom: 11,
       });
     }
+  }
+
+  /** How much of the map an open tool covers, so that what is marked lands beside it and not behind it. */
+  private coveredFromLeft(): number {
+    const host = this.host.nativeElement as HTMLElement;
+    const tool = host.closest('.lens')?.querySelector('.tool');
+    return tool ? coveredFromLeft(host.getBoundingClientRect(), tool.getBoundingClientRect()) : 0;
   }
 
   /** The open object, and everything in the selection (#253), are drawn as selected. */
