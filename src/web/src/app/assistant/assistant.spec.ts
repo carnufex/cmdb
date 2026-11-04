@@ -1,11 +1,12 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 import { HttpAgent } from '@ag-ui/client';
 import { Auth } from '../auth/auth';
 import { RUNTIME_CONFIG } from '../config';
 import { MapView } from '../map/map-view';
+import { cardFor } from './assistant-cards';
 import { AGENT_FACTORY, Assistant, siteQueryFrom } from './assistant';
 import { LOTS_SIGN_IN, LotsAuth } from './lots-auth';
 
@@ -295,6 +296,142 @@ describe('Assistant', () => {
     await assistant.ask('Igen');
     expect(assistant.lines().at(-1)!.text).toContain('tillgång till kontexten cmdb');
     expect(assistant.busy()).toBe(false);
+  });
+
+  function toolCall(name: string, args: object, result: string): object[] {
+    return [
+      { type: 'TOOL_CALL_START', toolCallId: 'c9', toolCallName: name },
+      { type: 'TOOL_CALL_ARGS', toolCallId: 'c9', delta: JSON.stringify(args) },
+      { type: 'TOOL_CALL_END', toolCallId: 'c9' },
+      {
+        type: 'TOOL_CALL_RESULT',
+        messageId: 'r9',
+        toolCallId: 'c9',
+        role: 'tool',
+        content: result,
+      },
+    ];
+  }
+
+  const http = () => TestBed.inject(HttpTestingController);
+
+  async function askedAboutChange(plan: object, operations: object[]): Promise<Assistant> {
+    const assistant = await signedIn();
+    answer = () =>
+      stream(
+        started,
+        ...toolCall(
+          'request_change',
+          { title: 'x', operations: [] },
+          JSON.stringify({ plan: { ref: 'plan:7' } }),
+        ),
+        finished,
+      );
+    await assistant.ask('Byt namn');
+    await settle();
+    http().expectOne('/api/plans/7').flush({ plan, dependencies: [], operations });
+    http().expectOne('/api/me').flush({ username: 'demo-full' });
+    await settle();
+    return assistant;
+  }
+
+  it('asks before a change, with what the plan in cmdb says and not what the model wrote', async () => {
+    const assistant = await askedAboutChange({ id: 7, status: 'draft', createdBy: 'demo-full' }, [
+      { summary: 'Byt namn på AGG-000315 till X', problem: null },
+    ]);
+    const change = assistant.lines().find((l) => l.change)!.change!;
+    expect(change.changes).toEqual(['Byt namn på AGG-000315 till X']);
+    expect(change.state).toBe('asking');
+  });
+
+  it("writes on yes with the person's own token, and only then", async () => {
+    const assistant = await askedAboutChange({ id: 7, status: 'draft', createdBy: 'demo-full' }, [
+      { summary: 'Byt namn', problem: null },
+    ]);
+    const line = assistant.lines().find((l) => l.change)!;
+    http().expectNone('/api/plans/7/apply');
+    const answered = assistant.answer(line.id, true);
+    http().expectOne({ method: 'POST', url: '/api/plans/7/apply' }).flush({});
+    await answered;
+    expect(assistant.lines().find((l) => l.change)!.change!.state).toBe('written');
+  });
+
+  it('takes a typed no as the answer, without asking the model', async () => {
+    const assistant = await askedAboutChange({ id: 7, status: 'draft', createdBy: 'demo-full' }, [
+      { summary: 'Byt namn', problem: null },
+    ]);
+    const before = requests.length;
+    const answered = assistant.ask('nej');
+    http().expectOne({ method: 'POST', url: '/api/plans/7/cancel' }).flush({});
+    await answered;
+    expect(requests.length).toBe(before);
+    expect(assistant.lines().find((l) => l.change)!.change!.state).toBe('declined');
+  });
+
+  it('cannot approve a change with a problem', async () => {
+    const assistant = await askedAboutChange({ id: 7, status: 'draft', createdBy: 'demo-full' }, [
+      { summary: 'Byt namn', problem: 'Finns inte längre' },
+    ]);
+    const line = assistant.lines().find((l) => l.change)!;
+    await assistant.answer(line.id, true);
+    http().expectNone('/api/plans/7/apply');
+    expect(line.change!.state).toBe('asking');
+  });
+
+  it("asks about nothing but a draft of the person's own", async () => {
+    const assistant = await askedAboutChange(
+      { id: 7, status: 'draft', createdBy: 'someone-else' },
+      [{ summary: 'Byt namn', problem: null }],
+    );
+    expect(assistant.lines().some((l) => l.change)).toBe(false);
+    expect(assistant.lines().some((l) => l.role === 'error')).toBe(true);
+  });
+
+  it('opens only an object reference', () => {
+    const assistant = setup();
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    assistant.openObject('javascript:alert(1)');
+    expect(navigate).not.toHaveBeenCalled();
+    assistant.openObject('site:12');
+    expect(navigate).toHaveBeenCalledWith(
+      ['/'],
+      expect.objectContaining({ queryParams: { p: 'site:12' } }),
+    );
+  });
+
+  it('tells the agent what the person is looking at', async () => {
+    const assistant = await signedIn();
+    TestBed.inject(MapView).extent.set([1.4, 2, 3, 4]);
+    answer = () => stream(started, finished);
+    await assistant.ask('Vad finns här?');
+    const body = JSON.parse(String(requests.at(-1)!.init.body)) as {
+      context: { description: string; value: string }[];
+    };
+    expect(body.context[0].value).toBe('[1, 2, 3, 4]');
+  });
+
+  it("draws a card from the tool's answer, and nothing for a refusal", () => {
+    expect(
+      cardFor(
+        'find_sites',
+        JSON.stringify({
+          total: 9,
+          sites: [{ ref: 'site:1', code: 'A', name: 'B', siteType: 'hub' }],
+        }),
+      ),
+    ).toEqual({
+      title: '9 siter',
+      rows: [{ label: 'A B', ref: 'site:1' }],
+      more: 'och 8 till',
+    });
+    expect(cardFor('find_sites', 'No such thing')).toBeNull();
+    expect(cardFor('search', '{}')).toBeNull();
+    expect(
+      cardFor(
+        'find_sites',
+        JSON.stringify({ total: 1, sites: [{ ref: 'javascript:x', code: 'A' }] }),
+      )!.rows[0].ref,
+    ).toBeUndefined();
   });
 
   it('keeps only known fields of a tool call', () => {

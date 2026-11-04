@@ -34,7 +34,7 @@ public static class McpSetup
                     {
                         var kept = new McpServerPrimitiveCollection<McpServerTool>();
                         foreach (var tool in tools.Where(t => voice is null
-                            ? !VoiceChannels.AllTools.Contains(t.ProtocolTool.Name)
+                            ? !VoiceChannels.AllTools.Contains(t.ProtocolTool.Name) || VoiceChannels.AlsoForPeople.Contains(t.ProtocolTool.Name)
                             : VoiceChannels.Tools[voice].Contains(t.ProtocolTool.Name)))
                         {
                             kept.Add(tool);

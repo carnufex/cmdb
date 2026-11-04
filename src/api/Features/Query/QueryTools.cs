@@ -21,6 +21,8 @@ public sealed class QueryTools(RequestDb db, TypeCatalog catalog, AgentLinks lin
     public const int MaxLimit = 50;
     private const int ShownSites = 10;
     private const string PlaceHelp = "A Swedish municipality the sites lie in, for example \"Gävle\". The network has no other place names.";
+    private const string WithinHelp = "With place: also sites this many kilometres outside the municipality, 0.1–200. \"Med omnejd\" or \"around\" without a distance: use 25 and say so.";
+    private const string ExtentHelp = "Only sites in this area, [minX, minY, maxX, maxY] in EPSG:3006. For \"here\" or \"around here\" use the map view the app reports.";
 
     [McpServerTool(Name = "find_sites", Title = "Avancerad sökning", ReadOnly = true, Idempotent = true, OpenWorld = false)]
     [Description("Sites matching structured conditions, all combined with AND: site type, lifecycle, the site's own attributes, equipment the site holds " +
@@ -39,13 +41,15 @@ public sealed class QueryTools(RequestDb db, TypeCatalog catalog, AgentLinks lin
             "lists the keys per site type. Example: [{ \"key\": \"backupHours\", \"op\": \"lt\", \"value\": 4 }].")]
         AttributeCondition[]? siteAttributes = null,
         [Description(PlaceHelp)] string? place = null,
+        [Description(WithinHelp)] double? withinKm = null,
+        [Description(ExtentHelp)] double[]? extent = null,
         CancellationToken ct = default)
     {
         if (limit is < 1 or > MaxLimit)
         {
             throw new McpException($"limit must be between 1 and {MaxLimit}.");
         }
-        var result = await RunAsync(new SiteQuery(siteTypes, lifecycles, equipment, serviceTypes, limit, siteAttributes, place), ct);
+        var result = await RunAsync(new SiteQuery(siteTypes, lifecycles, equipment, serviceTypes, limit, siteAttributes, place, withinKm, extent), ct);
         return new FindSitesResult(result.Total, Agent(result), result.Total > result.Sites.Count, result.ElapsedMs);
     }
 
@@ -61,10 +65,41 @@ public sealed class QueryTools(RequestDb db, TypeCatalog catalog, AgentLinks lin
         [Description("Service type keys carried through the site (describe_catalog lists them).")] string[]? serviceTypes = null,
         [Description("Up to five tests on the site's own attributes, as for find_sites.")] AttributeCondition[]? siteAttributes = null,
         [Description(PlaceHelp)] string? place = null,
+        [Description(WithinHelp)] double? withinKm = null,
+        [Description(ExtentHelp)] double[]? extent = null,
         CancellationToken ct = default)
     {
-        var result = await RunAsync(new SiteQuery(siteTypes, lifecycles, equipment, serviceTypes, ShownSites, siteAttributes, place), ct);
+        var result = await RunAsync(new SiteQuery(siteTypes, lifecycles, equipment, serviceTypes, ShownSites, siteAttributes, place, withinKm, extent), ct);
         return new ShowOnMapResult(result.Total, Agent(result), result.Total > result.Sites.Count);
+    }
+
+    [McpServerTool(Name = "summarize_sites", Title = "Summera siter", ReadOnly = true, Idempotent = true, OpenWorld = false)]
+    [Description("Counts sites matching the same conditions as find_sites, optionally per site type, lifecycle or region, and optionally sums a numeric " +
+        "equipment attribute over them. Use it for \"how many\" and \"how much in total\", instead of listing. Example: sum powerDrawW for what sites draw.")]
+    public async Task<SiteSummary> SummarizeSites(
+        [Description("Site type keys.")] string[]? siteTypes = null,
+        [Description("Lifecycles.")] string[]? lifecycles = null,
+        [Description("Up to five equipment conditions, as for find_sites.")] EquipmentCondition[]? equipment = null,
+        [Description("Service type keys carried through the site.")] string[]? serviceTypes = null,
+        [Description("Tests on the site's own attributes, as for find_sites.")] AttributeCondition[]? siteAttributes = null,
+        [Description(PlaceHelp)] string? place = null,
+        [Description(WithinHelp)] double? withinKm = null,
+        [Description(ExtentHelp)] double[]? extent = null,
+        [Description("Group by: siteType, lifecycle or region (norr, mellersta, söder). Left out, one total.")] string? groupBy = null,
+        [Description("A numeric equipment attribute to sum per group, e.g. powerDrawW.")] string? sumAttribute = null,
+        CancellationToken ct = default)
+    {
+        var request = new SiteSummaryRequest(new SiteQuery(siteTypes, lifecycles, equipment, serviceTypes, 1, siteAttributes, place, withinKm, extent), groupBy, sumAttribute);
+        var scope = http.HttpContext!.Scope();
+        var errors = new SiteQueryValidator().Validate(request.Query).Errors.Select(e => e.ErrorMessage)
+            .Concat(QuerySitesEndpoint.CatalogErrors(request.Query, catalog, scope))
+            .Concat(SummarizeSitesEndpoint.Errors(request, catalog, scope))
+            .ToList();
+        if (errors.Count > 0)
+        {
+            throw new McpException(string.Join(" ", errors));
+        }
+        return await SummarizeSitesEndpoint.RunAsync(db, request, scope, ct);
     }
 
     private async Task<SiteQueryResult> RunAsync(SiteQuery query, CancellationToken ct)

@@ -469,6 +469,7 @@ export class MapComponent {
     const reportCenter = () => {
       const [x, y] = this.map!.getView().getCenter() ?? [0, 0];
       this.mapView.center.set({ x, y });
+      this.mapView.extent.set(this.map!.getView().calculateExtent(this.map!.getSize()));
     };
     reportCenter();
     this.map.on('moveend', reportCenter);

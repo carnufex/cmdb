@@ -124,14 +124,20 @@ public sealed class ListIncidentsEndpoint(RequestDb db) : EndpointWithoutRequest
 
     public override async Task HandleAsync(CancellationToken ct)
     {
-        await using var cmd = db.Source.CreateCommand($"""
+        await Send.OkAsync(await LoadAsync(db.Source, HttpContext.Scope(), ct), ct);
+    }
+
+    /// <summary>Also used by the MCP tool <c>list_incidents</c> (#334).</summary>
+    internal static async Task<IReadOnlyList<IncidentRow>> LoadAsync(Npgsql.NpgsqlDataSource db, UserScope scope, CancellationToken ct)
+    {
+        await using var cmd = db.CreateCommand($"""
             SELECT i.id, i.priority, i.status, i.site_id, s.code, s.name, i.reference, i.description, i.observations, i.reported_by,
                    i.conversation_id, i.created_at, i.enrichment, i.resolved_at, i.resolved_by
             FROM incident i JOIN site s ON s.id = i.site_id
             WHERE {ScopeSql.Site("i.site_id", 1)}
             ORDER BY i.id DESC LIMIT 50
             """);
-        cmd.Parameters.Add(HttpContext.Scope().Parameter());
+        cmd.Parameters.Add(scope.Parameter());
         var rows = new List<IncidentRow>();
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
@@ -141,7 +147,7 @@ public sealed class ListIncidentsEndpoint(RequestDb db) : EndpointWithoutRequest
                 reader.GetString(10), reader.GetFieldValue<DateTimeOffset>(11), JsonDocument.Parse(reader.GetString(12)).RootElement.Clone(),
                 reader.IsDBNull(13) ? null : reader.GetFieldValue<DateTimeOffset>(13), reader.IsDBNull(14) ? null : reader.GetString(14)));
         }
-        await Send.OkAsync(rows, ct);
+        return rows;
     }
 }
 

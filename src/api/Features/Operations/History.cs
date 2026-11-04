@@ -45,12 +45,23 @@ public sealed class HistoryEndpoint(RequestDb db) : Endpoint<HistoryRequest, Obj
 
     public override async Task HandleAsync(HistoryRequest req, CancellationToken ct)
     {
-        if (!Types.TryGetValue(req.Type, out var type))
+        if (await LoadAsync(db, req.Type, req.Id, HttpContext.Scope(), ct) is { } history)
+        {
+            await Send.OkAsync(history, ct);
+        }
+        else
         {
             await Send.NotFoundAsync(ct);
-            return;
         }
-        var scope = HttpContext.Scope();
+    }
+
+    /// <summary>The history, or null when the object is unknown or outside the scope. Also used by the MCP tool <c>get_history</c> (#334).</summary>
+    internal static async Task<ObjectHistory?> LoadAsync(Npgsql.NpgsqlDataSource db, string typeName, long id, UserScope scope, CancellationToken ct)
+    {
+        if (!Types.TryGetValue(typeName, out var type))
+        {
+            return null;
+        }
         // The versions oldest first: superseded ones with the operation that superseded them, then the current row.
         await using var cmd = db.CreateCommand($"""
             WITH visible AS (SELECT {type.Visible} AS ok)
@@ -63,7 +74,7 @@ public sealed class HistoryEndpoint(RequestDb db) : Endpoint<HistoryRequest, Obj
             WHERE (SELECT ok FROM visible)
             ORDER BY v.sys_to NULLS LAST, v.sys_from
             """);
-        cmd.Parameters.Add(new NpgsqlParameter { Value = req.Id });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = id });
         cmd.Parameters.Add(scope.Parameter());
         var versions = new List<(JsonElement Row, DateTimeOffset From, DateTimeOffset? To, OperationInfo? Op)>();
         await using (var reader = await cmd.ExecuteReaderAsync(ct))
@@ -78,14 +89,12 @@ public sealed class HistoryEndpoint(RequestDb db) : Endpoint<HistoryRequest, Obj
         }
         if (versions.Count == 0)
         {
-            await Send.NotFoundAsync(ct);
-            return;
+            return null;
         }
         if (versions[^1].To is not null && !scope.Unrestricted)
         {
             // Deleted: nothing current to decide the scope by.
-            await Send.NotFoundAsync(ct);
-            return;
+            return null;
         }
 
         var entries = new List<HistoryEntry> { new(versions[0].From, "created", null, []) };
@@ -101,7 +110,7 @@ public sealed class HistoryEndpoint(RequestDb db) : Endpoint<HistoryRequest, Obj
                 : new HistoryEntry(to.Value, "deleted", op, []));
         }
         entries.Reverse();
-        await Send.OkAsync(new ObjectHistory(req.Type, req.Id, entries), ct);
+        return new ObjectHistory(typeName, id, entries);
     }
 
     private static List<FieldChange> Diff(JsonElement before, JsonElement after, UserScope scope)

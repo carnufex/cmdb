@@ -19,12 +19,17 @@ public sealed class McpTests(ApiFactory factory)
         var resources = await client.ListResourcesAsync(cancellationToken: Ct);
         var prompts = await client.ListPromptsAsync(cancellationToken: Ct);
 
-        tools.Select(t => t.Name).Order().ShouldBe(["add_route_to_plan", "add_to_plan", "check_plan_classification", "connect_ports", "create_plan", "create_site_from_template",
-            "describe_catalog", "describe_classifications", "find_capacity", "find_service_points", "find_sites", "get_classification", "get_object", "get_project", "get_reconciliation", "impact", "import_to_plan", "list_plans", "list_projects", "list_reconciliations", "list_site_templates", "neighbourhood", "plan_materials", "preview_plan", "search",
-            "show_on_map", "splice_ports_to_cable", "suggest_route", "terminate_cable", "trace"]);
+        tools.Select(t => t.Name).Order().ShouldBe([
+            "add_route_to_plan", "add_to_plan", "check_plan_classification", "connect_ports", "create_plan",
+            "create_site_from_template", "describe_catalog", "describe_classifications", "fault_impact", "find_capacity",
+            "find_service_points", "find_sites", "find_station", "get_classification", "get_history", "get_object",
+            "get_project", "get_reconciliation", "impact", "import_to_plan", "list_incidents", "list_plans", "list_projects",
+            "list_reconciliations", "list_reservations", "list_risks", "list_site_templates", "my_access", "neighbourhood",
+            "open_object", "plan_materials", "preview_plan", "request_change", "risk_details", "search", "show_on_map",
+            "splice_ports_to_cable", "station_overview", "suggest_route", "summarize_sites", "terminate_cable", "trace"]);
         // Writing tools only write plans (#64): none is destructive, and none applies a plan.
         tools.Where(t => t.ProtocolTool.Annotations!.ReadOnlyHint != true).Select(t => t.Name).Order()
-            .ShouldBe(["add_route_to_plan", "add_to_plan", "connect_ports", "create_plan", "create_site_from_template", "import_to_plan", "splice_ports_to_cable", "terminate_cable"]);
+            .ShouldBe(["add_route_to_plan", "add_to_plan", "connect_ports", "create_plan", "create_site_from_template", "import_to_plan", "request_change", "splice_ports_to_cable", "terminate_cable"]);
         tools.ShouldAllBe(t => t.ProtocolTool.Annotations!.DestructiveHint != true);
         resources.Select(r => r.Uri).ShouldBe(["cmdb://docs/domanmodell", "cmdb://docs/plan", "cmdb://docs/arkitektur", "cmdb://changelog"], ignoreOrder: true);
         var changelog = await client.ReadResourceAsync("cmdb://changelog", cancellationToken: Ct);
@@ -67,6 +72,89 @@ public sealed class McpTests(ApiFactory factory)
         shown.GetProperty("total").GetInt64().ShouldBe(all.GetProperty("total").GetInt64());
         shown.GetProperty("sites").GetArrayLength().ShouldBeLessThanOrEqualTo(10);
         shown.GetProperty("sites")[0].GetProperty("ref").GetString().ShouldStartWith("site:");
+    }
+
+    [Fact]
+    public async Task A_change_request_is_a_draft_until_a_person_says_yes()
+    {
+        var net = await NetworkAsync();
+        var name = $"Nytt namn {Guid.NewGuid():N}"[..24];
+        await using var client = await ConnectAsync();
+
+        var asked = await CallAsync(client, "request_change", new()
+        {
+            ["title"] = "Byt namn",
+            ["operations"] = new object[] { new Dictionary<string, object?> { ["kind"] = "rename", ["target"] = $"site:{net.SiteA}", ["name"] = name } },
+        });
+
+        var plan = asked.GetProperty("plan");
+        plan.GetProperty("status").GetString().ShouldBe("draft");
+        asked.GetProperty("changes").GetArrayLength().ShouldBe(1);
+        var id = long.Parse(plan.GetProperty("ref").GetString()!["plan:".Length..], System.Globalization.CultureInfo.InvariantCulture);
+        (await Scalar<string>($"SELECT name FROM site WHERE id = {net.SiteA}")).ShouldNotBe(name);
+
+        // The person's yes, with their own token, is what writes it.
+        using var person = factory.CreateAuthenticatedClient();
+        (await person.PostAsync($"/api/plans/{id}/apply", null, Ct)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await Scalar<string>($"SELECT name FROM site WHERE id = {net.SiteA}")).ShouldBe(name);
+    }
+
+    [Fact]
+    public async Task A_person_who_may_not_write_cannot_request_a_change()
+    {
+        await factory.RefreshScopesAsync();
+        var http = factory.CreateAuthenticatedClient("cmdb-demo-read", ["cmdb-read"]);
+        await using var client = await McpClient.CreateAsync(new HttpClientTransport(
+            new HttpClientTransportOptions { Endpoint = new Uri(http.BaseAddress!, "/mcp"), TransportMode = HttpTransportMode.StreamableHttp },
+            http, ownsHttpClient: true), cancellationToken: Ct);
+
+        var result = await client.CallToolAsync("request_change", new Dictionary<string, object?>
+        {
+            ["title"] = "Byt namn",
+            ["operations"] = new object[] { new Dictionary<string, object?> { ["kind"] = "rename", ["target"] = "site:1", ["name"] = "X" } },
+        }, cancellationToken: Ct);
+
+        result.IsError.ShouldBe(true);
+        var access = JsonDocument.Parse(Text(await client.CallToolAsync("my_access", new Dictionary<string, object?>(), cancellationToken: Ct))).RootElement;
+        access.GetProperty("mayRequestChanges").GetBoolean().ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task The_voice_tools_that_read_answer_a_signed_in_person_without_a_phone_verification()
+    {
+        var net = await NetworkAsync();
+        await using var client = await ConnectAsync();
+
+        var found = await CallAsync(client, "find_station", new() { ["query"] = net.CodeA });
+        found[0].GetProperty("station").GetString().ShouldBe($"site:{net.SiteA}");
+        var overview = await CallAsync(client, "station_overview", new() { ["station"] = $"site:{net.SiteA}" });
+        overview.GetProperty("code").GetString().ShouldBe(net.CodeA);
+        var fault = await CallAsync(client, "fault_impact", new() { ["reference"] = $"site:{net.SiteA}" });
+        fault.GetProperty("priority").GetString().ShouldNotBeNullOrEmpty();
+        // Not logged as a phone call.
+        (await Scalar<long>("SELECT count(*) FROM voice_tool_call WHERE tool = 'station_overview' AND conversation_id = 'unknown'")).ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task Summaries_lists_and_history_answer_within_the_tools()
+    {
+        var net = await NetworkAsync();
+        await using var client = await ConnectAsync();
+
+        var perType = await CallAsync(client, "summarize_sites", new() { ["groupBy"] = "siteType" });
+        var total = perType.GetProperty("total").GetInt64();
+        total.ShouldBeGreaterThan(0);
+        perType.GetProperty("groups").EnumerateArray().Sum(g => g.GetProperty("sites").GetInt64()).ShouldBe(total);
+        (await CallAsync(client, "summarize_sites", [])).GetProperty("total").GetInt64().ShouldBe(total);
+        (await client.CallToolAsync("summarize_sites", new Dictionary<string, object?> { ["groupBy"] = "secret" }, cancellationToken: Ct)).IsError.ShouldBe(true);
+
+        (await CallAsync(client, "my_access", [])).GetProperty("mayRequestChanges").GetBoolean().ShouldBeTrue();
+        (await CallAsync(client, "list_incidents", [])).ValueKind.ShouldBe(JsonValueKind.Array);
+        (await CallAsync(client, "list_risks", [])).GetProperty("risks").ValueKind.ShouldBe(JsonValueKind.Array);
+        var history = await CallAsync(client, "get_history", new() { ["reference"] = $"site:{net.SiteA}" });
+        history.GetProperty("ref").GetString().ShouldBe($"site:{net.SiteA}");
+        (await CallAsync(client, "open_object", new() { ["reference"] = $"site:{net.SiteA}" })).GetProperty("ref").GetString().ShouldBe($"site:{net.SiteA}");
+        (await client.CallToolAsync("open_object", new Dictionary<string, object?> { ["reference"] = "site:999999999" }, cancellationToken: Ct)).IsError.ShouldBe(true);
     }
 
     [Fact]
