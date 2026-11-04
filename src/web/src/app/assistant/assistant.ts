@@ -37,6 +37,43 @@ export const AGENT_FACTORY = new InjectionToken<(url: string, threadId: string) 
   },
 );
 
+/** Takes the person through the provider in a hidden frame, in the session they already have. */
+export const HIDDEN_FRAME = new InjectionToken<(url: string) => () => void>('Hidden frame', {
+  providedIn: 'root',
+  factory: () => (url) => {
+    const frame = document.createElement('iframe');
+    frame.hidden = true;
+    frame.src = url;
+    document.body.append(frame);
+    return () => frame.remove();
+  },
+});
+
+/** A chat from earlier, as the list of them shows it. */
+export interface ChatThread {
+  id: string;
+  title: string;
+  updatedAt: string;
+}
+
+interface ThreadStep {
+  name: string;
+  arguments?: string | null;
+  result?: string | null;
+}
+
+interface ThreadTurn {
+  question: string;
+  status: string;
+  answer?: string | null;
+  steps: ThreadStep[];
+}
+
+/** How long a connection in the hidden frame gets, as the waits before asking again. */
+const CONNECT_WAITS_MS = [1500, 2500, 4000];
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 /** So is the markdown parser. */
 export const MARKDOWN_LEXER = new InjectionToken<() => Promise<Lexer>>('Markdown lexer', {
   providedIn: 'root',
@@ -52,6 +89,9 @@ export interface SiteList {
   total: number;
   /** How many are marked on the map; null when this list did not mark anything. */
   marked: number | null;
+  /** What marking them takes. */
+  points: SiteQueryResult['points'];
+  extent: SiteQueryResult['extent'];
   /** The person's access hides where the sites lie. */
   positionsHidden: boolean;
 }
@@ -138,9 +178,10 @@ export class Assistant {
   private readonly tools = inject(Tools);
   private readonly router = inject(Router);
   private readonly selection = inject(Selection);
+  private readonly hiddenFrame = inject(HIDDEN_FRAME);
 
   private readonly url = (this.config?.lotsUrl ?? '').replace(/\/+$/, '');
-  private threadId = crypto.randomUUID();
+  private threadId: string = crypto.randomUUID();
   private agent: Agent | null = null;
   private seq = 0;
   private run = 0;
@@ -149,6 +190,9 @@ export class Assistant {
   private stopped = false;
   /** What the person answered since the last question, so the agent knows how a change request ended. */
   private answers: string[] = [];
+  /** A connection the context needs, as the stream said. */
+  private needsConnection: { servers: string[]; url: unknown } | null = null;
+  private restored = false;
 
   readonly context = this.config?.lotsContext ?? 'cmdb';
   readonly enabled =
@@ -158,14 +202,13 @@ export class Assistant {
   readonly lexer = signal<Lexer | null>(null);
   /** A step the person asked to see, by following a citation: the chat scrolls to it. */
   readonly focused = signal<string | null>(null);
+  /** The list of earlier chats while it is shown. */
+  readonly history = signal<{ threads: readonly ChatThread[] | null; failed: boolean } | null>(
+    null,
+  );
 
-  /** From a click, so the sign-in popup is allowed to open. */
   toggle(): void {
-    const opening = this.tools.open() !== 'chat';
     this.tools.toggle('chat');
-    if (opening && this.lots.access() === 'signed-out') {
-      void this.lots.signIn();
-    }
   }
 
   /** Starts over: a new thread in Lots, with nothing of this one. */
@@ -177,7 +220,90 @@ export class Assistant {
     this.agent = null;
     this.answers = [];
     this.lines.set([]);
+    this.history.set(null);
     this.mapView.clearMarks();
+    this.remember(null);
+  }
+
+  /** Once signed in, the chat the person was in: a reload does not end a conversation. */
+  async restore(): Promise<void> {
+    if (this.restored || this.lines().length > 0) {
+      return;
+    }
+    this.restored = true;
+    const id = this.remembered();
+    if (id) {
+      await this.openThread(id).catch(() => this.remember(null));
+    }
+  }
+
+  /** Shows the earlier chats, or goes back to this one. */
+  async toggleHistory(): Promise<void> {
+    if (this.history()) {
+      this.history.set(null);
+      return;
+    }
+    this.history.set({ threads: null, failed: false });
+    try {
+      const context = encodeURIComponent(this.context);
+      const threads = await this.fromLots<ChatThread[]>(`/ag-ui/threads?context=${context}`);
+      this.history.set({ threads, failed: false });
+    } catch {
+      this.history.set({ threads: [], failed: true });
+    }
+  }
+
+  /** Opens an earlier chat to read and go on with. Nothing in it acts again: the map stays until the person asks. */
+  async openThread(id: string): Promise<void> {
+    if (this.busy()) {
+      return;
+    }
+    const thread = await this.fromLots<{ id: string; turns: ThreadTurn[] }>(
+      `/ag-ui/threads/${encodeURIComponent(id)}`,
+    );
+    this.threadId = thread.id;
+    this.agent = null;
+    this.answers = [];
+    this.history.set(null);
+    this.lines.set([]);
+    this.remember(thread.id);
+    for (const turn of thread.turns) {
+      this.run++;
+      this.add({ role: 'user', text: turn.question });
+      let sources = 0;
+      for (const step of turn.steps) {
+        const id = this.addStep(step.name);
+        const content = step.result ?? '';
+        const answered = answerOf(content) !== null;
+        this.updateStep(id, {
+          args: this.parsed(step.arguments),
+          state: answered ? 'done' : 'failed',
+          label: answered ? stepLabel(step.name, true) : stepLabel(step.name, false),
+          source: answered ? ++sources : undefined,
+          card: cardFor(step.name, content) ?? undefined,
+          problem: answered ? undefined : content.slice(0, 400),
+        });
+        if (answered && step.name === REQUEST_CHANGE) {
+          await this.askAboutChange(content, true);
+        }
+      }
+      if (turn.answer) {
+        this.add({ role: 'assistant', text: turn.answer });
+      } else if (turn.status === 'Cancelled') {
+        this.add({ role: 'notice', text: 'Stoppad.' });
+      } else if (turn.status === 'Failed') {
+        this.add({ role: 'error', text: 'Körningen i Lots misslyckades.' });
+      }
+    }
+  }
+
+  /** Marks a list from an earlier search on the map. */
+  markOnMap(stepId: string): void {
+    const list = this.step(stepId)?.sites;
+    if (list) {
+      this.mapView.mark(list.points, list.extent);
+      this.updateStep(stepId, { sites: { ...list, marked: list.points.length } });
+    }
   }
 
   async ask(question: string): Promise<void> {
@@ -205,20 +331,45 @@ export class Assistant {
         });
         return;
       }
-      if (!this.lexer()) {
-        const lexer = await this.markdown();
-        this.lexer.set(lexer);
-      }
+      await this.loadMarkdown();
       const agent = (this.agent ??= await this.factory(`${this.url}/ag-ui`, this.threadId));
       agent.headers = { Authorization: `Bearer ${token}` };
-      // Lots holds the earlier turns of the thread itself and reads only this one.
-      agent.setMessages([{ id: `user-${++this.seq}`, role: 'user', content: text }]);
       const context = this.screen();
       this.answers = [];
-      await agent.runAgent(
-        { forwardedProps: { context: this.context }, context },
-        this.subscriber(),
-      );
+      this.remember(this.threadId);
+      const send = async () => {
+        this.needsConnection = null;
+        // Lots holds the earlier turns of the thread itself and reads only this one.
+        agent.setMessages([{ id: `user-${++this.seq}`, role: 'user', content: text }]);
+        await agent.runAgent(
+          { forwardedProps: { context: this.context }, context },
+          this.subscriber(),
+        );
+      };
+      await send();
+      const needed = this.connectionNeeded();
+      if (needed) {
+        const close = await this.connectAccount(needed.servers);
+        for (const ms of CONNECT_WAITS_MS) {
+          if (!close || this.stopped) {
+            break;
+          }
+          await wait(ms);
+          await send();
+          if (!this.connectionNeeded()) {
+            break;
+          }
+        }
+        close?.();
+        // It could not be done without the person: the link in Lots is there for that.
+        if (this.connectionNeeded() && !this.stopped) {
+          this.add({
+            role: 'notice',
+            text: 'Kontexten behöver ditt eget konto, så att svaren följer din behörighet. Koppla kontot i Lots en gång och fråga sedan igen.',
+            link: this.link(needed.url, 'Koppla kontot i Lots'),
+          });
+        }
+      }
     } catch (e: unknown) {
       if (!this.stopped) {
         this.add({ role: 'error', text: this.problem(e) });
@@ -227,6 +378,92 @@ export class Assistant {
       this.settle();
       this.running = null;
       this.busy.set(false);
+    }
+  }
+
+  private connectionNeeded(): { servers: string[]; url: unknown } | null {
+    return this.needsConnection;
+  }
+
+  private async loadMarkdown(): Promise<void> {
+    if (!this.lexer()) {
+      this.lexer.set(await this.markdown());
+    }
+  }
+
+  /** A call to Lots, with the Lots token. Not through HttpClient: cmdb's own token is added there, and it must not leave cmdb. */
+  private async fromLots<T>(path: string): Promise<T> {
+    const token = await this.lots.token();
+    if (!token) {
+      throw new Error('Not signed in to Lots.');
+    }
+    const response = await fetch(`${this.url}${path}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) {
+      throw new Error(`Lots answered ${response.status}.`);
+    }
+    await this.loadMarkdown();
+    return (await response.json()) as T;
+  }
+
+  /**
+   * Connects the person's account at what the context needs, in the session they already have, so the first question just works.
+   * Only at the identity provider we sign in at. Returns how to close the frame, or null when it could not start.
+   */
+  private async connectAccount(servers: readonly string[]): Promise<(() => void) | null> {
+    const provider = new URL(this.config?.lotsAuthority ?? this.url).origin;
+    const closers: (() => void)[] = [];
+    for (const server of servers) {
+      try {
+        const token = await this.lots.token();
+        const response = await fetch(
+          `${this.url}/integrations/connections/${encodeURIComponent(server)}`,
+          { method: 'POST', headers: { Authorization: `Bearer ${token}` } },
+        );
+        const { authorizeUrl } = (await response.json()) as { authorizeUrl?: string };
+        const target = authorizeUrl ? new URL(authorizeUrl) : null;
+        if (target?.origin === provider) {
+          target.searchParams.set('prompt', 'none');
+          closers.push(this.hiddenFrame(target.href));
+        }
+      } catch {
+        // Left to the link in Lots.
+      }
+    }
+    return closers.length > 0 ? () => closers.forEach((close) => close()) : null;
+  }
+
+  private storageKey(): string {
+    return `cmdb.chat.thread.${this.lots.subject() ?? ''}`;
+  }
+
+  /** Which chat the person is in. A convenience: without it a reload just starts a new one. */
+  private remember(id: string | null): void {
+    try {
+      if (id) {
+        localStorage.setItem(this.storageKey(), id);
+      } else {
+        localStorage.removeItem(this.storageKey());
+      }
+    } catch {
+      // Private windows and blocked storage.
+    }
+  }
+
+  private remembered(): string | null {
+    try {
+      return localStorage.getItem(this.storageKey());
+    } catch {
+      return null;
+    }
+  }
+
+  private parsed(json: string | null | undefined): unknown {
+    try {
+      return json ? JSON.parse(json) : undefined;
+    } catch {
+      return undefined;
     }
   }
 
@@ -300,7 +537,8 @@ export class Assistant {
       return;
     }
     this.updateStep(id, { open: !step.open });
-    if (!step.open && step.tool === FIND_SITES && !step.sites && step.state === 'done') {
+    const lists = step.tool === FIND_SITES || step.tool === SHOW_ON_MAP;
+    if (!step.open && lists && !step.sites && step.state === 'done') {
       void this.listSites(id, step.args);
     }
   }
@@ -481,8 +719,11 @@ export class Assistant {
     return id;
   }
 
-  /** Reads the plan from cmdb and asks. Only a draft of the person's own comes this far, whatever the call claimed. */
-  private async askAboutChange(content: unknown): Promise<void> {
+  /**
+   * Reads the plan from cmdb and asks. Only a draft of the person's own comes this far, whatever the call claimed. From the history
+   * it shows how the question ended, and one that was never answered can still be.
+   */
+  private async askAboutChange(content: unknown, earlier = false): Promise<void> {
     const plan = text((answerOf(content) as { plan?: { ref?: unknown } } | null)?.plan?.ref);
     const id = PLAN_REF.exec(plan)?.[1];
     if (!id) {
@@ -493,11 +734,13 @@ export class Assistant {
         firstValueFrom(this.http.get<PlanDetail>(`/api/plans/${id}`)),
         firstValueFrom(this.http.get<{ username: string }>('/api/me')),
       ]);
-      if (detail.plan.status !== 'draft' || detail.plan.createdBy !== me.username) {
-        this.add({
-          role: 'error',
-          text: 'Ändringsbegäran går inte att besvara här: planen är inte ett utkast av dig.',
-        });
+      if (detail.plan.createdBy !== me.username || (!earlier && detail.plan.status !== 'draft')) {
+        if (!earlier) {
+          this.add({
+            role: 'error',
+            text: 'Ändringsbegäran går inte att besvara här: planen är inte ett utkast av dig.',
+          });
+        }
         return;
       }
       this.add({
@@ -507,11 +750,18 @@ export class Assistant {
           planId: detail.plan.id,
           changes: detail.operations.map((o) => o.summary),
           problems: detail.operations.flatMap((o) => (o.problem ? [o.problem] : [])),
-          state: 'asking',
+          state:
+            detail.plan.status === 'applied'
+              ? 'written'
+              : detail.plan.status === 'cancelled'
+                ? 'declined'
+                : 'asking',
         },
       });
     } catch {
-      this.add({ role: 'error', text: 'Kunde inte läsa ändringsbegäran från cmdb.' });
+      if (!earlier) {
+        this.add({ role: 'error', text: 'Kunde inte läsa ändringsbegäran från cmdb.' });
+      }
     }
   }
 
@@ -539,6 +789,8 @@ export class Assistant {
           rows: result.sites,
           total: result.total,
           marked: result.points.length,
+          points: result.points,
+          extent: result.extent,
           positionsHidden: result.total > 0 && result.points.length === 0,
         },
       });
@@ -555,7 +807,14 @@ export class Assistant {
       );
       this.updateStep(stepId, {
         loading: false,
-        sites: { rows: result.sites, total: result.total, marked: null, positionsHidden: false },
+        sites: {
+          rows: result.sites,
+          total: result.total,
+          marked: null,
+          points: result.points,
+          extent: result.extent,
+          positionsHidden: result.total > 0 && result.points.length === 0,
+        },
       });
     } catch (e: unknown) {
       this.failedList(stepId, e, 'Kunde inte hämta siterna.');
@@ -574,11 +833,12 @@ export class Assistant {
     const v = (value ?? {}) as { url?: unknown; servers?: unknown };
     const link = (label: string) => this.link(v.url, label);
     if (name === 'lots.connect') {
-      this.add({
-        role: 'notice',
-        text: 'Kontexten behöver ditt eget konto, så att svaren följer din behörighet. Koppla kontot i Lots en gång och fråga sedan igen.',
-        link: link('Koppla kontot i Lots'),
-      });
+      this.needsConnection = {
+        servers: Array.isArray(v.servers)
+          ? v.servers.filter((s): s is string => typeof s === 'string')
+          : [],
+        url: v.url,
+      };
     } else if (name === 'lots.approval') {
       this.add({
         role: 'notice',

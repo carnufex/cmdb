@@ -3,9 +3,11 @@ import {
   ChangeDetectionStrategy,
   Component,
   computed,
+  effect,
   ElementRef,
   inject,
   signal,
+  untracked,
   viewChild,
 } from '@angular/core';
 import { Tools } from '../shell/tools';
@@ -33,15 +35,26 @@ const FOLLOW_PX = 48;
             <p>Du frågar som {{ lots.displayName() }}</p>
           }
         </div>
-        @if (assistant.lines().length > 0) {
+        @if (lots.signedIn()) {
           <button
             type="button"
             class="text-button"
+            [attr.aria-pressed]="!!assistant.history()"
             [disabled]="assistant.busy()"
-            (click)="assistant.newChat()"
+            (click)="assistant.toggleHistory()"
           >
-            Ny chatt
+            Historik
           </button>
+          @if (assistant.lines().length > 0) {
+            <button
+              type="button"
+              class="text-button"
+              [disabled]="assistant.busy()"
+              (click)="assistant.newChat()"
+            >
+              Ny chatt
+            </button>
+          }
         }
         <cmdb-tool-size />
         <button type="button" class="close" aria-label="Stäng chatten" (click)="tools.close()">
@@ -50,188 +63,223 @@ const FOLLOW_PX = 48;
       </header>
 
       @switch (lots.access()) {
+        @case ('signing-in') {
+          <p class="message state">
+            <span class="dot running" aria-hidden="true"></span>Loggar in i Lots
+          </p>
+        }
         @case ('signed-in') {
-          <div #log class="log" role="log" aria-live="polite" tabindex="0" (scroll)="scrolled()">
-            @if (assistant.lines().length === 0) {
-              <p class="hint">Fråga om nätet. Svaren följer din behörighet.</p>
-              <div class="suggestions">
-                @for (question of suggestions; track question) {
-                  <button type="button" class="suggestion" (click)="assistant.ask(question)">
-                    {{ question }}
+          @if (assistant.history(); as history) {
+            <div class="log" aria-label="Tidigare chattar">
+              @if (history.failed) {
+                <p class="note error" role="alert">Kunde inte hämta historiken från Lots.</p>
+              } @else if (!history.threads) {
+                <p class="state"><span class="dot running" aria-hidden="true"></span>Hämtar</p>
+              } @else {
+                @for (thread of history.threads; track thread.id) {
+                  <button type="button" class="thread" (click)="open(thread.id)">
+                    <span>{{ thread.title }}</span>
+                    <small>{{ when(thread.updatedAt) }}</small>
                   </button>
+                } @empty {
+                  <p class="hint">Inga tidigare chattar än.</p>
                 }
-              </div>
-            }
-            @for (line of assistant.lines(); track line.id) {
-              @switch (line.role) {
-                @case ('user') {
-                  <div class="user">{{ line.text }}</div>
-                }
-                @case ('assistant') {
-                  <div class="answer">
-                    <cmdb-assistant-answer [text]="line.text" [run]="line.run" />
-                    @if (!assistant.busy() || line !== assistant.lines().at(-1)) {
-                      <button
-                        type="button"
-                        class="copy"
-                        [attr.aria-label]="'Kopiera svaret'"
-                        (click)="copy(line)"
-                      >
-                        {{ copied() === line.id ? 'Kopierat' : 'Kopiera' }}
-                      </button>
-                    }
-                  </div>
-                }
-                @case ('steps') {
-                  <ul class="steps">
-                    @for (step of line.steps; track step.id) {
-                      <li [attr.data-step]="step.id">
+              }
+            </div>
+          } @else {
+            <div #log class="log" role="log" aria-live="polite" tabindex="0" (scroll)="scrolled()">
+              @if (assistant.lines().length === 0) {
+                <p class="hint">Fråga om nätet. Svaren följer din behörighet.</p>
+                <div class="suggestions">
+                  @for (question of suggestions; track question) {
+                    <button type="button" class="suggestion" (click)="assistant.ask(question)">
+                      {{ question }}
+                    </button>
+                  }
+                </div>
+              }
+              @for (line of assistant.lines(); track line.id) {
+                @switch (line.role) {
+                  @case ('user') {
+                    <div class="user">{{ line.text }}</div>
+                  }
+                  @case ('assistant') {
+                    <div class="answer">
+                      <cmdb-assistant-answer [text]="line.text" [run]="line.run" />
+                      @if (!assistant.busy() || line !== assistant.lines().at(-1)) {
                         <button
                           type="button"
-                          class="step"
-                          [disabled]="
-                            !(step.card || step.sites || step.problem || step.tool === 'find_sites')
-                          "
-                          [attr.aria-expanded]="step.open"
-                          (click)="assistant.toggleStep(step.id)"
+                          class="copy"
+                          [attr.aria-label]="'Kopiera svaret'"
+                          (click)="copy(line)"
                         >
-                          <span class="dot" [class]="'dot ' + step.state" aria-hidden="true"></span>
-                          <span class="step-label">
-                            {{ step.label }}
-                            @if (step.state === 'failed') {
-                              <span> · gick inte</span>
-                            } @else if (step.card && !step.sites) {
-                              <span class="muted"> · {{ step.card.title }}</span>
-                            }
-                          </span>
-                          @if (step.source) {
-                            <span class="number" aria-hidden="true">{{ step.source }}</span>
-                          }
+                          {{ copied() === line.id ? 'Kopierat' : 'Kopiera' }}
                         </button>
-                        @if (step.open) {
-                          <div class="result">
-                            @if (step.problem) {
-                              <p class="problem">{{ step.problem }}</p>
-                            }
-                            @if (step.sites; as list) {
-                              <cmdb-assistant-sites [list]="list" />
-                            } @else if (step.loading) {
-                              <p class="muted">Hämtar</p>
-                            } @else if (step.card; as card) {
-                              <div class="rows">
-                                @for (row of card.rows; track $index) {
-                                  @if (row.ref; as ref) {
-                                    <button
-                                      type="button"
-                                      class="row link"
-                                      (click)="assistant.openObject(ref)"
-                                    >
-                                      <span>{{ row.label }}</span>
-                                      @if (row.detail) {
-                                        <small>{{ row.detail }}</small>
-                                      }
-                                    </button>
-                                  } @else {
-                                    <div class="row">
-                                      <span>{{ row.label }}</span>
-                                      @if (row.detail) {
-                                        <small>{{ row.detail }}</small>
-                                      }
-                                    </div>
-                                  }
-                                }
-                              </div>
-                              @if (card.more) {
-                                <p class="muted">{{ card.more }}</p>
-                              }
-                            }
-                          </div>
-                        }
-                      </li>
-                    }
-                  </ul>
-                }
-                @case ('change') {
-                  @if (line.change; as change) {
-                    <div class="change" role="group" aria-label="Ändringsbegäran">
-                      <strong>Ändringsbegäran - skriv:</strong>
-                      <ul>
-                        @for (summary of change.changes; track $index) {
-                          <li>{{ summary }}</li>
-                        }
-                      </ul>
-                      @for (problem of change.problems; track $index) {
-                        <p class="problem" role="alert">{{ problem }}</p>
                       }
-                      @switch (change.state) {
-                        @case ('asking') {
-                          <p>
-                            {{
-                              change.problems.length === 0
-                                ? 'Ska vi skriva det här?'
-                                : 'Det här går inte att skriva som det är.'
-                            }}
-                          </p>
-                          <div class="answers">
-                            <button
-                              type="button"
-                              class="yes"
-                              [disabled]="change.problems.length > 0"
-                              (click)="assistant.answer(line.id, true)"
-                            >
-                              Ja
-                            </button>
-                            <button
-                              type="button"
-                              class="text-button"
-                              (click)="assistant.answer(line.id, false)"
-                            >
-                              Nej
-                            </button>
-                          </div>
+                    </div>
+                  }
+                  @case ('steps') {
+                    <ul class="steps">
+                      @for (step of line.steps; track step.id) {
+                        <li [attr.data-step]="step.id">
+                          <button
+                            type="button"
+                            class="step"
+                            [disabled]="
+                              !(
+                                step.card ||
+                                step.sites ||
+                                step.problem ||
+                                step.tool === 'find_sites'
+                              )
+                            "
+                            [attr.aria-expanded]="step.open"
+                            (click)="assistant.toggleStep(step.id)"
+                          >
+                            <span
+                              class="dot"
+                              [class]="'dot ' + step.state"
+                              aria-hidden="true"
+                            ></span>
+                            <span class="step-label">
+                              {{ step.label }}
+                              @if (step.state === 'failed') {
+                                <span> · gick inte</span>
+                              } @else if (step.card && !step.sites) {
+                                <span class="muted"> · {{ step.card.title }}</span>
+                              }
+                            </span>
+                            @if (step.source) {
+                              <span class="number" aria-hidden="true">{{ step.source }}</span>
+                            }
+                          </button>
+                          @if (step.open) {
+                            <div class="result">
+                              @if (step.problem) {
+                                <p class="problem">{{ step.problem }}</p>
+                              }
+                              @if (step.sites; as list) {
+                                <cmdb-assistant-sites [list]="list" [stepId]="step.id" />
+                              } @else if (step.loading) {
+                                <p class="muted">Hämtar</p>
+                              } @else if (step.card; as card) {
+                                <div class="rows">
+                                  @for (row of card.rows; track $index) {
+                                    @if (row.ref; as ref) {
+                                      <button
+                                        type="button"
+                                        class="row link"
+                                        (click)="assistant.openObject(ref)"
+                                      >
+                                        <span>{{ row.label }}</span>
+                                        @if (row.detail) {
+                                          <small>{{ row.detail }}</small>
+                                        }
+                                      </button>
+                                    } @else {
+                                      <div class="row">
+                                        <span>{{ row.label }}</span>
+                                        @if (row.detail) {
+                                          <small>{{ row.detail }}</small>
+                                        }
+                                      </div>
+                                    }
+                                  }
+                                </div>
+                                @if (card.more) {
+                                  <p class="muted">{{ card.more }}</p>
+                                }
+                              }
+                            </div>
+                          }
+                        </li>
+                      }
+                    </ul>
+                  }
+                  @case ('change') {
+                    @if (line.change; as change) {
+                      <div class="change" role="group" aria-label="Ändringsbegäran">
+                        <strong>Ändringsbegäran - skriv:</strong>
+                        <ul>
+                          @for (summary of change.changes; track $index) {
+                            <li>{{ summary }}</li>
+                          }
+                        </ul>
+                        @for (problem of change.problems; track $index) {
+                          <p class="problem" role="alert">{{ problem }}</p>
                         }
-                        @case ('writing') {
-                          <p class="state">
-                            <span class="dot running" aria-hidden="true"></span>Skriver
-                          </p>
+                        @switch (change.state) {
+                          @case ('asking') {
+                            <p>
+                              {{
+                                change.problems.length === 0
+                                  ? 'Ska vi skriva det här?'
+                                  : 'Det här går inte att skriva som det är.'
+                              }}
+                            </p>
+                            <div class="answers">
+                              <button
+                                type="button"
+                                class="yes"
+                                [disabled]="change.problems.length > 0"
+                                (click)="assistant.answer(line.id, true)"
+                              >
+                                Ja
+                              </button>
+                              <button
+                                type="button"
+                                class="text-button"
+                                (click)="assistant.answer(line.id, false)"
+                              >
+                                Nej
+                              </button>
+                            </div>
+                          }
+                          @case ('writing') {
+                            <p class="state">
+                              <span class="dot running" aria-hidden="true"></span>Skriver
+                            </p>
+                          }
+                          @case ('written') {
+                            <p class="state">
+                              <span class="dot done" aria-hidden="true"></span>Ändringen är skriven
+                            </p>
+                          }
+                          @case ('declined') {
+                            <p class="state">
+                              <span class="dot off" aria-hidden="true"></span>Inget skrevs
+                            </p>
+                          }
+                          @case ('failed') {
+                            <p class="problem" role="alert">{{ change.message }}</p>
+                          }
                         }
-                        @case ('written') {
-                          <p class="state">
-                            <span class="dot done" aria-hidden="true"></span>Ändringen är skriven
-                          </p>
-                        }
-                        @case ('declined') {
-                          <p class="state">
-                            <span class="dot off" aria-hidden="true"></span>Inget skrevs
-                          </p>
-                        }
-                        @case ('failed') {
-                          <p class="problem" role="alert">{{ change.message }}</p>
-                        }
+                      </div>
+                    }
+                  }
+                  @default {
+                    <div class="note" [class.error]="line.role === 'error'">
+                      <span [attr.role]="line.role === 'error' ? 'alert' : null">{{
+                        line.text
+                      }}</span>
+                      @if (line.link; as link) {
+                        <a [href]="link.href" target="_blank" rel="noopener noreferrer">{{
+                          link.label
+                        }}</a>
                       }
                     </div>
                   }
                 }
-                @default {
-                  <div class="note" [class.error]="line.role === 'error'">
-                    <span [attr.role]="line.role === 'error' ? 'alert' : null">{{
-                      line.text
-                    }}</span>
-                    @if (line.link; as link) {
-                      <a [href]="link.href" target="_blank" rel="noopener noreferrer">{{
-                        link.label
-                      }}</a>
-                    }
-                  </div>
-                }
               }
+              @if (waiting()) {
+                <p class="state"><span class="dot running" aria-hidden="true"></span>Lots svarar</p>
+              }
+            </div>
+            @if (!following()) {
+              <button type="button" class="latest text-button" (click)="toEnd()">
+                Till senaste
+              </button>
             }
-            @if (waiting()) {
-              <p class="state"><span class="dot running" aria-hidden="true"></span>Lots svarar</p>
-            }
-          </div>
-          @if (!following()) {
-            <button type="button" class="latest text-button" (click)="toEnd()">Till senaste</button>
           }
           <form class="composer" (submit)="send($event)">
             <textarea
@@ -333,6 +381,28 @@ const FOLLOW_PX = 48;
     .hint {
       margin: 0;
       color: var(--text-muted);
+    }
+    .thread {
+      display: flex;
+      flex: none;
+      flex-direction: column;
+      gap: 2px;
+      width: 100%;
+      padding: var(--space-2);
+      border: 0;
+      border-bottom: var(--line);
+      background: none;
+      color: inherit;
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+    .thread:hover {
+      background: var(--surface-2);
+    }
+    .thread small {
+      color: var(--text-muted);
+      font-size: var(--text-xs);
     }
     .suggestions {
       display: flex;
@@ -608,6 +678,13 @@ export class AssistantChatComponent {
   private readonly log = viewChild<ElementRef<HTMLElement>>('log');
 
   constructor() {
+    // Opening the chat signs in by itself in the session the person has, and goes on where they were.
+    void this.lots.connect();
+    effect(() => {
+      if (this.lots.signedIn()) {
+        untracked(() => void this.assistant.restore());
+      }
+    });
     // The latest line stays in view while an answer grows, unless the person has scrolled away to read.
     afterRenderEffect(() => {
       this.assistant.lines();
@@ -627,6 +704,17 @@ export class AssistantChatComponent {
         this.assistant.focused.set(null);
       }
     });
+  }
+
+  protected open(thread: string): void {
+    this.following.set(true);
+    void this.assistant.openThread(thread).catch(() => {
+      this.assistant.history.set({ threads: [], failed: true });
+    });
+  }
+
+  protected when(at: string): string {
+    return new Date(at).toLocaleString('sv-SE', { dateStyle: 'short', timeStyle: 'short' });
   }
 
   protected scrolled(): void {

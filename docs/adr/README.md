@@ -28,3 +28,4 @@ Nya beslut: kopiera närmaste ADR, öka numret och sätt status **Föreslagen**.
 | [0022](0022-integrationskonton-med-egen-roll-och-eget-omfang.md) | Integrationskonton med egen roll och eget omfång (#248, genomförs i #217) |
 | [0023](0023-chatt-via-lots-som-personen.md) | Chatten går via Lots, som personen hela vägen (#331, genomförs i #330) |
 | [0024](0024-andringsbegaran-i-chatten.md) | Ändringsbegäran i chatten: agenten föreslår, personen svarar ja eller nej (#335) |
+| [0025](0025-sso-mot-lots-i-dold-ram.md) | SSO mot Lots i en dold ram (#342) |
