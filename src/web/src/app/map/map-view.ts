@@ -101,6 +101,15 @@ export interface Operations {
   }[];
 }
 
+/** How far from the left a tool covers the map. Nothing when it leaves too little of the map to fit anything in, as on a phone. */
+export function coveredFromLeft(
+  map: { left: number; right: number; width: number },
+  tool: { left: number; right: number },
+): number {
+  const covered = tool.right - map.left;
+  return tool.left <= map.left + 32 && covered > 0 && map.width - covered >= 240 ? covered : 0;
+}
+
 /**
  * What the map is looking at, shared with other parts of the app: search ranks hits near the centre, and
  * anything can ask the map to go somewhere or mark a set of sites.
