@@ -123,7 +123,7 @@
         class="text-button tool-button perf-tool"
         aria-label="Chatt"
         title="Chatt med Lots"
-        [attr.aria-pressed]="assistant.open()"
+        [attr.aria-pressed]="tools.open() === 'chat'"
         (click)="assistant.toggle()"
       >
         <svg viewBox="0 0 16 16" aria-hidden="true">
@@ -201,7 +201,9 @@
         >
       </nav>
     </div>
-    @if (tools.open() === 'query') {
+    @if (tools.open() === 'chat') {
+      <aside class="tool chat" aria-label="Chatt"><cmdb-assistant-chat /></aside>
+    } @else if (tools.open() === 'query') {
       <aside class="tool" aria-label="Avancerad sökning"><cmdb-query-panel /></aside>
     } @else if (tools.open() === 'tree') {
       <aside class="tool" aria-label="Innehåll"><cmdb-tree-panel /></aside>
@@ -264,4 +266,3 @@
   }
 </main>
 <cmdb-voice-call />
-<cmdb-assistant-chat />

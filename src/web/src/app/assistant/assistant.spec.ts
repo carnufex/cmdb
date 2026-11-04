@@ -215,7 +215,9 @@ describe('Assistant', () => {
       ],
       [100, 200, 110, 210],
     );
-    expect(assistant.lines().at(-1)!.text).toBe('2 siter markerade på kartan.');
+    const step = assistant.lines().find((l) => l.role === 'steps')!.steps![0];
+    expect(step.sites!.marked).toBe(2);
+    expect(step.open).toBe(true);
   });
 
   it('marks nothing for a refused call or another tool', async () => {
@@ -256,10 +258,9 @@ describe('Assistant', () => {
       );
     await settle();
 
-    expect(assistant.lines().at(-1)).toMatchObject({
-      role: 'error',
-      text: "Unknown place 'Ankeborg'.",
-    });
+    const step = assistant.lines().find((l) => l.role === 'steps')!.steps![0];
+    expect(step.problem).toBe("Unknown place 'Ankeborg'.");
+    expect(step.open).toBe(true);
   });
 
   it('offers the connection in Lots, and a link only into that Lots', async () => {
@@ -410,28 +411,131 @@ describe('Assistant', () => {
     expect(body.context[0].value).toBe('[1, 2, 3, 4]');
   });
 
-  it("draws a card from the tool's answer, and nothing for a refusal", () => {
+  it("draws the rows from the tool's answer, and none for a refusal", () => {
     expect(
       cardFor(
         'find_sites',
-        JSON.stringify({
-          total: 9,
-          sites: [{ ref: 'site:1', code: 'A', name: 'B', siteType: 'hub' }],
-        }),
+        JSON.stringify({ total: 9, sites: [{ ref: 'site:1', code: 'A', name: 'B' }] }),
       ),
     ).toEqual({
       title: '9 siter',
       rows: [{ label: 'A B', ref: 'site:1' }],
-      more: 'och 8 till',
+      more: 'De 1 första av 9',
     });
     expect(cardFor('find_sites', 'No such thing')).toBeNull();
-    expect(cardFor('search', '{}')).toBeNull();
+    expect(cardFor('unknown_tool', '{}')).toBeNull();
     expect(
       cardFor(
         'find_sites',
         JSON.stringify({ total: 1, sites: [{ ref: 'javascript:x', code: 'A' }] }),
       )!.rows[0].ref,
     ).toBeUndefined();
+  });
+
+  it('numbers the sources as Lots does: only calls that gave an answer', async () => {
+    const assistant = await signedIn();
+    answer = () =>
+      stream(
+        started,
+        ...toolCall('find_station', { query: 'x' }, 'Refused by policy'),
+        ...toolCall('find_station', { query: 'y' }, '[{"station":"site:1","code":"A","name":"B"}]'),
+        { type: 'TEXT_MESSAGE_START', messageId: 'm1', role: 'assistant' },
+        { type: 'TEXT_MESSAGE_CONTENT', messageId: 'm1', delta: 'Det är A [t1].' },
+        { type: 'TEXT_MESSAGE_END', messageId: 'm1' },
+        finished,
+      );
+    await assistant.ask('Vilken?');
+    const line = assistant.lines().find((l) => l.role === 'steps')!;
+    expect(line.steps!.map((s) => [s.state, s.source])).toEqual([
+      ['failed', undefined],
+      ['done', 1],
+    ]);
+    expect(line.steps![1].card!.rows[0]).toEqual({ label: 'A B', detail: '', ref: 'site:1' });
+
+    assistant.showSource(line.run, 1);
+    const shown = assistant.source(line.run, 1)!;
+    expect(shown.open).toBe(true);
+    expect(assistant.focused()).toBe(shown.id);
+    expect(assistant.source(line.run, 9)).toBeNull();
+  });
+
+  it('lists every match from our own API under the step that marked them', async () => {
+    const assistant = await signedIn();
+    answer = () =>
+      stream(
+        started,
+        ...toolCall('show_on_map', { place: 'Gävle' }, '{"total":2,"sites":[]}'),
+        finished,
+      );
+    await assistant.ask('Visa siterna');
+    await settle();
+    const post = TestBed.inject(HttpTestingController).expectOne('/api/query/sites');
+    expect(post.request.body.limit).toBe(1000);
+    post.flush({
+      total: 2,
+      sites: [
+        { id: 1, code: 'A', name: 'a', lifecycle: 'in_service', x: 1, y: 2 },
+        { id: 2, code: 'B', name: 'b', lifecycle: 'planned', x: 3, y: 4 },
+      ],
+      points: [
+        [1, 1, 2],
+        [2, 3, 4],
+      ],
+      extent: [1, 2, 3, 4],
+    });
+    await settle();
+    const step = assistant.lines().find((l) => l.role === 'steps')!.steps![0];
+    expect(step.open).toBe(true);
+    expect(step.sites!.rows.length).toBe(2);
+    expect(step.sites!.marked).toBe(2);
+  });
+
+  it('stops the run in Lots too, with the Lots token and not through cmdb', async () => {
+    const assistant = await signedIn();
+    const cancelled = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null));
+    let finish: (r: Response) => void = () => undefined;
+    answer = () => new Promise<Response>((resolve) => (finish = resolve));
+    const asked = assistant.ask('Något långt');
+    await settle();
+    (assistant as unknown as { running: string }).running = 'run-1';
+    await assistant.stop();
+    expect(cancelled).toHaveBeenCalledWith(
+      'https://lots.example.org/runs/run-1/cancel',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { Authorization: 'Bearer token-of-alice' },
+      }),
+    );
+    finish(stream(started, finished));
+    await asked.catch(() => undefined);
+    expect(assistant.lines().some((l) => l.role === 'error')).toBe(false);
+    cancelled.mockRestore();
+  });
+
+  it('says nothing more than stopped when the stream ends on the stop', async () => {
+    const assistant = await signedIn();
+    const fetched = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null));
+    let finish: (r: Response) => void = () => undefined;
+    answer = () => new Promise<Response>((resolve) => (finish = resolve));
+    const asked = assistant.ask('Något långt');
+    await settle();
+    await assistant.stop();
+    finish(stream(started, { type: 'RUN_ERROR', message: 'signal is aborted without reason' }));
+    await asked.catch(() => undefined);
+    expect(assistant.lines().some((l) => l.role === 'error')).toBe(false);
+    expect(assistant.lines().at(-1)!.text).toBe('Stoppad.');
+    fetched.mockRestore();
+  });
+
+  it('starts over with a new thread', async () => {
+    const assistant = await signedIn();
+    answer = () => stream(started, finished);
+    await assistant.ask('Något');
+    const first = JSON.parse(String(requests.at(-1)!.init.body)).threadId;
+    assistant.newChat();
+    expect(assistant.lines()).toEqual([]);
+    await assistant.ask('Något annat');
+    expect(JSON.parse(String(requests.at(-1)!.init.body)).threadId).not.toBe(first);
   });
 
   it('keeps only known fields of a tool call', () => {
@@ -445,7 +549,7 @@ describe('Assistant', () => {
         extra: true,
       }),
     ).toEqual({
-      limit: 1,
+      limit: 1000,
       place: 'Gävle',
       lifecycles: ['in_service'],
       siteTypes: undefined,
@@ -453,6 +557,6 @@ describe('Assistant', () => {
       equipment: [{ category: 'radio' }],
       siteAttributes: undefined,
     });
-    expect(siteQueryFrom(null)).toMatchObject({ limit: 1, place: undefined });
+    expect(siteQueryFrom(null)).toMatchObject({ limit: 1000, place: undefined });
   });
 });

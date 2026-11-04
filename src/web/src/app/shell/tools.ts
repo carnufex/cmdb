@@ -14,6 +14,7 @@ export type Tool =
   | 'grid'
   | 'changelog'
   | 'voice'
+  | 'chat'
   | 'rack'
   | 'fibre'
   | 'service'
@@ -41,6 +42,7 @@ export const toolSpecs: Record<Tool, ToolSpec> = {
   grid: { sizes: ['half', 'workspace'], initial: 'half' },
   changelog: { sizes: ['panel', 'half'], initial: 'panel' },
   voice: { sizes: ['panel'], initial: 'panel' },
+  chat: { sizes: ['panel', 'half'], initial: 'panel' },
   perf: { sizes: ['panel', 'half', 'workspace'], initial: 'panel' },
   rack: { sizes: ['half', 'workspace'], initial: 'workspace' },
   fibre: { sizes: ['half', 'workspace'], initial: 'workspace' },

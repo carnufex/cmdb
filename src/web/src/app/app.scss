@@ -197,6 +197,10 @@
   width: var(--tool-width-wide);
 }
 
+.tool.chat {
+  width: 440px;
+}
+
 // Half the screen (#251): the tool beside the map, which keeps at least 500 px.
 .lens.size-half .tool,
 .lens.size-workspace .tool {
