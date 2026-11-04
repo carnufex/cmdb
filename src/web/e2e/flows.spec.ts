@@ -384,3 +384,98 @@ test('a change asked for in the chat waits for a yes, and the yes writes it as t
   await expect(dialog.getByText('Ändringen är skriven')).toBeVisible();
   expect(await nameNow()).toBe(name);
 });
+
+test('each search the chat marks is a layer of its own, on top, that can be moved, hidden and removed', async ({
+  page,
+}) => {
+  const lots = 'http://127.0.0.1:8791';
+  let call = 0;
+  await page.route(`${lots}/ag-ui`, async (route) => {
+    const cors = { 'Access-Control-Allow-Origin': new URL(page.url()).origin };
+    if (route.request().method() === 'OPTIONS') {
+      await route.fulfill({
+        status: 204,
+        headers: {
+          ...cors,
+          'Access-Control-Allow-Methods': 'POST',
+          'Access-Control-Allow-Headers': 'Authorization, Content-Type, Accept',
+        },
+      });
+      return;
+    }
+    call++;
+    const thread = {
+      threadId: '00000000-0000-4000-8000-000000000001',
+      runId: `00000000-0000-4000-8000-00000000001${call}`,
+    };
+    const args = call === 1 ? { region: 'norr' } : { codePrefix: 'agg' };
+    const events = [
+      { type: 'RUN_STARTED', ...thread },
+      { type: 'TOOL_CALL_START', toolCallId: `c${call}`, toolCallName: 'show_on_map' },
+      { type: 'TOOL_CALL_ARGS', toolCallId: `c${call}`, delta: JSON.stringify(args) },
+      { type: 'TOOL_CALL_END', toolCallId: `c${call}` },
+      {
+        type: 'TOOL_CALL_RESULT',
+        messageId: `r${call}`,
+        toolCallId: `c${call}`,
+        role: 'tool',
+        content: '{"total":1,"sites":[]}',
+      },
+      { type: 'RUN_FINISHED', ...thread },
+    ];
+    await route.fulfill({
+      status: 200,
+      headers: { ...cors, 'Content-Type': 'text/event-stream' },
+      body: events.map((e) => `data: ${JSON.stringify(e)}\n\n`).join(''),
+    });
+  });
+  await page.route('**/config.json', (route) =>
+    route.fulfill({
+      json: {
+        oidcAuthority: idp,
+        oidcClientId: 'cmdb-web',
+        basemap: 'none',
+        lotsUrl: lots,
+        lotsAuthority: idp.replace('/cmdb/', '/lots/'),
+        lotsClientId: 'lots',
+        lotsContext: 'cmdb',
+      },
+    }),
+  );
+  await page.goto('/');
+  await expect(page.locator('cmdb-map .ol-viewport')).toBeVisible();
+  await page.getByRole('button', { name: 'Chatt', exact: true }).click();
+  const chat = page.getByRole('region', { name: 'Chatt med Lots' });
+  await expect(chat.getByText('Du frågar som E2E Planerare')).toBeVisible();
+  const box = chat.getByRole('textbox', { name: 'Din fråga' });
+  const layers = page.getByRole('region', { name: 'Lager på kartan' });
+  const names = layers.locator('li .label');
+
+  await box.fill('Alla i norr');
+  await box.press('Enter');
+  await expect(names).toHaveText(['Alla i norr']);
+  await chat.getByRole('button', { name: 'Skicka' }).waitFor();
+  await box.fill('Bara aggregering');
+  await box.press('Enter');
+  // The later search lies on top.
+  await expect(names).toHaveText(['Bara aggregering', 'Alla i norr']);
+
+  // And back, if the big one should have been underneath.
+  await layers.getByRole('button', { name: 'Flytta upp Alla i norr' }).click();
+  await expect(names).toHaveText(['Alla i norr', 'Bara aggregering']);
+  await layers.getByRole('button', { name: 'Flytta ner Alla i norr' }).click();
+  await expect(names).toHaveText(['Bara aggregering', 'Alla i norr']);
+
+  await layers.getByRole('checkbox', { name: 'Visa Alla i norr' }).uncheck();
+  await expect(layers.getByRole('checkbox', { name: 'Visa Alla i norr' })).not.toBeChecked();
+
+  // Removed from the map, the chat offers it again.
+  await layers.getByRole('button', { name: 'Ta bort Bara aggregering' }).click();
+  await expect(names).toHaveText(['Alla i norr']);
+  await expect(chat.getByRole('button', { name: 'Visa på kartan' })).toBeVisible();
+  await chat.getByRole('button', { name: 'Visa på kartan' }).click();
+  await expect(names).toHaveText(['Bara aggregering', 'Alla i norr']);
+
+  await layers.getByRole('button', { name: 'Rensa' }).click();
+  await expect(layers).toHaveCount(0);
+});

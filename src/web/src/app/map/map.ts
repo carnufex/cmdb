@@ -54,9 +54,18 @@ import { createStyler, Palette, readPalette, statusColor } from './map-style';
 import { CurrentUser } from '../shell/current-user';
 import { ContextMenuComponent } from './context-menu';
 import { CableDrawingBarComponent } from './cable-drawing-bar';
+import { MapLayersComponent } from './map-layers';
 import { CableDrawing, CableRouteStep } from '../plans/cable-drawing';
 import { distanceText, MapActions } from './map-actions';
-import { MapTarget, MapView, Operations, PlannedObjects, Route, coveredFromLeft } from './map-view';
+import {
+  MapTarget,
+  MapView,
+  MapLayer,
+  Operations,
+  PlannedObjects,
+  Route,
+  coveredFromLeft,
+} from './map-view';
 import { timeBannerText, timeQuery, TimeTravel } from './time-travel';
 
 /** GET /api/classifications/map (#180) */
@@ -81,7 +90,13 @@ interface Hover {
  */
 @Component({
   selector: 'cmdb-map',
-  imports: [StatusComponent, SelectionBarComponent, ContextMenuComponent, CableDrawingBarComponent],
+  imports: [
+    StatusComponent,
+    MapLayersComponent,
+    SelectionBarComponent,
+    ContextMenuComponent,
+    CableDrawingBarComponent,
+  ],
   host: { '(document:keydown)': 'onKey($event)' },
   templateUrl: './map.html',
   styleUrl: './map.scss',
@@ -114,7 +129,11 @@ export class MapComponent {
   private network?: VectorTileLayer;
   private conduit?: VectorTileLayer;
   private basemap?: TileLayer<XYZ>;
-  private marks?: VectorLayer<VectorSource<Feature<OlPoint>>>;
+  /** What the map shows of the app's layers (#346), by id. */
+  private readonly marks = new Map<
+    string,
+    { layer: VectorLayer<VectorSource<Feature<OlPoint>>>; seq: number }
+  >();
   private route?: VectorLayer<VectorSource<Feature<Geometry>>>;
   private planned?: VectorLayer<VectorSource<Feature<Geometry>>>;
   private operations?: VectorLayer<VectorSource<Feature<Geometry>>>;
@@ -177,13 +196,18 @@ export class MapComponent {
       this.kinds.siteTypes();
       this.restyle();
     });
-    // Advanced search marks its results; they get their own layer so they show at every zoom.
+    // Searches mark their results; each set has its own layer, so it shows at every zoom.
     effect(() => {
-      const highlight = this.mapView.highlight();
-      if (!this.marks || !this.map) {
-        return;
+      const layers = this.mapView.layers();
+      if (this.map) {
+        this.showLayers(layers);
       }
-      this.showMarks(highlight?.points ?? [], highlight?.extent ?? null);
+    });
+    effect(() => {
+      const fit = this.mapView.fitRequest();
+      if (this.map && fit) {
+        this.fitMarks(fit.extent);
+      }
     });
     // A trace draws its route in its own layer, on top of everything (#19).
     effect(() => {
@@ -343,7 +367,7 @@ export class MapComponent {
     this.restyle = () => {
       reset();
       this.network?.changed();
-      this.marks?.changed();
+      this.marks.forEach(({ layer }) => layer.changed());
       this.route?.changed();
       this.planned?.changed();
       this.operations?.changed();
@@ -388,11 +412,6 @@ export class MapComponent {
       zIndex: 4,
     });
 
-    this.marks = new VectorLayer({
-      source: new VectorSource<Feature<OlPoint>>(),
-      style: () => this.markStyle(),
-      zIndex: 10,
-    });
     this.route = new VectorLayer({
       source: new VectorSource<Feature<Geometry>>(),
       style: (f) => this.routeStyle(f),
@@ -435,7 +454,6 @@ export class MapComponent {
       this.areaLayer,
       this.conduit,
       this.network,
-      this.marks,
       this.planned,
       this.classification,
       this.operations,
@@ -459,9 +477,10 @@ export class MapComponent {
     });
     this.map.getView().fit(HOME_EXTENT, { padding: [24, 24, 24, 24] });
     this.mapView.renderBenchmark = (signal) => this.benchmarkRendering(signal);
-    const pending = this.mapView.highlight();
+    this.showLayers(this.mapView.layers());
+    const pending = this.mapView.fitRequest();
     if (pending) {
-      this.showMarks(pending.points, pending.extent);
+      this.fitMarks(pending.extent);
     }
     this.showRoute(this.mapView.route());
     this.showPlanned(this.mapView.planned());
@@ -885,24 +904,24 @@ export class MapComponent {
     return frames.slice(1);
   }
 
-  private markStyleCache?: { key: string; style: Style };
+  private readonly markStyles = new Map<string, Style>();
 
-  private markStyle(): Style {
+  private markStyle(color: number): Style {
     const palette = (this.palette ??= readPalette(this.host.nativeElement));
-    const key = `${palette.focus}|${palette.bg}`;
-    if (this.markStyleCache?.key !== key) {
-      this.markStyleCache = {
-        key,
-        style: new Style({
-          image: new Circle({
-            radius: 4.5,
-            fill: new Fill({ color: palette.focus }),
-            stroke: new Stroke({ color: palette.bg, width: 1.5 }),
-          }),
+    const fill = palette.layers[color % palette.layers.length];
+    const key = `${fill}|${palette.bg}`;
+    let style = this.markStyles.get(key);
+    if (!style) {
+      style = new Style({
+        image: new Circle({
+          radius: 4.5,
+          fill: new Fill({ color: fill }),
+          stroke: new Stroke({ color: palette.bg, width: 1.5 }),
         }),
-      };
+      });
+      this.markStyles.set(key, style);
     }
-    return this.markStyleCache.style;
+    return style;
   }
 
   /** A project's area (#293): a dashed outline in the focus colour with a faint fill, and its name. */
@@ -1136,8 +1155,7 @@ export class MapComponent {
         }),
       ]);
     }
-    const dim =
-      layer !== null || this.mapView.highlight() !== null || this.mapView.route() !== null;
+    const dim = layer !== null || this.hasVisibleMarks() || this.mapView.route() !== null;
     this.network?.setOpacity(dim ? 0.35 : 1);
   }
 
@@ -1408,7 +1426,7 @@ export class MapComponent {
     const source = this.route!.getSource()!;
     source.clear(true);
     if (!route) {
-      this.network?.setOpacity(this.mapView.highlight()?.points.length ? 0.35 : 1);
+      this.network?.setOpacity(this.hasVisibleMarks() ? 0.35 : 1);
       return;
     }
     const features: Feature<Geometry>[] = [
@@ -1438,31 +1456,57 @@ export class MapComponent {
     }
   }
 
-  /** Draws marked sites and dims the network while there are any, then frames them. */
-  private showMarks(
-    points: readonly (readonly [number, number, number])[],
-    extent: readonly number[] | null,
-  ): void {
-    const source = this.marks!.getSource()!;
-    source.clear(true);
-    source.addFeatures(
-      points.map(([id, x, y]) => {
-        const f = new Feature(new OlPoint([x, y]));
-        f.setId(id);
-        f.set('mark', true);
-        return f;
-      }),
-    );
-    this.network?.setOpacity(points.length > 0 || this.mapView.route() ? 0.35 : 1);
-    if (extent && points.length > 0) {
-      const [minX, minY, maxX, maxY] = extent;
-      const pad = Math.max(maxX - minX, maxY - minY) < 2_000 ? 2_000 : 0;
-      this.map!.getView().fit([minX - pad, minY - pad, maxX + pad, maxY + pad], {
-        padding: [48, 48, 48, 48 + this.coveredFromLeft()],
-        duration: 400,
-        maxZoom: 11,
-      });
+  private hasVisibleMarks(): boolean {
+    return this.mapView.layers().some((l) => l.visible && l.points.length > 0);
+  }
+
+  /** Draws the app's layers in their order, the last on top, and dims the network while any shows. */
+  private showLayers(layers: readonly MapLayer[]): void {
+    for (const [id, drawn] of this.marks) {
+      if (!layers.some((l) => l.id === id)) {
+        this.map!.removeLayer(drawn.layer);
+        this.marks.delete(id);
+      }
     }
+    layers.forEach((layer, index) => {
+      let drawn = this.marks.get(layer.id);
+      if (!drawn) {
+        drawn = {
+          layer: new VectorLayer({ source: new VectorSource<Feature<OlPoint>>() }),
+          seq: -1,
+        };
+        this.marks.set(layer.id, drawn);
+        this.map!.addLayer(drawn.layer);
+      }
+      if (drawn.seq !== layer.seq) {
+        const source = drawn.layer.getSource()!;
+        source.clear(true);
+        source.addFeatures(
+          layer.points.map(([id, x, y]) => {
+            const f = new Feature(new OlPoint([x, y]));
+            f.setId(id);
+            f.set('mark', true);
+            return f;
+          }),
+        );
+        drawn.seq = layer.seq;
+      }
+      drawn.layer.setStyle(() => this.markStyle(layer.color));
+      // Under what a plan or a trace draws (15 and up).
+      drawn.layer.setZIndex(10 + index / 100);
+      drawn.layer.setVisible(layer.visible);
+    });
+    this.network?.setOpacity(this.hasVisibleMarks() || this.mapView.route() ? 0.35 : 1);
+  }
+
+  private fitMarks(extent: readonly number[]): void {
+    const [minX, minY, maxX, maxY] = extent;
+    const pad = Math.max(maxX - minX, maxY - minY) < 2_000 ? 2_000 : 0;
+    this.map!.getView().fit([minX - pad, minY - pad, maxX + pad, maxY + pad], {
+      padding: [48, 48, 48, 48 + this.coveredFromLeft()],
+      duration: 400,
+      maxZoom: 11,
+    });
   }
 
   /** How much of the map an open tool covers, so that what is marked lands beside it and not behind it. */

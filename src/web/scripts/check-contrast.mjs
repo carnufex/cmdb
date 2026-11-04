@@ -26,7 +26,7 @@ function ratio(a, b) {
 
 const surfaces = ['bg', 'surface-1', 'surface-2', 'surface-3'];
 const text = ['text', 'text-muted', 'text-faint'];
-const nonText = ['focus', 'status-planned', 'status-construction', 'status-in-service', 'status-decommissioning', 'status-removed', 'status-conflict', 'action'];
+const nonText = ['layer-1', 'layer-2', 'layer-3', 'layer-4', 'layer-5', 'layer-6', 'focus', 'status-planned', 'status-construction', 'status-in-service', 'status-decommissioning', 'status-removed', 'status-conflict', 'action'];
 
 let failures = 0;
 for (const [name, selector] of [['dark', ":root,\n[data-theme='dark']"], ['light', "[data-theme='light']"]]) {

@@ -29,7 +29,9 @@ public sealed record SiteQuery(
     IReadOnlyList<AttributeCondition>? SiteAttributes = null,
     string? Place = null,
     double? WithinKm = null,
-    IReadOnlyList<double>? Extent = null);
+    IReadOnlyList<double>? Extent = null,
+    string? CodePrefix = null,
+    string? Region = null);
 
 /// <param name="Matching">Equipment on the site matching the first equipment condition, if there is one.</param>
 public sealed record SiteQueryHit(long Id, string Code, string Name, string SiteType, string Lifecycle, double? X, double? Y, int? Matching);
@@ -51,6 +53,9 @@ public sealed class SiteQueryValidator : Validator<SiteQuery>
     {
         RuleFor(q => q.Limit).InclusiveBetween(1, 1000);
         RuleFor(q => q.Place).MaximumLength(100);
+        RuleFor(q => q.CodePrefix).Matches("^[A-Za-z0-9-]{1,40}$").When(q => q.CodePrefix is not null);
+        RuleFor(q => q.Region).Must(r => r is "norr" or "mellersta" or "söder").When(q => q.Region is not null)
+            .WithMessage("region is norr, mellersta or söder.");
         RuleFor(q => q.WithinKm).InclusiveBetween(0.1, 200).When(q => q.WithinKm is not null);
         RuleFor(q => q.WithinKm).Must(_ => false).When(q => q.WithinKm is not null && string.IsNullOrEmpty(q.Place))
             .WithMessage("withinKm needs a place.");
@@ -99,6 +104,9 @@ public sealed class SiteQueryValidator : Validator<SiteQuery>
 public sealed class QuerySitesEndpoint(RequestDb db, TypeCatalog catalog) : Endpoint<SiteQuery, SiteQueryResult>
 {
     private const int MaxIds = 5_000;
+
+    /// <summary>The same split as the voice agents' regions.</summary>
+    internal const string RegionSql = "CASE WHEN ST_Y(ST_PointOnSurface(s.geom)) > 6950000 THEN 'norr' WHEN ST_Y(ST_PointOnSurface(s.geom)) > 6450000 THEN 'mellersta' ELSE 'söder' END";
 
     public override void Configure() => Post("/query/sites");
 
@@ -155,6 +163,10 @@ public sealed class QuerySitesEndpoint(RequestDb db, TypeCatalog catalog) : Endp
     /// </summary>
     internal static IEnumerable<string> CatalogErrors(SiteQuery req, TypeCatalog catalog, UserScope scope)
     {
+        if (req.Region is not null && scope.HidesCoordinates)
+        {
+            yield return "Sites cannot be searched by region, since your access hides their positions.";
+        }
         if (req.Extent is not null && scope.HidesCoordinates)
         {
             yield return "Sites cannot be searched by area, since your access hides their positions.";
@@ -252,6 +264,14 @@ public sealed class QuerySitesEndpoint(RequestDb db, TypeCatalog catalog) : Endp
             where.Add(req.WithinKm is { } km
                 ? $"ST_DWithin(s.geom, {shape}, {P(km * 1000, NpgsqlDbType.Double)})"
                 : $"ST_Intersects(s.geom, {shape})");
+        }
+        if (req.CodePrefix is { Length: > 0 } prefix)
+        {
+            where.Add($"starts_with(upper(s.code), {P(prefix.ToUpperInvariant(), NpgsqlDbType.Text)})");
+        }
+        if (req.Region is { } region)
+        {
+            where.Add($"{RegionSql} = {P(region, NpgsqlDbType.Text)}");
         }
         // The part of the map the person is looking at.
         if (req.Extent is { Count: 4 } e)

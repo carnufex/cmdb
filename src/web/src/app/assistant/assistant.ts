@@ -87,8 +87,6 @@ export const MARKDOWN_LEXER = new InjectionToken<() => Promise<Lexer>>('Markdown
 export interface SiteList {
   rows: readonly SiteQueryHit[];
   total: number;
-  /** How many are marked on the map; null when this list did not mark anything. */
-  marked: number | null;
   /** What marking them takes. */
   points: SiteQueryResult['points'];
   extent: SiteQueryResult['extent'];
@@ -104,6 +102,8 @@ export interface ToolStep {
   state: 'running' | 'done' | 'failed';
   /** The number the agent cites it by, as [t1]. */
   source?: number;
+  /** The question it answers: what its layer on the map is called. */
+  question: string;
   args?: unknown;
   card?: ChatCard;
   sites?: SiteList;
@@ -152,6 +152,8 @@ export function siteQueryFrom(args: unknown): Record<string, unknown> {
     equipment: objects(a['equipment']),
     siteAttributes: objects(a['siteAttributes']),
     place: typeof a['place'] === 'string' ? a['place'] : undefined,
+    codePrefix: typeof a['codePrefix'] === 'string' ? a['codePrefix'] : undefined,
+    region: typeof a['region'] === 'string' ? a['region'] : undefined,
     withinKm: typeof a['withinKm'] === 'number' ? a['withinKm'] : undefined,
     extent:
       Array.isArray(a['extent']) && a['extent'].every((n) => typeof n === 'number')
@@ -192,6 +194,8 @@ export class Assistant {
   private answers: string[] = [];
   /** A connection the context needs, as the stream said. */
   private needsConnection: { servers: string[]; url: unknown } | null = null;
+  /** The question being answered or read. */
+  private question = '';
   private restored = false;
 
   readonly context = this.config?.lotsContext ?? 'cmdb';
@@ -221,7 +225,6 @@ export class Assistant {
     this.answers = [];
     this.lines.set([]);
     this.history.set(null);
-    this.mapView.clearMarks();
     this.remember(null);
   }
 
@@ -269,6 +272,7 @@ export class Assistant {
     this.remember(thread.id);
     for (const turn of thread.turns) {
       this.run++;
+      this.question = turn.question;
       this.add({ role: 'user', text: turn.question });
       let sources = 0;
       for (const step of turn.steps) {
@@ -299,10 +303,15 @@ export class Assistant {
 
   /** Marks a list from an earlier search on the map. */
   markOnMap(stepId: string): void {
-    const list = this.step(stepId)?.sites;
-    if (list) {
-      this.mapView.mark(list.points, list.extent);
-      this.updateStep(stepId, { sites: { ...list, marked: list.points.length } });
+    const step = this.step(stepId);
+    if (step?.sites) {
+      this.mapView.addLayer(
+        stepId,
+        step.question,
+        step.sites.points,
+        step.sites.extent,
+        step.sites.total,
+      );
     }
   }
 
@@ -321,6 +330,7 @@ export class Assistant {
     this.busy.set(true);
     this.stopped = false;
     this.run++;
+    this.question = text;
     this.add({ role: 'user', text });
     try {
       const token = await this.lots.token();
@@ -581,9 +591,12 @@ export class Assistant {
         value: `[${extent.map((n) => Math.round(n)).join(', ')}]`,
       });
     }
-    const marked = this.mapView.highlight()?.points.length;
-    if (marked) {
-      items.push({ description: 'Sites marked on the map', value: String(marked) });
+    const layers = this.mapView.layers().filter((l) => l.visible);
+    if (layers.length > 0) {
+      items.push({
+        description: 'Sets of sites marked on the map, the top one last',
+        value: layers.map((l) => `${l.label} (${l.total})`).join('; '),
+      });
     }
     const selected = this.selection.current();
     if (selected) {
@@ -706,6 +719,7 @@ export class Assistant {
       tool,
       label: stepLabel(tool, false),
       state: 'running',
+      question: this.question,
       open: false,
     };
     const last = this.lines().at(-1);
@@ -782,13 +796,21 @@ export class Assistant {
       if (this.tools.open() && this.tools.size() === 'workspace') {
         this.tools.close();
       }
-      this.mapView.mark(result.points, result.extent);
+      // Nothing to show is no layer to keep track of.
+      if (result.points.length > 0) {
+        this.mapView.addLayer(
+          stepId,
+          this.step(stepId)?.question ?? '',
+          result.points,
+          result.extent,
+          result.total,
+        );
+      }
       this.updateStep(stepId, {
         loading: false,
         sites: {
           rows: result.sites,
           total: result.total,
-          marked: result.points.length,
           points: result.points,
           extent: result.extent,
           positionsHidden: result.total > 0 && result.points.length === 0,
@@ -810,7 +832,6 @@ export class Assistant {
         sites: {
           rows: result.sites,
           total: result.total,
-          marked: null,
           points: result.points,
           extent: result.extent,
           positionsHidden: result.total > 0 && result.points.length === 0,

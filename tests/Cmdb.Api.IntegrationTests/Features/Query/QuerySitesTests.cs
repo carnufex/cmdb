@@ -78,6 +78,26 @@ public sealed class QuerySitesTests(ApiFactory factory)
     }
 
     [Fact]
+    public async Task A_code_prefix_and_a_region_narrow_the_answer()
+    {
+        var south = await SiteAtAsync(450000, 6300000);
+        var north = await SiteAtAsync(700000, 7300000);
+        var code = await Scalar<string>($"SELECT code FROM site WHERE id = {south}");
+
+        (await QueryAsync(new { codePrefix = code.ToLowerInvariant(), limit = 1000 })).Ids.ShouldBe([south]);
+        (await QueryAsync(new { codePrefix = "INGET-SADANT", limit = 1000 })).Total.ShouldBe(0);
+        var northern = (await QueryAsync(new { region = "norr", limit = 1000 })).Ids.ToList();
+        northern.ShouldContain(north);
+        northern.ShouldNotContain(south);
+        (await QueryAsync(new { region = "söder", limit = 1000 })).Ids.ShouldContain(south);
+
+        await factory.RefreshScopesAsync();
+        using var client = factory.CreateAuthenticatedClient();
+        (await client.PostAsJsonAsync("/api/query/sites", new { region = "ovanfor" }, Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await client.PostAsJsonAsync("/api/query/sites", new { codePrefix = "%" }, Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
     public async Task An_area_finds_the_sites_in_it()
     {
         var inside = await SiteAtAsync(450000, 6500000);
