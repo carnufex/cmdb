@@ -7,19 +7,23 @@ import { RUNTIME_CONFIG } from '../config';
 import { Selection } from '../grid/selection';
 import { MapView } from '../map/map-view';
 import { PlanDetail } from '../plans/plan-model';
-import { SiteQueryResult } from '../query/query-model';
+import { SiteQueryHit, SiteQueryResult } from '../query/query-model';
 import { Tools } from '../shell/tools';
-import { cardFor, ChatCard } from './assistant-cards';
+import { answerOf, cardFor, ChatCard, stepLabel } from './assistant-cards';
+import type { Lexer } from './assistant-markdown';
 import { LotsAuth } from './lots-auth';
 
 /** The MCP tools a chat reacts to (#330, #334, #335). They are normal tools in Lots: policy and audit are Lots', the drawing is ours. */
 const SHOW_ON_MAP = 'show_on_map';
+const FIND_SITES = 'find_sites';
 const OPEN_OBJECT = 'open_object';
 const REQUEST_CHANGE = 'request_change';
 const OBJECT_REF = /^(site|equipment|cable|service|circuit|route-segment|service-point):\d+$/;
 const PLAN_REF = /^plan:(\d+)$/;
+/** As many as the list holds; the API's own limit. The map gets every position up to its own limit. */
+const LISTED_SITES = 1000;
 
-type Agent = Pick<HttpAgent, 'headers' | 'runAgent' | 'setMessages'>;
+type Agent = Pick<HttpAgent, 'headers' | 'runAgent' | 'setMessages' | 'abortRun'>;
 
 /** The AG-UI client is a chunk of its own, loaded only when someone asks something. */
 export const AGENT_FACTORY = new InjectionToken<(url: string, threadId: string) => Promise<Agent>>(
@@ -33,13 +37,51 @@ export const AGENT_FACTORY = new InjectionToken<(url: string, threadId: string) 
   },
 );
 
+/** So is the markdown parser. */
+export const MARKDOWN_LEXER = new InjectionToken<() => Promise<Lexer>>('Markdown lexer', {
+  providedIn: 'root',
+  factory: () => async () => {
+    const { marked } = await import('marked');
+    return (text) => marked.lexer(text, { gfm: true, breaks: true });
+  },
+});
+
+/** A list of sites from our own API under the person's own access. */
+export interface SiteList {
+  rows: readonly SiteQueryHit[];
+  total: number;
+  /** How many are marked on the map; null when this list did not mark anything. */
+  marked: number | null;
+  /** The person's access hides where the sites lie. */
+  positionsHidden: boolean;
+}
+
+/** One thing the agent did: a line in the chat that opens on what came back. */
+export interface ToolStep {
+  id: string;
+  tool: string;
+  label: string;
+  state: 'running' | 'done' | 'failed';
+  /** The number the agent cites it by, as [t1]. */
+  source?: number;
+  args?: unknown;
+  card?: ChatCard;
+  sites?: SiteList;
+  /** What went wrong: a refusal, as the tool said it. */
+  problem?: string;
+  open: boolean;
+  loading?: boolean;
+}
+
 export interface ChatLine {
   id: string;
-  role: 'user' | 'assistant' | 'notice' | 'error' | 'card' | 'change';
+  role: 'user' | 'assistant' | 'notice' | 'error' | 'steps' | 'change';
   text: string;
+  /** The question this line answers: citations count within it. */
+  run: number;
   /** Where the person goes on, in Lots. */
   link?: { href: string; label: string };
-  card?: ChatCard;
+  steps?: readonly ToolStep[];
   change?: ChangeRequest;
 }
 
@@ -63,7 +105,7 @@ export function siteQueryFrom(args: unknown): Record<string, unknown> {
       ? v
       : undefined;
   return {
-    limit: 1, // every match's position comes with the answer; the map needs no list
+    limit: LISTED_SITES,
     siteTypes: strings(a['siteTypes']),
     lifecycles: strings(a['lifecycles']),
     serviceTypes: strings(a['serviceTypes']),
@@ -80,10 +122,6 @@ export function siteQueryFrom(args: unknown): Record<string, unknown> {
 
 const text = (v: unknown): string => (typeof v === 'string' ? v : '');
 
-function plural(total: number): string {
-  return total === 1 ? '1 site' : `${total.toLocaleString('sv-SE')} siter`;
-}
-
 /**
  * A chat with the person's own context in Lots, over AG-UI (ADR-0023, Lots ADR 0067). The browser talks to Lots directly
  * with the person's Lots token, so the run is theirs. What the agent shows comes from our own API with their cmdb token: a
@@ -94,6 +132,7 @@ export class Assistant {
   private readonly config = inject(RUNTIME_CONFIG, { optional: true });
   private readonly lots = inject(LotsAuth);
   private readonly factory = inject(AGENT_FACTORY);
+  private readonly markdown = inject(MARKDOWN_LEXER);
   private readonly http = inject(HttpClient);
   private readonly mapView = inject(MapView);
   private readonly tools = inject(Tools);
@@ -101,25 +140,44 @@ export class Assistant {
   private readonly selection = inject(Selection);
 
   private readonly url = (this.config?.lotsUrl ?? '').replace(/\/+$/, '');
-  private readonly threadId = crypto.randomUUID();
+  private threadId = crypto.randomUUID();
   private agent: Agent | null = null;
   private seq = 0;
+  private run = 0;
+  /** The run in Lots, to stop it by. */
+  private running: string | null = null;
+  private stopped = false;
   /** What the person answered since the last question, so the agent knows how a change request ended. */
   private answers: string[] = [];
 
   readonly context = this.config?.lotsContext ?? 'cmdb';
   readonly enabled =
     this.url.length > 0 && !!this.config?.lotsAuthority && !!this.config?.lotsClientId;
-  readonly open = signal(false);
   readonly lines = signal<readonly ChatLine[]>([]);
   readonly busy = signal(false);
+  readonly lexer = signal<Lexer | null>(null);
+  /** A step the person asked to see, by following a citation: the chat scrolls to it. */
+  readonly focused = signal<string | null>(null);
 
   /** From a click, so the sign-in popup is allowed to open. */
   toggle(): void {
-    this.open.update((o) => !o);
-    if (this.open() && this.lots.access() === 'signed-out') {
+    const opening = this.tools.open() !== 'chat';
+    this.tools.toggle('chat');
+    if (opening && this.lots.access() === 'signed-out') {
       void this.lots.signIn();
     }
+  }
+
+  /** Starts over: a new thread in Lots, with nothing of this one. */
+  newChat(): void {
+    if (this.busy()) {
+      return;
+    }
+    this.threadId = crypto.randomUUID();
+    this.agent = null;
+    this.answers = [];
+    this.lines.set([]);
+    this.mapView.clearMarks();
   }
 
   async ask(question: string): Promise<void> {
@@ -135,6 +193,8 @@ export class Assistant {
       return;
     }
     this.busy.set(true);
+    this.stopped = false;
+    this.run++;
     this.add({ role: 'user', text });
     try {
       const token = await this.lots.token();
@@ -144,6 +204,10 @@ export class Assistant {
           text: 'Inloggningen i Lots har gått ut. Logga in igen och fråga på nytt.',
         });
         return;
+      }
+      if (!this.lexer()) {
+        const lexer = await this.markdown();
+        this.lexer.set(lexer);
       }
       const agent = (this.agent ??= await this.factory(`${this.url}/ag-ui`, this.threadId));
       agent.headers = { Authorization: `Bearer ${token}` };
@@ -156,9 +220,32 @@ export class Assistant {
         this.subscriber(),
       );
     } catch (e: unknown) {
-      this.add({ role: 'error', text: this.problem(e) });
+      if (!this.stopped) {
+        this.add({ role: 'error', text: this.problem(e) });
+      }
     } finally {
+      this.settle();
+      this.running = null;
       this.busy.set(false);
+    }
+  }
+
+  /** Stops the answer, and the run in Lots: a run outlives its stream, so closing the stream alone would not. */
+  async stop(): Promise<void> {
+    if (!this.busy() || this.stopped) {
+      return;
+    }
+    this.stopped = true;
+    const run = this.running;
+    this.agent?.abortRun();
+    this.add({ role: 'notice', text: 'Stoppad.' });
+    if (run) {
+      const token = await this.lots.token();
+      // Not through HttpClient: cmdb's own token is added there, and it must not leave cmdb.
+      await fetch(`${this.url}/runs/${encodeURIComponent(run)}/cancel`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      }).catch(() => undefined);
     }
   }
 
@@ -192,8 +279,8 @@ export class Assistant {
     }
   }
 
-  /** Opens an object's panel and takes the map there. */
-  openObject(ref: string): void {
+  /** Opens an object's panel, and takes the map there when its position is known. */
+  openObject(ref: string, at?: { x: number; y: number }): void {
     if (!OBJECT_REF.test(ref)) {
       return;
     }
@@ -201,6 +288,45 @@ export class Assistant {
       queryParams: { p: ref },
       queryParamsHandling: 'merge',
     });
+    if (at) {
+      this.mapView.focus(at);
+    }
+  }
+
+  /** Opens or closes a step. A search the agent made shows every match when opened, from our own API. */
+  toggleStep(id: string): void {
+    const step = this.step(id);
+    if (!step) {
+      return;
+    }
+    this.updateStep(id, { open: !step.open });
+    if (!step.open && step.tool === FIND_SITES && !step.sites && step.state === 'done') {
+      void this.listSites(id, step.args);
+    }
+  }
+
+  /** The step a citation points at, in the run of the answer it stands in. */
+  source(run: number, source: number): ToolStep | null {
+    for (const line of this.lines()) {
+      if (line.run === run) {
+        const step = line.steps?.find((s) => s.source === source);
+        if (step) {
+          return step;
+        }
+      }
+    }
+    return null;
+  }
+
+  /** Follows a citation: opens the step it comes from and brings it into view. */
+  showSource(run: number, source: number): void {
+    const step = this.source(run, source);
+    if (step) {
+      if (!step.open) {
+        this.toggleStep(step.id);
+      }
+      this.focused.set(step.id);
+    }
   }
 
   /** What the person is looking at, as data for the agent: "this site" and "here" mean something then. Nothing a page wrote. */
@@ -223,14 +349,11 @@ export class Assistant {
     }
     const selected = this.selection.current();
     if (selected) {
+      const shown = selected.siteIds.slice(0, 20).map((id) => `site:${id}`);
+      const rest = selected.siteIds.length - shown.length;
       items.push({
         description: 'Selected on the map',
-        value: `${selected.siteIds
-          .slice(0, 20)
-          .map((id) => `site:${id}`)
-          .join(
-            ', ',
-          )}${selected.siteIds.length > 20 ? ` and ${selected.siteIds.length - 20} more` : ''}`,
+        value: `${shown.join(', ')}${rest > 0 ? ` and ${rest} more` : ''}`,
       });
     }
     for (const answer of this.answers) {
@@ -240,9 +363,13 @@ export class Assistant {
   }
 
   private subscriber(): AgentSubscriber {
-    const asked = new Map<string, { name: string; args: unknown }>();
     const lineOf = new Map<string, string>();
+    const stepOf = new Map<string, string>();
+    let sources = 0;
     return {
+      onRunStartedEvent: ({ event }) => {
+        this.running = event.runId;
+      },
       onTextMessageContentEvent: ({ event }) => {
         const id = lineOf.get(event.messageId);
         if (id) {
@@ -253,42 +380,110 @@ export class Assistant {
           lineOf.set(event.messageId, this.add({ role: 'assistant', text: event.delta }));
         }
       },
-      onToolCallEndEvent: ({ event, toolCallName, toolCallArgs }) => {
-        asked.set(event.toolCallId, { name: toolCallName, args: toolCallArgs });
+      onToolCallStartEvent: ({ event }) => {
+        stepOf.set(event.toolCallId, this.addStep(event.toolCallName));
+      },
+      onToolCallEndEvent: ({ event, toolCallArgs }) => {
+        const id = stepOf.get(event.toolCallId);
+        if (id) {
+          this.updateStep(id, { args: toolCallArgs });
+        }
       },
       onToolCallResultEvent: ({ event }) => {
-        const call = asked.get(event.toolCallId);
-        if (!call) {
+        const id = stepOf.get(event.toolCallId);
+        const step = id ? this.step(id) : null;
+        if (!id || !step) {
           return;
         }
-        // A refused or failed call has no result to show, and that is the agent's to explain.
-        const card = cardFor(call.name, event.content);
-        if (card) {
-          this.add({ role: 'card', text: '', card });
+        // A refused or failed call has no result to show, and Lots numbers only those that gave one.
+        if (!answerOf(event.content)) {
+          this.updateStep(id, { state: 'failed', problem: String(event.content).slice(0, 400) });
+          return;
         }
-        if (call.name === SHOW_ON_MAP && this.answered(event.content)) {
-          void this.show(call.args);
-        } else if (call.name === OPEN_OBJECT) {
+        this.updateStep(id, {
+          state: 'done',
+          label: stepLabel(step.tool, true),
+          source: ++sources,
+          card: cardFor(step.tool, event.content) ?? undefined,
+        });
+        if (step.tool === SHOW_ON_MAP) {
+          void this.show(id, step.args);
+        } else if (step.tool === OPEN_OBJECT) {
           this.openObject(this.field(event.content, 'ref'));
-        } else if (call.name === REQUEST_CHANGE) {
+        } else if (step.tool === REQUEST_CHANGE) {
           void this.askAboutChange(event.content);
         }
       },
       onCustomEvent: ({ event }) => this.custom(event.name, event.value),
       onRunErrorEvent: ({ event }) => {
-        this.add({ role: 'error', text: event.message || 'Körningen i Lots misslyckades.' });
+        // Stopping ends the stream with an error of its own, which is no news to the one who stopped it.
+        if (!this.stopped) {
+          this.add({ role: 'error', text: event.message || 'Körningen i Lots misslyckades.' });
+        }
       },
     };
   }
 
+  /** Whatever still runs when the stream ends has no answer coming. */
+  private settle(): void {
+    this.lines.update((all) =>
+      all.map((l) =>
+        l.steps?.some((s) => s.state === 'running')
+          ? {
+              ...l,
+              steps: l.steps.map((s) =>
+                s.state === 'running' ? { ...s, state: 'failed' as const } : s,
+              ),
+            }
+          : l,
+      ),
+    );
+  }
+
+  private step(id: string): ToolStep | null {
+    for (const line of this.lines()) {
+      const step = line.steps?.find((s) => s.id === id);
+      if (step) {
+        return step;
+      }
+    }
+    return null;
+  }
+
+  private updateStep(id: string, next: Partial<ToolStep>): void {
+    this.lines.update((all) =>
+      all.map((l) =>
+        l.steps?.some((s) => s.id === id)
+          ? { ...l, steps: l.steps.map((s) => (s.id === id ? { ...s, ...next } : s)) }
+          : l,
+      ),
+    );
+  }
+
+  /** Steps in a row share a line. */
+  private addStep(tool: string): string {
+    const id = `step-${++this.seq}`;
+    const step: ToolStep = {
+      id,
+      tool,
+      label: stepLabel(tool, false),
+      state: 'running',
+      open: false,
+    };
+    const last = this.lines().at(-1);
+    if (last?.role === 'steps' && last.run === this.run) {
+      this.lines.update((all) =>
+        all.map((l) => (l.id === last.id ? { ...l, steps: [...(l.steps ?? []), step] } : l)),
+      );
+    } else {
+      this.add({ role: 'steps', text: '', steps: [step] });
+    }
+    return id;
+  }
+
   /** Reads the plan from cmdb and asks. Only a draft of the person's own comes this far, whatever the call claimed. */
   private async askAboutChange(content: unknown): Promise<void> {
-    let plan = '';
-    try {
-      plan = text((JSON.parse(String(content)) as { plan?: { ref?: unknown } }).plan?.ref);
-    } catch {
-      return; // a refusal, which the agent explains
-    }
+    const plan = text((answerOf(content) as { plan?: { ref?: unknown } } | null)?.plan?.ref);
     const id = PLAN_REF.exec(plan)?.[1];
     if (!id) {
       return;
@@ -321,23 +516,12 @@ export class Assistant {
   }
 
   private field(content: unknown, key: string): string {
-    try {
-      return text((JSON.parse(String(content)) as Record<string, unknown>)[key]);
-    } catch {
-      return '';
-    }
-  }
-
-  private answered(content: unknown): boolean {
-    try {
-      return typeof (JSON.parse(String(content)) as { total?: unknown }).total === 'number';
-    } catch {
-      return false;
-    }
+    return text((answerOf(content) as Record<string, unknown> | null)?.[key]);
   }
 
   /** Marks what the question gives the person, from our own API under their own scope, and brings the map into view. */
-  private async show(args: unknown): Promise<void> {
+  private async show(stepId: string, args: unknown): Promise<void> {
+    this.updateStep(stepId, { open: true, loading: true });
     try {
       const result = await firstValueFrom(
         this.http.post<SiteQueryResult>('/api/query/sites', siteQueryFrom(args)),
@@ -349,26 +533,41 @@ export class Assistant {
         this.tools.close();
       }
       this.mapView.mark(result.points, result.extent);
-      this.add({
-        role: 'notice',
-        text:
-          result.total === 0
-            ? 'Inga siter att markera på kartan.'
-            : result.points.length === 0
-              ? `${plural(result.total)} hittades, men din behörighet döljer var de ligger.`
-              : result.total > result.points.length
-                ? `${result.points.length.toLocaleString('sv-SE')} av ${plural(result.total)} markerade på kartan.`
-                : `${plural(result.total)} markerade på kartan.`,
+      this.updateStep(stepId, {
+        loading: false,
+        sites: {
+          rows: result.sites,
+          total: result.total,
+          marked: result.points.length,
+          positionsHidden: result.total > 0 && result.points.length === 0,
+        },
       });
     } catch (e: unknown) {
-      const errors = (e as { error?: { errors?: Record<string, string[]> } }).error?.errors;
-      this.add({
-        role: 'error',
-        text: errors
-          ? Object.values(errors).flat().join(' ')
-          : 'Kunde inte markera siterna på kartan.',
-      });
+      this.failedList(stepId, e, 'Kunde inte markera siterna på kartan.');
     }
+  }
+
+  private async listSites(stepId: string, args: unknown): Promise<void> {
+    this.updateStep(stepId, { loading: true });
+    try {
+      const result = await firstValueFrom(
+        this.http.post<SiteQueryResult>('/api/query/sites', siteQueryFrom(args)),
+      );
+      this.updateStep(stepId, {
+        loading: false,
+        sites: { rows: result.sites, total: result.total, marked: null, positionsHidden: false },
+      });
+    } catch (e: unknown) {
+      this.failedList(stepId, e, 'Kunde inte hämta siterna.');
+    }
+  }
+
+  private failedList(stepId: string, e: unknown, fallback: string): void {
+    const errors = (e as { error?: { errors?: Record<string, string[]> } }).error?.errors;
+    this.updateStep(stepId, {
+      loading: false,
+      problem: errors ? Object.values(errors).flat().join(' ') : fallback,
+    });
   }
 
   private custom(name: string, value: unknown): void {
@@ -425,9 +624,9 @@ export class Assistant {
     return 'Kunde inte nå Lots. Kontrollera anslutningen och försök igen.';
   }
 
-  private add(line: Omit<ChatLine, 'id'>): string {
+  private add(line: Omit<ChatLine, 'id' | 'run'>): string {
     const id = `line-${++this.seq}`;
-    this.lines.update((all) => [...all, { ...line, id }]);
+    this.lines.update((all) => [...all, { ...line, id, run: this.run }]);
     return id;
   }
 }

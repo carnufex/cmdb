@@ -229,3 +229,6 @@ function siteAttributeRequest(a: SiteAttributeDraft, fields: AttributeField[]) {
     value: a.op === 'exists' ? undefined : numeric ? Number(a.value) : a.value,
   };
 }
+
+/** A site in a search's answer. */
+export type SiteQueryHit = SiteQueryResult['sites'][number];

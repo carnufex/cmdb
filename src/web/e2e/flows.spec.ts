@@ -258,6 +258,12 @@ test('the chat asks Lots as the signed-in person and marks what it shows on the 
   await chat.getByRole('textbox', { name: 'Din fråga' }).fill('Visa mig alla siter i Stockholm');
   await chat.getByRole('textbox', { name: 'Din fråga' }).press('Enter');
   await expect(chat.getByText('Här är siterna i Stockholm.')).toBeVisible();
+  // Every match is in the chat, in a list of its own, and opens from there.
+  const rows = chat.locator('cmdb-assistant-sites .row');
+  if (await rows.count()) {
+    await rows.first().click();
+    await expect(page).toHaveURL(/[?&]p=site(:|%3A)\d+/);
+  }
   await expect(
     chat.getByText(/\d+ siter? markerade på kartan\.|Inga siter att markera/),
   ).toBeVisible();
@@ -268,6 +274,10 @@ test('the chat asks Lots as the signed-in person and marks what it shows on the 
   expect(claims.aud).toBe('lots');
   expect(claims.sub).toBe('e2e-planerare');
   expect(asked[0].body['forwardedProps']).toEqual({ context: 'cmdb' });
+
+  // A new chat starts over, with the questions to begin from.
+  await chat.getByRole('button', { name: 'Ny chatt' }).click();
+  await expect(chat.getByRole('button', { name: 'Vad får jag se?' })).toBeVisible();
 });
 
 test('a change asked for in the chat waits for a yes, and the yes writes it as the person', async ({
