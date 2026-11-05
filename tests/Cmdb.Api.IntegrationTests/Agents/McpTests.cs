@@ -66,8 +66,15 @@ public sealed class McpTests(ApiFactory factory)
     {
         await using var client = await ConnectAsync();
 
-        var all = await CallAsync(client, "find_sites", new() { ["limit"] = 1 });
-        var shown = await CallAsync(client, "show_on_map", []);
+        // A condition only this test's sites meet: other tests add sites to the same database meanwhile.
+        var tag = Guid.NewGuid().ToString("N")[..10].ToUpperInvariant();
+        for (var i = 0; i < 12; i++)
+        {
+            await Scalar<long>($"INSERT INTO site (code, name, site_type, geom, lifecycle) VALUES ('SHOW{tag}-{i}', 'Visa', 'cabinet', 'SRID=3006;POINT(500000 6500000)', 'in_service') RETURNING id");
+        }
+        var condition = new Dictionary<string, object?> { ["codePrefix"] = $"SHOW{tag}" };
+        var all = await CallAsync(client, "find_sites", new(condition) { ["limit"] = 1 });
+        var shown = await CallAsync(client, "show_on_map", condition);
 
         shown.GetProperty("total").GetInt64().ShouldBe(all.GetProperty("total").GetInt64());
         shown.GetProperty("sites").GetArrayLength().ShouldBeLessThanOrEqualTo(10);

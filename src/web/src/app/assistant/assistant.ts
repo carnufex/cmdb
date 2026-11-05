@@ -22,6 +22,8 @@ const OBJECT_REF = /^(site|equipment|cable|service|circuit|route-segment|service
 const PLAN_REF = /^plan:(\d+)$/;
 /** As many as the list holds; the API's own limit. The map gets every position up to its own limit. */
 const LISTED_SITES = 1000;
+/** Every match on the map, as clusters: more than the whole network holds. */
+const MAPPED_SITES = 50_000;
 
 type Agent = Pick<HttpAgent, 'headers' | 'runAgent' | 'setMessages' | 'abortRun'>;
 
@@ -146,6 +148,7 @@ export function siteQueryFrom(args: unknown): Record<string, unknown> {
       : undefined;
   return {
     limit: LISTED_SITES,
+    pointLimit: MAPPED_SITES,
     siteTypes: strings(a['siteTypes']),
     lifecycles: strings(a['lifecycles']),
     serviceTypes: strings(a['serviceTypes']),
