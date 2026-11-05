@@ -98,6 +98,24 @@ public sealed class QuerySitesTests(ApiFactory factory)
     }
 
     [Fact]
+    public async Task The_map_gets_as_many_positions_as_it_asks_for_and_the_list_stays_short()
+    {
+        await SiteAtAsync(450000, 6500000);
+        await SiteAtAsync(460000, 6500000);
+
+        var one = await QueryAsync(new { limit = 1, pointLimit = 1 });
+        one.Points.Count.ShouldBe(1);
+        one.Total.ShouldBeGreaterThan(1);
+        var all = await QueryAsync(new { limit = 1, pointLimit = 50000 });
+        all.Sites.Count.ShouldBe(1);
+        all.Points.Count.ShouldBe((int)all.Total);
+
+        await factory.RefreshScopesAsync();
+        using var client = factory.CreateAuthenticatedClient();
+        (await client.PostAsJsonAsync("/api/query/sites", new { pointLimit = 50001 }, Ct)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
     public async Task An_area_finds_the_sites_in_it()
     {
         var inside = await SiteAtAsync(450000, 6500000);

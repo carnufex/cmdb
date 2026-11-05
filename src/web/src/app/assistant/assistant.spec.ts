@@ -761,6 +761,7 @@ describe('Assistant', () => {
       }),
     ).toEqual({
       limit: 1000,
+      pointLimit: 50000,
       place: 'Gävle',
       lifecycles: ['in_service'],
       siteTypes: undefined,

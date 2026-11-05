@@ -31,12 +31,13 @@ public sealed record SiteQuery(
     double? WithinKm = null,
     IReadOnlyList<double>? Extent = null,
     string? CodePrefix = null,
-    string? Region = null);
+    string? Region = null,
+    int? PointLimit = null);
 
 /// <param name="Matching">Equipment on the site matching the first equipment condition, if there is one.</param>
 public sealed record SiteQueryHit(long Id, string Code, string Name, string SiteType, string Lifecycle, double? X, double? Y, int? Matching);
 
-/// <param name="Points">[id, x, y] of all matches (up to 5 000), drawn as their own map layer at every zoom.</param>
+/// <param name="Points">[id, x, y] of all matches (up to 5 000, or the query's PointLimit), drawn as their own map layer at every zoom.</param>
 /// <param name="Extent">Bounding box of those matches in SWEREF 99 TM, for "show in map".</param>
 public sealed record SiteQueryResult(long Total, IReadOnlyList<SiteQueryHit> Sites, IReadOnlyList<double[]> Points, double[]? Extent, double ElapsedMs)
 {
@@ -53,6 +54,7 @@ public sealed class SiteQueryValidator : Validator<SiteQuery>
     {
         RuleFor(q => q.Limit).InclusiveBetween(1, 1000);
         RuleFor(q => q.Place).MaximumLength(100);
+        RuleFor(q => q.PointLimit).InclusiveBetween(1, 50_000).When(q => q.PointLimit is not null);
         RuleFor(q => q.CodePrefix).Matches("^[A-Za-z0-9-]{1,40}$").When(q => q.CodePrefix is not null);
         RuleFor(q => q.Region).Must(r => r is "norr" or "mellersta" or "söder").When(q => q.Region is not null)
             .WithMessage("region is norr, mellersta or söder.");
@@ -226,7 +228,7 @@ public sealed class QuerySitesEndpoint(RequestDb db, TypeCatalog catalog) : Endp
                    counted.total
             FROM m, counted
             ORDER BY m.code
-            LIMIT {MaxIds}
+            LIMIT {req.PointLimit ?? MaxIds}
             """);
         parameters = ps;
         return sql.ToString();

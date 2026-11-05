@@ -54,7 +54,9 @@ import { createStyler, Palette, readPalette, statusColor } from './map-style';
 import { CurrentUser } from '../shell/current-user';
 import { ContextMenuComponent } from './context-menu';
 import { CableDrawingBarComponent } from './cable-drawing-bar';
+import { buffer, containsExtent } from 'ol/extent';
 import { MapLayersComponent } from './map-layers';
+import { CLUSTER_ABOVE, CLUSTER_CELL_PX, clusterLabel, clusterPoints } from './map-clusters';
 import { CableDrawing, CableRouteStep } from '../plans/cable-drawing';
 import { distanceText, MapActions } from './map-actions';
 import {
@@ -88,6 +90,16 @@ interface Hover {
  * Network tiles come from the API with the user's token. The background is Esri's keyless basemap
  * (ADR-0010), which only ever sees the map extent, never network data; `basemap: none` turns it off.
  */
+/** A layer as the map has drawn it. */
+interface DrawnMarks {
+  layer: VectorLayer<VectorSource<Feature<OlPoint>>>;
+  seq: number;
+  /** The cluster cell it was drawn for; 0 for a layer drawn site by site. */
+  cell: number;
+  /** What part of the map it holds clusters for. */
+  covers: number[] | null;
+}
+
 @Component({
   selector: 'cmdb-map',
   imports: [
@@ -130,10 +142,7 @@ export class MapComponent {
   private conduit?: VectorTileLayer;
   private basemap?: TileLayer<XYZ>;
   /** What the map shows of the app's layers (#346), by id. */
-  private readonly marks = new Map<
-    string,
-    { layer: VectorLayer<VectorSource<Feature<OlPoint>>>; seq: number }
-  >();
+  private readonly marks = new Map<string, DrawnMarks>();
   private route?: VectorLayer<VectorSource<Feature<Geometry>>>;
   private planned?: VectorLayer<VectorSource<Feature<Geometry>>>;
   private operations?: VectorLayer<VectorSource<Feature<Geometry>>>;
@@ -492,6 +501,7 @@ export class MapComponent {
     };
     reportCenter();
     this.map.on('moveend', reportCenter);
+    this.map.on('moveend', () => this.redrawClusters());
     // A finished measurement's label follows its end point as the map moves.
     this.map.on('postrender', () => {
       const m = this.measured();
@@ -608,6 +618,8 @@ export class MapComponent {
       } else if (feature?.get('route')) {
         // Part of an open trace: stack it on the trace instead of starting over.
         this.panels.open({ type: feature.get('route'), id: String(feature.getId()) });
+      } else if (feature?.get('clusterExtent')) {
+        this.zoomIntoCluster(feature.get('clusterExtent') as number[], e.coordinate);
       } else if (feature?.get('mark')) {
         // Marked sites open; marks that are not sites (a suggested node, #294) have no id above zero.
         if (Number(feature.getId()) > 0) {
@@ -906,18 +918,27 @@ export class MapComponent {
 
   private readonly markStyles = new Map<string, Style>();
 
-  private markStyle(color: number): Style {
+  /** A site as a dot, a cluster as a bigger one with its number. Both in the layer's colour. */
+  private markStyle(color: number, count?: number): Style {
     const palette = (this.palette ??= readPalette(this.host.nativeElement));
     const fill = palette.layers[color % palette.layers.length];
-    const key = `${fill}|${palette.bg}`;
+    const label = count ? clusterLabel(count) : '';
+    const key = `${fill}|${palette.bg}|${label}`;
     let style = this.markStyles.get(key);
     if (!style) {
       style = new Style({
         image: new Circle({
-          radius: 4.5,
+          radius: count ? Math.min(22, 9 + Math.log10(count) * 3.5) : 4.5,
           fill: new Fill({ color: fill }),
           stroke: new Stroke({ color: palette.bg, width: 1.5 }),
         }),
+        text: count
+          ? new Text({
+              text: label,
+              font: '600 11px sans-serif',
+              fill: new Fill({ color: palette.bg }),
+            })
+          : undefined,
       });
       this.markStyles.set(key, style);
     }
@@ -1474,29 +1495,96 @@ export class MapComponent {
         drawn = {
           layer: new VectorLayer({ source: new VectorSource<Feature<OlPoint>>() }),
           seq: -1,
+          cell: -1,
+          covers: null,
         };
         this.marks.set(layer.id, drawn);
         this.map!.addLayer(drawn.layer);
       }
-      if (drawn.seq !== layer.seq) {
-        const source = drawn.layer.getSource()!;
-        source.clear(true);
-        source.addFeatures(
-          layer.points.map(([id, x, y]) => {
-            const f = new Feature(new OlPoint([x, y]));
-            f.setId(id);
-            f.set('mark', true);
-            return f;
-          }),
-        );
-        drawn.seq = layer.seq;
-      }
-      drawn.layer.setStyle(() => this.markStyle(layer.color));
+      this.drawMarks(drawn, layer);
+      drawn.layer.setStyle((f) =>
+        this.markStyle(layer.color, f.get('count') as number | undefined),
+      );
       // Under what a plan or a trace draws (15 and up).
       drawn.layer.setZIndex(10 + index / 100);
       drawn.layer.setVisible(layer.visible);
     });
     this.network?.setOpacity(this.hasVisibleMarks() || this.mapView.route() ? 0.35 : 1);
+  }
+
+  /** A big layer is drawn as clusters that follow the zoom; a small one site by site, which it draws once. */
+  private drawMarks(drawn: DrawnMarks, layer: MapLayer): void {
+    const clustered = layer.points.length > CLUSTER_ABOVE;
+    const view = clustered ? this.map!.getView().calculateExtent(this.map!.getSize()) : null;
+    const cell = clustered ? (this.map!.getView().getResolution() ?? 1) * CLUSTER_CELL_PX : 0;
+    const covered = !view || (drawn.covers !== null && containsExtent(drawn.covers, view));
+    if (drawn.seq === layer.seq && drawn.cell === cell && covered) {
+      return;
+    }
+    let features: Feature<OlPoint>[];
+    if (view) {
+      // What is near the view: close in, nearly every site is its own, and the rest of the country is not drawn anyway.
+      const covers = buffer(view, Math.max(view[2] - view[0], view[3] - view[1]));
+      const near = layer.points.filter(
+        ([, x, y]) => x >= covers[0] && x <= covers[2] && y >= covers[1] && y <= covers[3],
+      );
+      drawn.covers = covers;
+      features = clusterPoints(near, cell).map((c) => {
+        const f = new Feature(new OlPoint([c.x, c.y]));
+        f.set('mark', true);
+        if (c.id !== undefined) {
+          f.setId(c.id);
+        } else {
+          f.set('count', c.count);
+          f.set('clusterExtent', c.extent);
+        }
+        return f;
+      });
+    } else {
+      drawn.covers = null;
+      features = layer.points.map(([id, x, y]) => {
+        const f = new Feature(new OlPoint([x, y]));
+        f.setId(id);
+        f.set('mark', true);
+        return f;
+      });
+    }
+    const source = drawn.layer.getSource()!;
+    source.clear(true);
+    source.addFeatures(features);
+    drawn.seq = layer.seq;
+    drawn.cell = cell;
+  }
+
+  /** Clusters follow the zoom. Done when the map stops, so an animated zoom does not count every frame. */
+  private redrawClusters(): void {
+    for (const layer of this.mapView.layers()) {
+      const drawn = this.marks.get(layer.id);
+      if (drawn) {
+        this.drawMarks(drawn, layer);
+      }
+    }
+  }
+
+  /** Into a cluster: as close as shows what it covers, and always closer than now. */
+  private zoomIntoCluster(extent: readonly number[], at: number[]): void {
+    const view = this.map!.getView();
+    const zoom = view.getZoom() ?? 0;
+    const [minX, minY, maxX, maxY] = extent;
+    const fitting = view.getZoomForResolution(
+      view.getResolutionForExtent(
+        [minX, minY, maxX, maxY],
+        [
+          Math.max(1, (this.map!.getSize()?.[0] ?? 800) - 96 - this.coveredFromLeft()),
+          Math.max(1, (this.map!.getSize()?.[1] ?? 600) - 96),
+        ],
+      ),
+    );
+    view.animate({
+      center: [(minX + maxX) / 2 || at[0], (minY + maxY) / 2 || at[1]],
+      zoom: Math.min(GRID.maxZoom, Math.max(zoom + 1, Math.min(fitting ?? zoom + 2, zoom + 3))),
+      duration: 300,
+    });
   }
 
   private fitMarks(extent: readonly number[]): void {
