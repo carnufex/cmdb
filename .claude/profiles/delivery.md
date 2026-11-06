@@ -54,6 +54,33 @@ The performance budget in `docs/plan.md` is a requirement: numbers in the PR whe
 | web app | `scripts/e2e.sh` (main flows in a real browser against a throwaway stack, ~30 s warm) |
 | anything user-visible | `docker compose up -d --build`, http://localhost:8480, screenshots |
 
+## Review keys
+
+- Issue heading: `## Review key` (in Swedish like the rest of the issue); written with the issue or, at the latest, as the
+  first comment before work starts.
+- Key files: `.review-keys/<nr>.json`; key-owned checks under `src/web/e2e/review-keys/<nr>-<slug>.spec.ts` (they also run
+  in the whole e2e suite afterwards, as regression tests) or `tests/**/ReviewKeys/`.
+- Run: `node <review-key skill>/scripts/keycheck.mjs run <nr> --out artifacts/review-key/<nr>` (`artifacts/` is git-ignored).
+- UI keys run in the e2e stack: `bash scripts/e2e.sh -- review-keys/<nr>-<slug>.spec.ts`. While implementing, keep the
+  stack up (`scripts/e2e.sh --keep -- …`) and run the spec against it (`E2E_BASE_URL=http://localhost:4310
+  E2E_IDP=http://127.0.0.1:8790/application/o/cmdb/ npx playwright test -c e2e/playwright.config.ts <spec>` in `src/web`);
+  the dev server reloads on save. Stop the kept stack (ports 4310, 5199, 8790 and container `cmdb-e2e-db`) before the
+  key-reviewer runs the key, since it starts its own.
+- A worktree needs its own `npm ci` in `src/web`; the main checkout's `node_modules` may be older than the branch.
+- Usual kinds: `spec` (an e2e spec that measures the behaviour, or API integration tests), `parity` for API changes
+  that must not change answers (recorded responses), `eval` for the performance budget in `docs/plan.md`.
+
+## Demo
+
+- When: every PR with a user-visible change.
+- Captions: Swedish.
+- Before/after: `E2E_SHOTS=<dir>` makes a review-key spec save its screenshots (run it on `main` and on the branch).
+- Record the changed flow: Playwright `recordVideo` around the key spec's steps against the kept stack, 1280×800.
+
+## Notify
+
+- Slack: Christopher's own DM `D0BDH8WJRJ4`, through the Slack connector in the session.
+
 ## Merge
 
 - When `scripts/verify.sh` is green: `gh pr merge <pr> --squash --delete-branch`, then `git switch main && git pull --ff-only`.
