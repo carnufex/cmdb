@@ -1,0 +1,14 @@
+{
+  "issue": 352,
+  "kind": "spec",
+  "claim": "At every width from 1280 to 1920 px in steps of 20, narrowing and widening, no toolbar control overlaps another, each is seen whole inside the window and the search box is at least 200 px, with and without the chat button and an active plan; a plan name of 60 characters changes none of that.",
+  "oracle": ["src/web/e2e/review-keys/352-toolbar-sweep.spec.ts"],
+  "checks": [
+    {
+      "name": "toolbar sweep (5 modes x 66 widths)",
+      "run": "bash scripts/e2e.sh -- review-keys/352-toolbar-sweep.spec.ts",
+      "expectOutput": "5 passed",
+      "timeoutSec": 1200
+    }
+  ]
+}
