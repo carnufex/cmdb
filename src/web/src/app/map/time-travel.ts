@@ -77,13 +77,18 @@ export class TimeTravel {
   template: `
     <button
       type="button"
-      class="text-button tool-button"
+      class="text-button tool-button perf-tool"
+      aria-label="Tidsresa"
+      title="Tidsresa"
       [attr.aria-expanded]="open()"
       [attr.aria-pressed]="time.point() !== null"
       aria-controls="time-travel"
       (click)="toggle()"
     >
-      Tidsresa
+      <svg viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M8 2.5a5.5 5.5 0 1 1-5.2 3.7 M2.5 2.5V6H6 M8 5v3.2l2 1.3" />
+      </svg>
+      <span class="label">Tidsresa</span>
     </button>
     @if (open()) {
       <form id="time-travel" class="popover" (submit)="$event.preventDefault(); show()">
