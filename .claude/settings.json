@@ -1,0 +1,10 @@
+{
+  "extraKnownMarketplaces": {
+    "carnufex": {
+      "source": { "source": "github", "repo": "carnufex/claude-skills" }
+    }
+  },
+  "enabledPlugins": {
+    "delivery@carnufex": true
+  }
+}

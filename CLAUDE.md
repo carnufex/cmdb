@@ -25,7 +25,7 @@ Instruktioner för agenter (Claude Code) som arbetar i det här repot.
 10. **Uppdatera dokumentationen** i `docs/` när beteende eller modell ändras.
 11. **Merga och driftsätt.** När `scripts/verify.sh` är grön: squash-merga PR:en och kör `scripts/deploy.sh --deploy --wait` från en ren `main`. Verifiera ändringen på https://cmdb.rosenvall.se och kommentera den utrullade taggen i issuet. Följ skillen `cmdb-delivery` och [docs/drift.md](docs/drift.md).
 
-Slash-kommandon: `/work-issue <nr>` och `/new-issue <beskrivning>` (se `.claude/commands/`). Skill: `cmdb-delivery` (`.claude/skills/`) för allt från PR till demomiljön.
+Flödet körs med pluginet `delivery@carnufex` (aktiverat i `.claude/settings.json`): skillsen `new-issue`, `work-issue`, `plan-milestone`, `decision` och `ship` (allt från PR till demomiljön). cmdb:s egna fakta för dem (etiketter, verifiering, driftsättning, felsökning) står i `.claude/profiles/delivery.md`; ändra fakta där och metoden i [carnufex/claude-skills](https://github.com/carnufex/claude-skills).
 
 ## Parallellt arbete
 
