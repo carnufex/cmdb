@@ -79,7 +79,7 @@ The performance budget in `docs/plan.md` is a requirement: numbers in the PR whe
 
 ## Notify
 
-- Slack: Christopher's own DM `D0BDH8WJRJ4`, through the Slack connector in the session.
+- Slack: #pr-demos (C0CFQLUEP36), posted as the bot with the showcase plugin's post-slack.mjs
 
 ## Merge
 
