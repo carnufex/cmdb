@@ -153,7 +153,8 @@ button {
 }
 
 /* Toolbar parts of the app shell, kept here so its component styles stay within budget. */
-/* Under 1440 px the performance tool is an icon, so the toolbar fits 1280 px with a plan active (#72, #251). */
+/* Under 1440 px the tools are icons with their name as tooltip, so the toolbar fits 1280 px with the chat and a plan
+   active and the search keeps room (#72, #251, #332). */
 /* The tools sit closer under 1440 px, so all of them fit with the search at its smallest. */
 @media (max-width: 1439px) {
   .topbar .command {

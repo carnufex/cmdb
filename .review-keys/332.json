@@ -1,0 +1,14 @@
+{
+  "issue": 332,
+  "kind": "spec",
+  "claim": "No control in the toolbar overlaps another, each is seen whole inside the window, and the search box is at least 200 px wide, at 1280x800 and 1400x900, with and without the chat button, with and without an active plan.",
+  "oracle": ["src/web/e2e/review-keys/332-toolbar.spec.ts", "scripts/e2e.sh"],
+  "checks": [
+    {
+      "name": "toolbar fits (8 cases)",
+      "run": "bash scripts/e2e.sh -- review-keys/332-toolbar.spec.ts",
+      "expectOutput": "8 passed",
+      "timeoutSec": 900
+    }
+  ]
+}

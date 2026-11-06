@@ -2,13 +2,16 @@
 # E2e-sviten (#288): de viktigaste flödena i en riktig webbläsare mot en lokal stack.
 # Startar en engångs-Postgres (Docker), laddar det lilla syntetiska nätet (seed 1) med datageneratorn, kör API:t mot en
 # ersättare för OpenID-leverantören (src/web/e2e/idp.mjs) och webben på dev-servern, och kör Playwright.
-# Användning: scripts/e2e.sh [--keep]   (--keep låter stacken stå kvar efter körningen, för felsökning)
+# Användning: scripts/e2e.sh [--keep] [-- <playwright-argument>]   (--keep låter stacken stå kvar efter körningen, för felsökning;
+# efter -- går argumenten till Playwright, t.ex. en enskild spec: scripts/e2e.sh -- review-keys/332-toolbar.spec.ts)
 set -euo pipefail
 
 KEEP=0
+PW_ARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --keep) KEEP=1 ;;
+    --) shift; PW_ARGS=("$@"); break ;;
     *) echo "Okänt argument: $1"; exit 1 ;;
   esac; shift
 done
@@ -87,6 +90,6 @@ step "playwright"
 pushd src/web >/dev/null
 started=$(date +%s)
 E2E_BASE_URL="http://localhost:$WEB_PORT" E2E_IDP="http://127.0.0.1:$IDP_PORT/application/o/cmdb/" \
-  npx playwright test -c e2e/playwright.config.ts
+  npx playwright test -c e2e/playwright.config.ts ${PW_ARGS[@]+"${PW_ARGS[@]}"}
 popd >/dev/null
 echo "Flödena tog $(( $(date +%s) - started )) s."

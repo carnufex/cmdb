@@ -6,54 +6,82 @@
     <cmdb-search />
     <button
       type="button"
-      class="text-button tool-button"
+      class="text-button tool-button perf-tool"
+      aria-label="Avancerad sökning"
+      title="Avancerad sökning"
       [attr.aria-pressed]="tools.open() === 'query'"
       (click)="tools.toggle('query')"
     >
-      Avancerad sökning
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3h12l-4.5 5.5V13l-3 1.5V8.5Z" /></svg>
+      <span class="label">Avancerad sökning</span>
     </button>
     <button
       type="button"
-      class="text-button tool-button"
+      class="text-button tool-button perf-tool"
+      aria-label="Innehåll"
+      title="Innehåll"
       [attr.aria-pressed]="tools.open() === 'tree'"
       (click)="tools.toggle('tree')"
     >
-      Innehåll
+      <svg viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M2.5 3.5h2 M2.5 3.5v8 M2.5 7.5h2 M2.5 11.5h2 M6.5 3.5h7 M6.5 7.5h7 M6.5 11.5h7" />
+      </svg>
+      <span class="label">Innehåll</span>
     </button>
     @if (plan.id() === null) {
       <!-- With a plan active, its chip opens the plans instead. -->
       <button
         type="button"
-        class="text-button tool-button"
+        class="text-button tool-button perf-tool"
+        aria-label="Planer"
+        title="Planer"
         [attr.aria-pressed]="tools.open() === 'plans'"
         (click)="tools.toggle('plans')"
       >
-        Planer
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M4 2.5h8v12H4Z M6 1.5h4v2H6Z M6 7h4 M6 9.5h4 M6 12h2" />
+        </svg>
+        <span class="label">Planer</span>
       </button>
     }
     <button
       type="button"
-      class="text-button tool-button"
+      class="text-button tool-button perf-tool"
+      aria-label="Projekt"
+      title="Projekt"
       [attr.aria-pressed]="tools.open() === 'projects'"
       (click)="tools.toggle('projects')"
     >
-      Projekt
+      <svg viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M2 5.5h12v8H2Z M5.5 5.5v-2h5v2 M2 9h12" />
+      </svg>
+      <span class="label">Projekt</span>
     </button>
     <button
       type="button"
-      class="text-button tool-button"
+      class="text-button tool-button perf-tool"
+      aria-label="Avstämningar"
+      title="Avstämningar"
       [attr.aria-pressed]="tools.open() === 'reconciliations'"
       (click)="tools.toggle('reconciliations')"
     >
-      Avstämningar
+      <svg viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M2 5h9 M8.5 2.5 11 5 8.5 7.5 M14 11H5 M7.5 8.5 5 11l2.5 2.5" />
+      </svg>
+      <span class="label">Avstämningar</span>
     </button>
     <button
       type="button"
-      class="text-button tool-button"
+      class="text-button tool-button perf-tool"
+      aria-label="Massredigering"
+      title="Massredigering"
       [attr.aria-pressed]="tools.open() === 'grid'"
       (click)="tools.toggle('grid')"
     >
-      Massredigering
+      <svg viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M2 2.5h12v11H2Z M2 6.5h12 M2 10h12 M6.5 2.5v11" />
+      </svg>
+      <span class="label">Massredigering</span>
     </button>
     <cmdb-time-travel />
     @if (plan.id() !== null) {
