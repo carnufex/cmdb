@@ -153,18 +153,6 @@ button {
 }
 
 /* Toolbar parts of the app shell, kept here so its component styles stay within budget. */
-/* Under 1440 px the tools are icons with their name as tooltip, so the toolbar fits 1280 px with the chat and a plan
-   active and the search keeps room (#72, #251, #332). */
-/* The tools sit closer under 1440 px, so all of them fit with the search at its smallest. */
-@media (max-width: 1439px) {
-  .topbar .command {
-    gap: var(--space-1);
-  }
-  .topbar button.text-button {
-    padding-inline: var(--space-2);
-  }
-}
-
 // Element and two classes: above the shell's own .text-button padding.
 button.text-button.perf-tool {
   display: inline-flex;
@@ -180,8 +168,21 @@ button.text-button.perf-tool {
     stroke-width: 1.3;
     stroke-linecap: round;
   }
+}
 
-  @media (max-width: 1439px) {
+/* The compact toolbar: the tools sit closer and show an icon with their name as tooltip and accessible name. Always
+   under 1440 px, so the toolbar fits 1280 px with the chat and a plan active (#72, #251, #332); above, whenever the
+   toolbar measures that its names do not fit with the search box at 200 px (toolbar-fit.ts, #352). */
+@mixin compact-toolbar {
+  .command {
+    gap: var(--space-1);
+  }
+
+  button.text-button {
+    padding-inline: var(--space-2);
+  }
+
+  button.text-button.perf-tool {
     width: 28px;
     justify-content: center;
     padding: 0;
@@ -194,6 +195,16 @@ button.text-button.perf-tool {
       display: none;
     }
   }
+}
+
+@media (max-width: 1439px) {
+  .topbar {
+    @include compact-toolbar;
+  }
+}
+
+.topbar.compact {
+  @include compact-toolbar;
 }
 
 /* Unread news (#82): a count in the action colour next to the button. */

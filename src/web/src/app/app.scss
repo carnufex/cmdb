@@ -82,6 +82,11 @@
       display: none;
     }
   }
+
+  // And whenever the toolbar is compact above that (#352).
+  .topbar.compact &:not(.error) {
+    display: none;
+  }
 }
 
 .icon-button,

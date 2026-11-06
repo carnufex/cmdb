@@ -26,11 +26,13 @@ import { FibrePanelComponent } from './objects/fibre-panel';
 import { ServiceViewComponent } from './objects/service-view';
 import { RoomPanelComponent } from './objects/room-panel';
 import { TimeTravelComponent } from './map/time-travel';
+import { ToolbarFitDirective } from './shell/toolbar-fit';
 
 @Component({
   selector: 'app-root',
   imports: [
     TimeTravelComponent,
+    ToolbarFitDirective,
     RouterOutlet,
     RouterLink,
     RouterLinkActive,
