@@ -1,6 +1,6 @@
 # Drift och leveransflöde
 
-Hur en ändring går från ett issue till demomiljön på <https://cmdb.rosenvall.se>. Flödet gäller både människor och agenter. Agenter följer skillen `cmdb-delivery` (`.claude/skills/cmdb-delivery/`), som är en körbar version av det här dokumentet.
+Hur en ändring går från ett issue till demomiljön på <https://cmdb.rosenvall.se>. Flödet gäller både människor och agenter. Agenter följer skillen `ship` i pluginet `delivery@carnufex` med cmdb:s fakta i `.claude/profiles/delivery.md`, som tillsammans är en körbar version av det här dokumentet.
 
 ## Miljöer
 
