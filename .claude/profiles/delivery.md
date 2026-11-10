@@ -76,6 +76,7 @@ The performance budget in `docs/plan.md` is a requirement: numbers in the PR whe
 - Captions: Swedish.
 - Before/after: `E2E_SHOTS=<dir>` makes a review-key spec save its screenshots (run it on `main` and on the branch).
 - Record the changed flow: Playwright `recordVideo` around the key spec's steps against the kept stack, 1280×800.
+- App for screenshots: http://localhost:8480 (the compose stack).
 
 ## Notify
 
