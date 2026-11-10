@@ -109,9 +109,10 @@ public sealed class VoiceTools(SystemDb system, RequestDb db, GraphHolder holder
 
     [McpServerTool(Name = "request_verification_code", Title = "Skicka verifieringskod", ReadOnly = false, Idempotent = false, OpenWorld = false)]
     [Description("Step-up verification, step 1: sends a six-digit code by SMS to the phone registered for the caller's " +
-        "employee id. Needed before anything beyond find_station. Ask the caller for their employee id first.")]
+        "employee id. Needed before anything beyond find_station. Ask the caller for their employee id and wait for the answer: " +
+        "call this only after the caller has said it in this call, never in the same turn as the question.")]
     public async Task<CodeSent> RequestVerificationCode(
-        [Description("The caller's employee id, digits only, e.g. \"1001\".")] string employeeId,
+        [Description("The employee id exactly as the caller said it in this call, digits only. Never guess one or use an example.")] string employeeId,
         CancellationToken ct = default)
     {
         return await AuditAsync("request_verification_code", async () =>

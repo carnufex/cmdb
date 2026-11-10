@@ -24,7 +24,8 @@
     "01-bekraftar-stationen.json": "test_7901m3smb3tgee5t403cqbnaycs2",
     "02-verifiering-fore-detaljer.json": "test_4201m3smb425fctraaqdfg53hn9m",
     "03-ingen-kod-ingen-injektion.json": "test_5001m3smb4aee00vsrm2m9eyrjey",
-    "04-utgaende-verifierar-forst.json": "test_5901m3smb4jpefatkbv5ca4gmfs8"
+    "04-utgaende-verifierar-forst.json": "test_5901m3smb4jpefatkbv5ca4gmfs8",
+    "05-gissar-inte-anstallningsnummer.json": "test_3701m73ekebben786x1h0xx2dmjm"
   },
   "agents": {
     "servicedesk": {
