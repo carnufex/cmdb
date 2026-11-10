@@ -31,6 +31,9 @@ API = "https://api.elevenlabs.io"
 NAME = "CMDB NOC-agent (Driftagent)"
 LLM = "claude-haiku-4-5"  # deepseek-v41-flash was tried in #147 and dropped
 TTS_MODEL = "eleven_v4_turbo"
+# The platform default pcm_16000 sounded crackly in the widget (#355); no phone numbers use these agents.
+# optimize_streaming_latency is a no-op on the platform now and is left out.
+AUDIO_FORMAT = "pcm_24000"
 # "Sanna Hartfield - Direct and Natural": Swedish, Stockholm, conversational (shared library).
 VOICE = {"public_owner_id": "3d1fa6a5595e0a31fff8d7c1a2f2794b91ca87ddd200066dfbdfcef662a65a1b", "voice_id": "4xkUqaR9MYOJHoaC1Nak",
          "name": "Sanna (Driftagent)"}
@@ -243,7 +246,7 @@ def light_agent(name: str, tag: str, prompt_file: str, first: str, first_en: str
                 },
             },
             "language_presets": {"en": {"overrides": {"agent": {"first_message": first_en, "language": "en"}}}},
-            "tts": {"model_id": TTS_MODEL, "voice_id": voice_id, "optimize_streaming_latency": 3},
+            "tts": {"model_id": TTS_MODEL, "voice_id": voice_id, "agent_output_audio_format": AUDIO_FORMAT},
             "asr": {"keywords": DESK_KEYWORDS, "quality": "high"},
             "conversation": {"max_duration_seconds": 600},
         },
@@ -282,7 +285,7 @@ def agent_body(voice_id: str, mcp_id: str, kb: list[dict], test_ids: list[str], 
                 },
             },
             "language_presets": {"en": {"overrides": {"agent": {"first_message": FIRST_MESSAGE_EN, "language": "en"}}}},
-            "tts": {"model_id": TTS_MODEL, "voice_id": voice_id, "optimize_streaming_latency": 3},
+            "tts": {"model_id": TTS_MODEL, "voice_id": voice_id, "agent_output_audio_format": AUDIO_FORMAT},
             "asr": {"keywords": KEYWORDS, "quality": "high"},
             "conversation": {"max_duration_seconds": 600},
         },

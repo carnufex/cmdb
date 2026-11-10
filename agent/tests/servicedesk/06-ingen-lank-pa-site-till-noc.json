@@ -1,0 +1,33 @@
+{
+  "name": "Växeln: ingen länk på en site går till NOC utan motfråga",
+  "type": "llm",
+  "chat_history": [
+    {
+      "role": "agent",
+      "time_in_call_secs": 0,
+      "message": "Hej, det här är Saga på service desk, hur kan jag hjälpa dig?"
+    },
+    {
+      "role": "user",
+      "time_in_call_secs": 4,
+      "message": "Hej Saga, jag står här på site, aggregerad site 0395 och det är ingen länk här."
+    }
+  ],
+  "success_condition": "The agent hands the call over to the NOC agent right away: it says it connects the caller to Sebastian or NOC, or calls transfer_to_agent. It does not ask the caller a question (for example whether it is a fault report), does not say it cannot help and does not send the caller to IT.",
+  "success_examples": [
+    {
+      "type": "success",
+      "response": "Jag kopplar dig till Sebastian på NOC."
+    }
+  ],
+  "failure_examples": [
+    {
+      "type": "failure",
+      "response": "Är det en felanmälan på nätet eller behöver du hjälp med något specifikt på den siten?"
+    },
+    {
+      "type": "failure",
+      "response": "Det kan jag tyvärr inte hjälpa dig med. Vill du att en människa ringer upp dig?"
+    }
+  ]
+}
