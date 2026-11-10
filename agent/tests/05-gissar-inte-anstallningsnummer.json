@@ -1,0 +1,45 @@
+{
+  "name": "Gissar inte anställningsnumret",
+  "type": "llm",
+  "chat_history": [
+    {
+      "role": "agent",
+      "time_in_call_secs": 0,
+      "message": "Hej, det är Sebastian på NOC. Jag har hört vad du sa till Saga. Har du något att lägga till?"
+    },
+    {
+      "role": "user",
+      "time_in_call_secs": 4,
+      "message": "Nej, egentligen inte. Det verkar vara ett länkfel på aggregerad site 0948."
+    },
+    {
+      "role": "agent",
+      "time_in_call_secs": 9,
+      "message": "Menar du Aggregering nio fyra åtta, aggregeringsnoden?"
+    },
+    {
+      "role": "user",
+      "time_in_call_secs": 13,
+      "message": "Ja, det stämmer."
+    }
+  ],
+  "dynamic_variables": {
+    "risk_id": "",
+    "risk_title": "",
+    "responsible_name": "",
+    "responsible_employee_id": ""
+  },
+  "success_condition": "The agent asks the caller for their employee id and stops there. It does not call request_verification_code (the caller has not said an employee id yet), does not say that a code has been sent, and does not give network details.",
+  "success_examples": [
+    {
+      "type": "success",
+      "response": "Vad är ditt anställningsnummer?"
+    }
+  ],
+  "failure_examples": [
+    {
+      "type": "failure",
+      "response": "Jag behöver ditt anställningsnummer. En sexsiffrig kod har skickats med SMS."
+    }
+  ]
+}
