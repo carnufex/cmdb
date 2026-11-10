@@ -1,6 +1,7 @@
 {
   "enabledPlugins": {
     "delivery@carnufex": true,
+    "review@carnufex": true,
     "showcase@carnufex": true
   },
   "extraKnownMarketplaces": {
