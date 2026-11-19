@@ -5,8 +5,10 @@
 
 ## Language
 
-- Issues, PR descriptions and issue comments: **Swedish**
-- Code, identifiers and commit messages: English
+- Everything written for the work is in English: issues, PR descriptions, issue comments, code, identifiers, comments,
+  commits, docs, ADRs, review keys, demo captions and Slack posts, whatever language the request was in.
+- Existing Swedish documents and issues stay; new text in them is English.
+- User-facing text in the app's Swedish locale stays Swedish.
 
 ## Labels
 
@@ -37,8 +39,8 @@ production) · Referenser (ADR:er, dokument, relaterade issues). Discovered work
 - Default branch `main`, changed only through PRs.
 - Branch `<nr>-<kort-slug>`, e.g. `12-trace-service`; worktree `../cmdb-<nr>` when the main checkout has someone else's changes.
 - Commits: Conventional Commits with the issue number, `feat(graph): trace across layers (#12)`.
-- PR title `<type>(<scope>): <summary> (#<nr>)`; body `.github/pull_request_template.md` (Swedish: Vad och varför,
-  Verifiering, Prestanda, checklist) plus a `3 am:` line.
+- PR title `<type>(<scope>): <summary> (#<nr>)`; body `.github/pull_request_template.md` (What and why,
+  Verification, Performance, checklist) plus a `3 am:` line.
 
 ## Tests policy
 
@@ -56,7 +58,7 @@ The performance budget in `docs/plan.md` is a requirement: numbers in the PR whe
 
 ## Review keys
 
-- Issue heading: `## Review key` (in Swedish like the rest of the issue); written with the issue or, at the latest, as the
+- Issue heading: `## Review key`; written with the issue or, at the latest, as the
   first comment before work starts.
 - Key files: `.review-keys/<nr>.json`; key-owned checks under `src/web/e2e/review-keys/<nr>-<slug>.spec.ts` (they also run
   in the whole e2e suite afterwards, as regression tests) or `tests/**/ReviewKeys/`.
@@ -73,7 +75,6 @@ The performance budget in `docs/plan.md` is a requirement: numbers in the PR whe
 ## Demo
 
 - When: every PR with a user-visible change.
-- Captions: Swedish.
 - Before/after: `E2E_SHOTS=<dir>` makes a review-key spec save its screenshots (run it on `main` and on the branch).
 - Record the changed flow: Playwright `recordVideo` around the key spec's steps against the kept stack, 1280×800.
 - App for screenshots: http://localhost:8480 (the compose stack).
@@ -137,7 +138,8 @@ Infrastructure changes (env vars, resources, database parameters) go in the home
 
 ## Decisions
 
-- ADRs: `docs/adr/NNNN-<slug>.md`, Swedish; a new or deviating decision starts as status *Föreslagen* with an issue
-  labelled `type:decision` + `needs-human`.
-- Needs-human section heading: `## Vad behövs från dig` (konkret fråga, alternativ med rekommendation, hur man svarar).
+- ADRs: `docs/adr/NNNN-<slug>.md`, in English (older ones are Swedish); a new or deviating decision starts as status
+  *Proposed* with an issue labelled `type:decision` + `needs-human`.
+- Needs-human section heading: `## What is needed from you` (a concrete question, options with a recommendation, how to
+  answer). Older issues use `## Vad behövs från dig`.
 - Session start: check open `needs-human` issues for answers.

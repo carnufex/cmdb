@@ -1,46 +1,46 @@
 # CLAUDE.md
 
-Instruktioner för agenter (Claude Code) som arbetar i det här repot.
+Instructions for agents (Claude Code) working in this repository.
 
-## Absoluta regler
+## Absolute rules
 
-1. **Syntetisk data, alltid.** Checka aldrig in riktig data, riktiga datamodeller eller namn på verkliga organisationer, system eller personer. Är du osäker: stanna och fråga i issuet.
-2. **Allt arbete sker mot ett issue.** Finns inget issue skapar du ett först (`gh issue create`, använd rätt mall) och arbetar sedan mot det.
-3. **Arkitekturbeslut tas inte tyst.** Avvikelser från en ADR eller nya beslut kräver en ny ADR med status *Föreslagen* och ett issue med etiketterna `type:decision` och `needs-human`.
-4. **Prestandabudgeten i [docs/plan.md](docs/plan.md) är ett krav.** Kod som bryter mot den är inte klar.
-5. **Behörighet får aldrig kringgås**, inte heller i test-, debug- eller exportvägar.
+1. **Synthetic data, always.** Never commit real data, real data models or the names of real organisations, systems or people. Unsure: stop and ask on the issue.
+2. **All work is done against an issue.** If there is none, create it first (`gh issue create`, with the right template) and then work against it.
+3. **Architecture decisions are not made silently.** A deviation from an ADR or a new decision needs a new ADR with status *Proposed* and an issue labelled `type:decision` and `needs-human`.
+4. **The performance budget in [docs/plan.md](docs/plan.md) is a requirement.** Code that breaks it is not done.
+5. **Authorisation is never bypassed**, not in test, debug or export paths either.
 
-## Arbetsflöde
+## Workflow
 
-1. **Välj issue.** Helst ett med `status:ready` och ingen `needs-human`. Läs issuet, länkade issues, relevanta ADR:er och dokument i `docs/`.
-2. **Ta issuet:** `gh issue edit <nr> --add-assignee @me --add-label status:in-progress --remove-label status:ready`.
-3. **Kommentera en plan** i issuet innan du implementerar, om arbetet är större än en liten ändring: angreppssätt, berörda slices, testplan och öppna frågor.
-4. **Branch:** `<nr>-kort-slug`, till exempel `12-trace-service`.
-5. **Commits:** Conventional Commits med issuenummer, till exempel `feat(graph): trace across layers (#12)`.
-6. **Dokumentera medan du arbetar.** Kommentera beslut, överraskningar och mätvärden i issuet. Issuet ska räcka för att förstå varför koden ser ut som den gör.
-7. **Upptäckt arbete utanför scope** blir ett nytt issue, länkat till det aktuella med "Upptäckt i #<nr>". Utöka inte scope tyst.
-8. **Blockerad?** Sätt `status:blocked` och beskriv vad som behövs. Behövs ett mänskligt beslut sätter du även `needs-human`.
-   `needs-human` får **bara** sättas tillsammans med ett avsnitt `## Vad behövs från dig` i issuet: en konkret fråga eller åtgärd, vilka alternativ som finns (med din rekommendation) och hur svaret ges, till exempel "kommentera A eller B". Kan du själv ta reda på svaret, i repot, i homelab-repot eller i dokumentationen, gör det i stället. Ta bort etiketten när svaret finns.
-9. **Pull request** med `Closes #<nr>`, en beskrivning av hur det verifierats, prestandasiffror där det är relevant och eventuella skärmdumpar.
-10. **Uppdatera dokumentationen** i `docs/` när beteende eller modell ändras.
-11. **Merga och driftsätt.** När `scripts/verify.sh` är grön: squash-merga PR:en och kör `scripts/deploy.sh --deploy --wait` från en ren `main`. Verifiera ändringen på https://cmdb.rosenvall.se och kommentera den utrullade taggen i issuet. Följ skillen `cmdb-delivery` och [docs/drift.md](docs/drift.md).
+1. **Pick an issue.** Preferably one with `status:ready` and no `needs-human`. Read the issue, linked issues, relevant ADRs and documents in `docs/`.
+2. **Claim the issue:** `gh issue edit <nr> --add-assignee @me --add-label status:in-progress --remove-label status:ready`.
+3. **Comment a plan** on the issue before implementing, when the work is more than a small change: approach, affected slices, test plan and open questions.
+4. **Branch:** `<nr>-short-slug`, for example `12-trace-service`.
+5. **Commits:** Conventional Commits with the issue number, for example `feat(graph): trace across layers (#12)`.
+6. **Document as you work.** Comment decisions, surprises and measurements on the issue. The issue must be enough to understand why the code looks the way it does.
+7. **Discovered work outside the scope** becomes a new issue, linked to the current one with "Discovered in #<nr>". Do not widen the scope silently.
+8. **Blocked?** Set `status:blocked` and describe what is needed. When a human decision is needed, also set `needs-human`.
+   `needs-human` may **only** be set together with a section `## What is needed from you` on the issue: a concrete question or action, the options (with your recommendation) and how to answer, for example "comment A or B". If you can find the answer yourself, in this repository, in the homelab repository or in the documentation, do that instead. Remove the label when the answer is there.
+9. **Pull request** with `Closes #<nr>`, a description of how it was verified, performance numbers where relevant, and screenshots if any.
+10. **Update the documentation** in `docs/` when behaviour or the model changes.
+11. **Merge and deploy.** When `scripts/verify.sh` is green: squash-merge the PR and run `scripts/deploy.sh --deploy --wait` from a clean `main`. Verify the change on https://cmdb.rosenvall.se and comment the deployed tag on the issue. Follow [docs/drift.md](docs/drift.md).
 
-Flödet körs med pluginet `delivery@carnufex` (aktiverat i `.claude/settings.json`): skillsen `new-issue`, `work-issue`, `plan-milestone`, `decision` och `ship` (allt från PR till demomiljön). cmdb:s egna fakta för dem (etiketter, verifiering, driftsättning, felsökning) står i `.claude/profiles/delivery.md`; ändra fakta där och metoden i [carnufex/claude-skills](https://github.com/carnufex/claude-skills).
+The flow runs with the `delivery@carnufex` plugin (enabled in `.claude/settings.json`): the skills `new-issue`, `work-issue`, `plan-milestone`, `decision` and `ship` (everything from PR to the demo environment). cmdb's own facts for them (labels, verification, deployment, troubleshooting) are in `.claude/profiles/delivery.md`; change facts there and the method in [carnufex/claude-skills](https://github.com/carnufex/claude-skills).
 
-## Parallellt arbete
+## Parallel work
 
-Christopher och Codex arbetar i samma repo samtidigt. Har huvudcheckouten ändringar du inte gjort: rör dem inte, arbeta i en worktree (`git worktree add ../cmdb-<nr> <nr>-slug`). Stagea explicita sökvägar, aldrig `git add -A`, och kör `git fetch` innan varje push.
+Several sessions work in this repository at the same time. If the main checkout has changes you did not make, leave them alone and work in a worktree (`git worktree add ../cmdb-<nr> <nr>-slug`). Stage explicit paths, never `git add -A`, and run `git fetch` before every push.
 
-## Konventioner
+## Conventions
 
-- **Språk:** kod, identifierare och commit-meddelanden på engelska. Dokumentation, issues och PR-beskrivningar på svenska.
-- **Backend:** .NET 10, FastEndpoints, vertical slices (en mapp per feature med endpoint, request/response, validering, handler och test). Inga generiska "services"-lager.
-- **Frontend:** Angular med standalone-komponenter och signals. All styling via design-tokens. Status visas med prick och text.
-- **Databas:** EF Core code-first (ADR-0009). Schemat ändras bara via modellen och `dotnet ef migrations add`, aldrig direkt i databasen. Bulkvägar får använda Npgsql/`COPY` mot EF-schemat. Geometri i EPSG:3006.
-- **Tester:** enhetstester för domänlogik, integrationstester mot riktig Postgres (Testcontainers), benchmarks för grafmotorn.
-- **Containrar:** OpenShift-kompatibla (icke-root, godtyckligt UID).
+- **Language:** everything written for the work is in English: code, identifiers, comments, commit messages, documentation, ADRs, issues, PR descriptions and issue comments, whatever language the request was in. Existing Swedish documents stay until they are next changed; whoever changes one writes the new text in English. User-facing text in the app's Swedish locale stays Swedish.
+- **Backend:** .NET 10, FastEndpoints, vertical slices (one folder per feature with endpoint, request/response, validation, handler and test). No generic "services" layers.
+- **Frontend:** Angular with standalone components and signals. All styling through design tokens. Status is shown with a dot and text.
+- **Database:** EF Core code-first (ADR-0009). The schema changes only through the model and `dotnet ef migrations add`, never directly in the database. Bulk paths may use Npgsql/`COPY` against the EF schema. Geometry in EPSG:3006.
+- **Tests:** unit tests for domain logic, integration tests against a real Postgres (Testcontainers), benchmarks for the graph engine.
+- **Containers:** OpenShift compatible (non-root, arbitrary UID).
 
-## Lokal miljö
+## Local environment
 
 ```bash
 scripts/init-env.sh
