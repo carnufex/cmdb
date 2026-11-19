@@ -1,16 +1,16 @@
 Closes #
 
-## Vad och varför
+## What and why
 
-## Verifiering
+## Verification
 
-## Prestanda (om relevant)
+## Performance (if relevant)
 
-| Mätning | Budget | Resultat |
+| Measurement | Budget | Result |
 |---|---|---|
 
-## Checklista
-- [ ] Tester tillagda och gröna
-- [ ] Dokumentation/ADR uppdaterad
-- [ ] Ingen riktig data eller verkliga namn
-- [ ] Behörighet respekteras i alla nya vägar
+## Checklist
+- [ ] Tests added and green
+- [ ] Documentation/ADR updated
+- [ ] No real data or real names
+- [ ] Authorisation respected on every new path

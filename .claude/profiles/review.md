@@ -56,7 +56,7 @@ data boundaries (import, export, RLS) and bug fixes that could regress. Integrat
 ## Issues
 
 - Labels: `type:<feature|bug|task>`, `area:<backend|data|frontend|docs|infra|security>`, `review-sweep`
-- Issues, docs and PR descriptions in Swedish; code and commit messages in English.
+- Everything in English: issues, docs, PR descriptions, code and commit messages.
 
 ## Hotspots
 
