@@ -6,7 +6,7 @@ RUN npm ci
 COPY . .
 RUN npx ng build
 
-FROM nginxinc/nginx-unprivileged:1.29-alpine
+FROM ghcr.io/nginx/nginx-unprivileged:1.31.9-alpine@sha256:60214a103e6f38e953ff957f34b1f2e97a9db801ab2df3821da955d0fe6cadd6
 ENV API_UPSTREAM=http://api:8080 \
     OIDC_AUTHORITY=https://authentik.rosenvall.se/application/o/cmdb/ \
     OIDC_CLIENT_ID=cmdb-web \
